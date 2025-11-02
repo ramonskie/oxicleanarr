@@ -308,7 +308,6 @@ export default function LibraryPage() {
                         </span>
                       )}
                     </h3>
-                    <Badge variant={item.type}>{item.type}</Badge>
                     {item.excluded && (
                       <Badge variant="outline">Excluded</Badge>
                     )}
@@ -346,7 +345,10 @@ export default function LibraryPage() {
                   )}
                 </div>
 
-                <div className="flex-shrink-0">
+                <div className="flex items-center gap-3 flex-shrink-0">
+                  <Badge variant={item.type === 'movie' ? 'movie' : 'show'}>
+                    {item.type === 'movie' ? 'Movie' : 'TV Show'}
+                  </Badge>
                   {item.excluded ? (
                     <Button
                       variant="outline"
