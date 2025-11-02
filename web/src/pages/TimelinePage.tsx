@@ -159,6 +159,12 @@ export default function TimelinePage() {
               <Button variant="ghost" onClick={() => navigate('/library')}>
                 Library
               </Button>
+              <Button variant="ghost" onClick={() => navigate('/scheduled-deletions')}>
+                Scheduled Deletions
+              </Button>
+              <Button variant="ghost" onClick={() => navigate('/job-history')}>
+                Job History
+              </Button>
             </nav>
           </div>
           <div className="flex items-center gap-4">

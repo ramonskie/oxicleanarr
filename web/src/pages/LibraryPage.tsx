@@ -8,6 +8,7 @@ import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { useAuthStore } from '@/store/auth';
 import { useNavigate } from 'react-router-dom';
+import { Clock, LogOut } from 'lucide-react';
 
 type MediaType = 'all' | 'movies' | 'shows';
 type SortField = 'title' | 'year' | 'last_watched' | 'deletion_date';
@@ -177,53 +178,47 @@ export default function LibraryPage() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-background">
       {/* Header */}
-      <header className="bg-white border-b border-gray-200">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
-          <div className="flex justify-between items-center">
-            <div className="flex gap-4 items-center">
-              <h1 className="text-2xl font-bold text-gray-900">Prunarr</h1>
-              <nav className="flex gap-2">
-                <Button
-                  variant="ghost"
-                  onClick={() => navigate('/')}
-                >
-                  Dashboard
-                </Button>
-                <Button
-                  variant="ghost"
-                  onClick={() => navigate('/timeline')}
-                >
-                  Timeline
-                </Button>
-                <Button
-                  variant="default"
-                >
-                  Library
-                </Button>
-              </nav>
-            </div>
-            <div className="flex gap-4 items-center">
-              <div className="text-sm text-gray-600">
-                {syncStatus?.in_progress ? (
-                  <span className="text-blue-600">Syncing...</span>
-                ) : syncStatus?.last_sync ? (
-                  <span>Last sync: {formatDate(syncStatus.last_sync)}</span>
-                ) : (
-                  <span>No sync yet</span>
-                )}
-              </div>
-              <Button variant="outline" onClick={handleLogout}>
-                Logout
+      <header className="border-b">
+        <div className="container mx-auto px-4 py-4 flex items-center justify-between">
+          <div className="flex items-center gap-6">
+            <h1 className="text-2xl font-bold">Prunarr</h1>
+            <nav className="flex gap-4">
+              <Button variant="ghost" onClick={() => navigate('/')}>
+                Dashboard
               </Button>
-            </div>
+              <Button variant="ghost" onClick={() => navigate('/timeline')}>
+                Timeline
+              </Button>
+              <Button variant="ghost" className="bg-accent">
+                Library
+              </Button>
+              <Button variant="ghost" onClick={() => navigate('/scheduled-deletions')}>
+                Scheduled Deletions
+              </Button>
+              <Button variant="ghost" onClick={() => navigate('/job-history')}>
+                Job History
+              </Button>
+            </nav>
+          </div>
+          <div className="flex items-center gap-4">
+            {syncStatus?.in_progress && (
+              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                <Clock className="h-4 w-4 animate-spin" />
+                Syncing...
+              </div>
+            )}
+            <Button variant="ghost" size="sm" onClick={handleLogout}>
+              <LogOut className="h-4 w-4 mr-2" />
+              Logout
+            </Button>
           </div>
         </div>
       </header>
 
       {/* Main Content */}
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+      <main className="container mx-auto px-4 py-8">
         {/* Filters and Search */}
         <div className="mb-6 space-y-4">
           <div className="flex gap-4 items-center flex-wrap">

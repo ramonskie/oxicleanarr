@@ -40,6 +40,18 @@ export default function DashboardPage() {
     refetchInterval: 5000, // Poll every 5 seconds
   });
 
+  const { data: jobsData } = useQuery({
+    queryKey: ['jobs'],
+    queryFn: () => apiClient.listJobs(),
+  });
+
+  // Get scheduled deletions count from latest job
+  const scheduledDeletionsCount = (() => {
+    if (!jobsData?.jobs || jobsData.jobs.length === 0) return 0;
+    const latestJob = jobsData.jobs[0];
+    return latestJob.summary?.would_delete?.length || 0;
+  })();
+
   const excludeMutation = useMutation({
     mutationFn: (id: string) => apiClient.addExclusion(id),
     onSuccess: () => {
@@ -104,6 +116,12 @@ export default function DashboardPage() {
               <Button variant="ghost" onClick={() => navigate('/library')}>
                 Library
               </Button>
+              <Button variant="ghost" onClick={() => navigate('/scheduled-deletions')}>
+                Scheduled Deletions
+              </Button>
+              <Button variant="ghost" onClick={() => navigate('/job-history')}>
+                Job History
+              </Button>
             </nav>
           </div>
           <div className="flex items-center gap-4">
@@ -152,15 +170,18 @@ export default function DashboardPage() {
               </CardContent>
             </Card>
 
-            <Card>
+            <Card 
+              className="cursor-pointer hover:bg-accent/50 transition-colors"
+              onClick={() => navigate('/scheduled-deletions')}
+            >
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">Leaving Soon</CardTitle>
+                <CardTitle className="text-sm font-medium">Scheduled Deletions</CardTitle>
                 <Clock className="h-4 w-4 text-muted-foreground" />
               </CardHeader>
               <CardContent>
-                <div className="text-2xl font-bold">{leavingSoon?.total || 0}</div>
+                <div className="text-2xl font-bold">{scheduledDeletionsCount}</div>
                 <p className="text-xs text-muted-foreground">
-                  Items to be deleted
+                  Items scheduled for deletion
                 </p>
               </CardContent>
             </Card>
@@ -170,10 +191,23 @@ export default function DashboardPage() {
           {leavingSoon && leavingSoon.items.length > 0 && (
             <Card>
               <CardHeader>
-                <CardTitle>Leaving Soon</CardTitle>
-                <CardDescription>
-                  Media items scheduled for deletion
-                </CardDescription>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <CardTitle>Leaving Soon</CardTitle>
+                    <CardDescription>
+                      Media items scheduled for deletion
+                    </CardDescription>
+                  </div>
+                  {scheduledDeletionsCount > 10 && (
+                    <Button 
+                      variant="outline" 
+                      size="sm"
+                      onClick={() => navigate('/scheduled-deletions')}
+                    >
+                      View All {scheduledDeletionsCount} Items
+                    </Button>
+                  )}
+                </div>
               </CardHeader>
               <CardContent>
                 <div className="space-y-4">
