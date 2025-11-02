@@ -869,15 +869,16 @@ Response:
 
 ### Current Status Overview
 
-**Backend Progress**: ~85% Complete ✅
+**Backend Progress**: ~90% Complete ✅
 - ✅ Complete REST API (12 endpoints)
 - ✅ All service integrations (Jellyfin, Radarr, Sonarr, Jellyseerr, Jellystat)
 - ✅ Sync engine with scheduler
 - ✅ Rules engine with retention policies
 - ✅ Deletion executor with dry-run
-- ✅ Exclusions management
+- ✅ Exclusions management with persistence through syncs
+- ✅ Deletion reason generation with detailed explanations
 - ✅ Job history tracking
-- ✅ Authentication & authorization
+- ✅ Authentication & authorization (with optional bypass)
 - ✅ Configuration with hot-reload
 - ⏳ User-based cleanup (pending)
 
@@ -887,11 +888,19 @@ Response:
 - Services: 52.2% coverage
 - Clients: 5.3% coverage
 
-**Frontend Progress**: 0% Complete ❌
-- ❌ No UI implementation yet
-- ✅ API ready for frontend consumption
-- ✅ Test script available (`test-api.sh`)
-- ✅ Documentation ready (`QUICKSTART.md`)
+**Frontend Progress**: ~50% Complete ⏳
+- ✅ React + Vite + shadcn/ui initialized
+- ✅ Login page functional
+- ✅ Dashboard with media statistics
+- ✅ Library browser (Movies/TV Shows tabs)
+- ✅ "Leaving Soon" view with countdown timers
+- ✅ Deletion reason tooltips
+- ✅ Exclusion management UI (Keep button)
+- ✅ Type badges and visual indicators
+- ✅ API client with TanStack Query
+- ❌ Deletion timeline view (pending)
+- ❌ Configuration editor (pending)
+- ❌ Advanced rules UI (pending)
 
 **Tools Available**:
 - `make dev` - Start development server
@@ -965,20 +974,24 @@ Response:
 - [x] Deletion timeline computation
 - [x] "Leaving Soon" calculator
 - [x] Exclusion logic (add/remove/list)
+- [x] Exclusion persistence through syncs (bug fix applied)
 - [x] Deletion executor with batch operations
 - [x] Dry-run enforcement (safe by default)
 - [x] Watch history integration (Jellystat)
 - [x] Request tracking (Jellyseerr)
+- [x] Deletion reason generation with detailed explanations
+- [x] `applyExclusions()` method to reapply exclusions during sync
 
 **Frontend**:
-- [ ] Library browser with filters
-- [ ] **"Leaving Soon" dashboard** with countdown timers
+- [x] Library browser with filters (basic implementation)
+- [x] **"Leaving Soon" dashboard** with countdown timers
+- [x] **Deletion reason tooltips** with info icons
 - [ ] **Deletion timeline view** (grouped by date)
-- [ ] **"Keep" button** on media cards
+- [x] **"Keep" button** on media cards (exclusion functionality)
 - [ ] Rules configuration page
 
-**Deliverable**: ✅ Backend deletion logic complete, exclusions working, rules engine operational
-**Status**: Backend complete with comprehensive testing, ready for UI implementation
+**Deliverable**: ✅ Backend deletion logic complete, exclusions working correctly through syncs, deletion reasons implemented
+**Status**: Backend complete with comprehensive testing and bug fixes applied. Basic frontend dashboard implemented with leaving-soon view and deletion reason tooltips.
 
 ---
 
@@ -989,28 +1002,34 @@ Response:
 - [x] Jellyseerr client
 - [x] Jellystat client
 - [x] Advanced rules (tag-based, episode limits)
+- [x] Config hot-reload
+- [x] Optional authentication bypass for testing (`admin.disable_auth`)
 - [ ] User-based cleanup with watch tracking
 - [ ] Collection management
-- [x] Config hot-reload
 
 **Frontend**:
-- [ ] React + Vite + shadcn/ui setup
-- [ ] Login page with JWT integration
-- [ ] Dashboard with media statistics
-- [ ] Library browser with filters
-- [ ] "Leaving Soon" view with countdown timers
-- [ ] Deletion timeline view
-- [ ] "Keep" button functionality
+- [x] React + Vite + shadcn/ui setup
+- [x] Login page with JWT integration
+- [x] Dashboard with media statistics
+- [x] Library browser with filters (Movies/TV Shows tabs)
+- [x] "Leaving Soon" view with countdown timers
+- [x] Deletion reason tooltips with info icons
+- [x] "Keep" button functionality (Shield/ShieldOff icons)
+- [x] Type badges (Movie/TV Show indicators)
+- [x] API client with null safety
+- [ ] Deletion timeline view (grouped by date)
 - [ ] Configuration page (full YAML editor)
 - [ ] Deletion history
 - [ ] Statistics/charts
 - [ ] User-based rules UI
-- [ ] Mobile responsive
-- [ ] Error handling
-- [ ] Loading states
+- [ ] Mobile responsive design improvements
+- [ ] Comprehensive error handling
+- [ ] Loading states improvements
 
 **Deliverable**: Production-ready UI + advanced backend features
-**Status**: Backend mostly complete (user-based rules pending), UI not started
+**Status**: 
+- Backend ~90% complete (user-based rules pending)
+- Frontend ~50% complete (basic dashboard operational, advanced features pending)
 
 ---
 
@@ -1175,6 +1194,118 @@ services:
 | **One-click "Keep"** | ❌ | ✅ NEW |
 | **Hot-reload config** | ❌ | ✅ NEW |
 | **API-first** | ❌ | ✅ NEW |
+
+---
+
+## 14. Recent Fixes & Improvements
+
+### 14.1 Exclusion Persistence Fix (Nov 2, 2025)
+
+**Problem**: 
+Media items marked as excluded in `data/exclusions.json` were showing `"excluded": false` after sync operations. When syncing from Radarr/Sonarr, new `models.Media` structs were created with the default value `IsExcluded = false`, causing exclusion status to be lost.
+
+**Solution**:
+Added `applyExclusions()` method in `internal/services/sync.go` that:
+1. Runs during `FullSync()` after all integrations sync but before retention rules
+2. Iterates through all media items in the library
+3. Checks each item's ID against the exclusions file using `IsExcluded(id)`
+4. Updates the `IsExcluded` field accordingly
+5. Logs the count of excluded items for debugging
+
+**Files Modified**:
+- `internal/services/sync.go` - Added `applyExclusions()` method (lines 572-595)
+- Called in `FullSync()` at line 234, before `applyRetentionRules()`
+
+**Testing**:
+- ✅ Exclusions persist through multiple full syncs
+- ✅ Adding/removing exclusions via API works correctly
+- ✅ Status endpoint shows correct `excluded_count`
+- ✅ Exclusions from file are reapplied after restart
+
+### 14.2 Deletion Reason Tooltips (Nov 2, 2025)
+
+**Problem**:
+Users couldn't understand why media items were scheduled for deletion. The UI showed countdown timers but no explanation of the retention rules being applied.
+
+**Solution**:
+1. **Backend** - Added deletion reason generation:
+   - Made `GenerateDeletionReason()` method public in `internal/services/rules.go` (line 132)
+   - Generates human-readable explanations like: "This movie was last watched 95 days ago. The retention policy for movies is 90 days, meaning it will be deleted after that period of inactivity."
+   - Populates `DeletionReason` field for all items with `daysUntilDue > 0` in `applyRetentionRules()`
+   - Also populates reason in `GetLeavingSoon()` method
+
+2. **Frontend** - Added info icon tooltips:
+   - Added `DeletionReason` field to `MediaItem` TypeScript interface
+   - Added Info icon from Lucide in `DashboardPage.tsx`
+   - Displays reason on hover using native HTML title attribute
+   - Shows next to countdown timer in "Leaving Soon" section
+
+**Files Modified**:
+- `internal/models/media.go` - Added `DeletionReason string` field
+- `internal/services/rules.go` - Made `GenerateDeletionReason()` public
+- `internal/services/sync.go` - Populates deletion reason in `applyRetentionRules()`
+- `web/src/lib/types.ts` - Added `deletion_reason?` field
+- `web/src/pages/DashboardPage.tsx` - Added Info icon with tooltip
+
+**Benefits**:
+- Users understand why items are being deleted
+- Transparency in retention policy enforcement
+- Better user experience with clear explanations
+
+### 14.3 Optional Authentication Bypass (Nov 2, 2025)
+
+**Problem**:
+Testing and development required generating JWT tokens for every API request, making iteration slow and cumbersome.
+
+**Solution**:
+Added optional authentication bypass feature:
+1. Added `DisableAuth bool` field to `AdminConfig` struct in `internal/config/types.go`
+2. Updated `Auth()` middleware in `internal/api/middleware/auth.go` to check config and bypass when enabled
+3. Added `disable_auth: true` option to test configuration file
+
+**Usage**:
+```yaml
+admin:
+  username: admin
+  password: changeme
+  disable_auth: true  # Bypass JWT authentication (development only)
+```
+
+**Security Notes**:
+- ⚠️ Should NEVER be enabled in production
+- Only for local development and testing
+- Logged as DEBUG message when bypassed
+- Config validation should warn if enabled
+
+**Files Modified**:
+- `internal/config/types.go` - Added `DisableAuth` field
+- `internal/api/middleware/auth.go` - Added bypass logic
+- `config/prunarr.test.yaml` - Example configuration
+
+### 14.4 API Response Null Safety (Nov 2, 2025)
+
+**Problem**:
+Frontend was receiving undefined/null responses from API endpoints, causing runtime errors in the UI when trying to iterate over media items.
+
+**Solution**:
+Updated API client in `web/src/lib/api.ts` to provide default empty arrays and safe response handling:
+```typescript
+const response = await this.request<MediaListResponse>(`/media/movies?${query}`);
+return {
+  items: response.items || [],
+  total: response.total || 0,
+};
+```
+
+Applied to:
+- `listMovies()`
+- `listShows()` 
+- `listLeavingSoon()`
+
+**Benefits**:
+- No more "Cannot iterate over undefined" errors
+- Graceful handling of empty responses
+- Consistent return types
 
 ---
 
