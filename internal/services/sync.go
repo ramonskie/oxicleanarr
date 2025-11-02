@@ -230,6 +230,9 @@ func (e *SyncEngine) FullSync(ctx context.Context) error {
 		}
 	}
 
+	// Apply retention rules to all media
+	e.applyRetentionRules()
+
 	// Update job
 	completedAt := time.Now()
 	duration := completedAt.Sub(startTime)
@@ -384,6 +387,7 @@ func (e *SyncEngine) syncJellyfin(ctx context.Context) error {
 			continue
 		}
 
+		found := false
 		for id, media := range e.mediaLibrary {
 			if media.Type == models.MediaTypeMovie && strconv.Itoa(media.TMDBID) == tmdbID {
 				media.JellyfinID = jm.ID
@@ -392,8 +396,30 @@ func (e *SyncEngine) syncJellyfin(ctx context.Context) error {
 					media.LastWatched = jm.UserData.LastPlayedDate
 				}
 				e.mediaLibrary[id] = media
+				found = true
 				break
 			}
+		}
+
+		// If not found in media library (Radarr unavailable), add from Jellyfin
+		if !found {
+			tmdbIDInt, _ := strconv.Atoi(tmdbID)
+			mediaID := fmt.Sprintf("jellyfin-%s", jm.ID)
+			media := models.Media{
+				ID:         mediaID,
+				Type:       models.MediaTypeMovie,
+				Title:      jm.Name,
+				Year:       jm.ProductionYear,
+				AddedAt:    jm.DateCreated,
+				FilePath:   jm.Path,
+				JellyfinID: jm.ID,
+				TMDBID:     tmdbIDInt,
+				WatchCount: jm.UserData.PlayCount,
+			}
+			if !jm.UserData.LastPlayedDate.IsZero() {
+				media.LastWatched = jm.UserData.LastPlayedDate
+			}
+			e.mediaLibrary[mediaID] = media
 		}
 	}
 
@@ -410,6 +436,7 @@ func (e *SyncEngine) syncJellyfin(ctx context.Context) error {
 			continue
 		}
 
+		found := false
 		for id, media := range e.mediaLibrary {
 			if media.Type == models.MediaTypeTVShow && strconv.Itoa(media.TVDBID) == tvdbID {
 				media.JellyfinID = js.ID
@@ -418,8 +445,30 @@ func (e *SyncEngine) syncJellyfin(ctx context.Context) error {
 					media.LastWatched = js.UserData.LastPlayedDate
 				}
 				e.mediaLibrary[id] = media
+				found = true
 				break
 			}
+		}
+
+		// If not found in media library (Sonarr unavailable), add from Jellyfin
+		if !found {
+			tvdbIDInt, _ := strconv.Atoi(tvdbID)
+			mediaID := fmt.Sprintf("jellyfin-%s", js.ID)
+			media := models.Media{
+				ID:         mediaID,
+				Type:       models.MediaTypeTVShow,
+				Title:      js.Name,
+				Year:       js.ProductionYear,
+				AddedAt:    js.DateCreated,
+				FilePath:   js.Path,
+				JellyfinID: js.ID,
+				TVDBID:     tvdbIDInt,
+				WatchCount: js.UserData.PlayCount,
+			}
+			if !js.UserData.LastPlayedDate.IsZero() {
+				media.LastWatched = js.UserData.LastPlayedDate
+			}
+			e.mediaLibrary[mediaID] = media
 		}
 	}
 
@@ -489,6 +538,27 @@ func (e *SyncEngine) GetMediaCount() int {
 	defer e.mediaLibraryLock.RUnlock()
 
 	return len(e.mediaLibrary)
+}
+
+// applyRetentionRules evaluates retention rules for all media items
+func (e *SyncEngine) applyRetentionRules() {
+	e.mediaLibraryLock.Lock()
+	defer e.mediaLibraryLock.Unlock()
+
+	for id, media := range e.mediaLibrary {
+		_, deleteAfter, _ := e.rules.EvaluateMedia(&media)
+
+		// Update media with deletion date
+		media.DeleteAfter = deleteAfter
+		if !deleteAfter.IsZero() {
+			daysUntilDue := int(time.Until(deleteAfter).Hours() / 24)
+			media.DaysUntilDue = daysUntilDue
+		}
+
+		e.mediaLibrary[id] = media
+	}
+
+	log.Debug().Int("media_count", len(e.mediaLibrary)).Msg("Applied retention rules to media")
 }
 
 // GetMediaLibrary returns the internal media library map (for testing purposes)
