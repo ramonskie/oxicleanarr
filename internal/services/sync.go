@@ -236,6 +236,9 @@ func (e *SyncEngine) FullSync(ctx context.Context) error {
 	// Apply retention rules to all media
 	e.applyRetentionRules()
 
+	// Calculate scheduled deletions and dry-run preview
+	scheduledCount, wouldDelete := e.calculateDeletionInfo()
+
 	// Update job
 	completedAt := time.Now()
 	duration := completedAt.Sub(startTime)
@@ -245,6 +248,13 @@ func (e *SyncEngine) FullSync(ctx context.Context) error {
 	job.Summary["movies"] = movieCount
 	job.Summary["tv_shows"] = tvShowCount
 	job.Summary["total_media"] = e.GetMediaCount()
+	job.Summary["scheduled_deletions"] = scheduledCount
+	job.Summary["dry_run"] = e.config.App.DryRun
+
+	// Add deletion preview for dry-run mode
+	if e.config.App.DryRun && len(wouldDelete) > 0 {
+		job.Summary["would_delete"] = wouldDelete
+	}
 
 	if lastErr != nil {
 		job.Status = storage.JobStatusFailed
@@ -264,6 +274,8 @@ func (e *SyncEngine) FullSync(ctx context.Context) error {
 		Str("job_id", jobID).
 		Int("movies", movieCount).
 		Int("tv_shows", tvShowCount).
+		Int("scheduled_deletions", scheduledCount).
+		Bool("dry_run", e.config.App.DryRun).
 		Dur("duration", duration).
 		Msg("Full sync completed")
 
@@ -593,6 +605,48 @@ func (e *SyncEngine) applyExclusions() {
 		Int("media_count", len(e.mediaLibrary)).
 		Int("excluded_count", excludedCount).
 		Msg("Applied exclusions to media")
+}
+
+// calculateDeletionInfo calculates scheduled deletions and returns dry-run preview
+func (e *SyncEngine) calculateDeletionInfo() (int, []map[string]interface{}) {
+	e.mediaLibraryLock.RLock()
+	defer e.mediaLibraryLock.RUnlock()
+
+	scheduledCount := 0
+	wouldDelete := make([]map[string]interface{}, 0)
+	now := time.Now()
+
+	for _, media := range e.mediaLibrary {
+		// Skip excluded items
+		if media.IsExcluded {
+			continue
+		}
+
+		// Skip requested items
+		if media.IsRequested {
+			continue
+		}
+
+		// Check if deletion date has passed
+		if !media.DeleteAfter.IsZero() && now.After(media.DeleteAfter) {
+			scheduledCount++
+			daysOverdue := int(now.Sub(media.DeleteAfter).Hours() / 24)
+			candidate := map[string]interface{}{
+				"id":           media.ID,
+				"title":        media.Title,
+				"year":         media.Year,
+				"type":         media.Type,
+				"file_size":    media.FileSize,
+				"delete_after": media.DeleteAfter,
+				"days_overdue": daysOverdue,
+				"reason":       media.DeletionReason,
+				"last_watched": media.LastWatched,
+			}
+			wouldDelete = append(wouldDelete, candidate)
+		}
+	}
+
+	return scheduledCount, wouldDelete
 }
 
 // GetMediaLibrary returns the internal media library map (for testing purposes)
