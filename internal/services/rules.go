@@ -114,6 +114,7 @@ func (e *RulesEngine) GetLeavingSoon(mediaList []models.Media) []models.Media {
 			if daysUntilDue > 0 && daysUntilDue <= leavingSoonDays {
 				media.DeleteAfter = deleteAfter
 				media.DaysUntilDue = daysUntilDue
+				media.DeletionReason = e.GenerateDeletionReason(&media, deleteAfter)
 				leavingSoon = append(leavingSoon, media)
 			}
 		}
@@ -125,6 +126,33 @@ func (e *RulesEngine) GetLeavingSoon(mediaList []models.Media) []models.Media {
 		Msg("Found leaving soon media")
 
 	return leavingSoon
+}
+
+// GenerateDeletionReason creates a human-readable explanation for why an item is scheduled for deletion
+func (e *RulesEngine) GenerateDeletionReason(media *models.Media, deleteAfter time.Time) string {
+	retentionPeriod := e.getRetentionString(media.Type)
+
+	// Determine if based on last watched or added date
+	var baseEvent string
+	var baseDate time.Time
+	if !media.LastWatched.IsZero() {
+		baseEvent = "last watched"
+		baseDate = media.LastWatched
+	} else {
+		baseEvent = "added"
+		baseDate = media.AddedAt
+	}
+
+	// Format the base date nicely
+	daysSinceBase := int(time.Since(baseDate).Hours() / 24)
+
+	mediaType := "movie"
+	if media.Type == models.MediaTypeTVShow {
+		mediaType = "TV show"
+	}
+
+	return fmt.Sprintf("This %s was %s %d days ago. The retention policy for %ss is %s, meaning it will be deleted after that period of inactivity.",
+		mediaType, baseEvent, daysSinceBase, mediaType, retentionPeriod)
 }
 
 // getRetentionString returns the human-readable retention period

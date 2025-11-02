@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/ramonskie/prunarr/internal/config"
 	"github.com/ramonskie/prunarr/internal/utils"
 	"github.com/rs/zerolog/log"
 )
@@ -16,8 +17,17 @@ const (
 )
 
 // Auth is a middleware that validates JWT tokens
+// If admin.disable_auth is true in config, authentication is bypassed
 func Auth(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Check if authentication is disabled
+		cfg := config.Get()
+		if cfg != nil && cfg.Admin.DisableAuth {
+			log.Debug().Msg("Authentication disabled, bypassing auth middleware")
+			next.ServeHTTP(w, r)
+			return
+		}
+
 		// Get token from Authorization header
 		authHeader := r.Header.Get("Authorization")
 		if authHeader == "" {

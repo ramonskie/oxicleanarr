@@ -15,20 +15,21 @@ const (
 
 // Media represents a media item (movie or TV show)
 type Media struct {
-	ID           string    `json:"id"`
-	Type         MediaType `json:"type"`
-	Title        string    `json:"title"`
-	Year         int       `json:"year,omitempty"`
-	AddedAt      time.Time `json:"added_at"`
-	LastWatched  time.Time `json:"last_watched,omitempty"`
-	WatchCount   int       `json:"watch_count"`
-	FilePath     string    `json:"file_path,omitempty"`
-	FileSize     int64     `json:"file_size,omitempty"`
-	QualityTag   string    `json:"quality_tag,omitempty"`
-	IsExcluded   bool      `json:"excluded"`
-	IsRequested  bool      `json:"is_requested"`
-	DeleteAfter  time.Time `json:"deletion_date,omitempty"`
-	DaysUntilDue int       `json:"days_until_deletion,omitempty"`
+	ID             string    `json:"id"`
+	Type           MediaType `json:"type"`
+	Title          string    `json:"title"`
+	Year           int       `json:"year,omitempty"`
+	AddedAt        time.Time `json:"added_at"`
+	LastWatched    time.Time `json:"last_watched,omitempty"`
+	WatchCount     int       `json:"watch_count"`
+	FilePath       string    `json:"file_path,omitempty"`
+	FileSize       int64     `json:"file_size,omitempty"`
+	QualityTag     string    `json:"quality_tag,omitempty"`
+	IsExcluded     bool      `json:"excluded"`
+	IsRequested    bool      `json:"is_requested"`
+	DeleteAfter    time.Time `json:"deletion_date,omitempty"`
+	DaysUntilDue   int       `json:"days_until_deletion,omitempty"`
+	DeletionReason string    `json:"deletion_reason,omitempty"`
 
 	// Source system IDs
 	JellyfinID string `json:"jellyfin_id,omitempty"`

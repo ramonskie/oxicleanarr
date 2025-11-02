@@ -230,6 +230,9 @@ func (e *SyncEngine) FullSync(ctx context.Context) error {
 		}
 	}
 
+	// Apply exclusions from file
+	e.applyExclusions()
+
 	// Apply retention rules to all media
 	e.applyRetentionRules()
 
@@ -553,12 +556,43 @@ func (e *SyncEngine) applyRetentionRules() {
 		if !deleteAfter.IsZero() {
 			daysUntilDue := int(time.Until(deleteAfter).Hours() / 24)
 			media.DaysUntilDue = daysUntilDue
+
+			// Set deletion reason for all items with future deletion dates
+			if daysUntilDue > 0 {
+				media.DeletionReason = e.rules.GenerateDeletionReason(&media, deleteAfter)
+			}
 		}
 
 		e.mediaLibrary[id] = media
 	}
 
 	log.Debug().Int("media_count", len(e.mediaLibrary)).Msg("Applied retention rules to media")
+}
+
+// applyExclusions applies exclusions from the exclusions file to all media items
+func (e *SyncEngine) applyExclusions() {
+	e.mediaLibraryLock.Lock()
+	defer e.mediaLibraryLock.Unlock()
+
+	excludedCount := 0
+	for id, media := range e.mediaLibrary {
+		// Check if this media ID is in the exclusions list
+		isExcluded := e.exclusions.IsExcluded(id)
+
+		// Update the media's exclusion status
+		if media.IsExcluded != isExcluded {
+			media.IsExcluded = isExcluded
+			e.mediaLibrary[id] = media
+			if isExcluded {
+				excludedCount++
+			}
+		}
+	}
+
+	log.Debug().
+		Int("media_count", len(e.mediaLibrary)).
+		Int("excluded_count", excludedCount).
+		Msg("Applied exclusions to media")
 }
 
 // GetMediaLibrary returns the internal media library map (for testing purposes)

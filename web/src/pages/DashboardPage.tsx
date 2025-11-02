@@ -5,7 +5,7 @@ import { useAuthStore } from '@/store/auth';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Film, Tv, Clock, LogOut, Shield, ShieldOff } from 'lucide-react';
+import { Film, Tv, Clock, LogOut, Shield, ShieldOff, Info } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 
 export default function DashboardPage() {
@@ -190,9 +190,16 @@ export default function DashboardPage() {
                         </Badge>
                         <div className="text-right">
                           {item.days_until_deletion !== undefined && (
-                            <p className="text-sm font-medium">
-                              {item.days_until_deletion} days
-                            </p>
+                            <div className="flex items-center gap-1 justify-end">
+                              <p className="text-sm font-medium">
+                                {item.days_until_deletion} days
+                              </p>
+                              {item.deletion_reason && (
+                                <span title={item.deletion_reason}>
+                                  <Info className="h-4 w-4 text-muted-foreground cursor-help" />
+                                </span>
+                              )}
+                            </div>
                           )}
                           <p className="text-xs text-muted-foreground">
                             until deletion

@@ -19,6 +19,7 @@ export interface MediaItem {
   last_synced?: string;
   days_until_deletion?: number;
   deletion_date?: string;
+  deletion_reason?: string;
   excluded: boolean;
 }
 

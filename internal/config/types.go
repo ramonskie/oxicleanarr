@@ -13,8 +13,9 @@ type Config struct {
 
 // AdminConfig holds admin user credentials
 type AdminConfig struct {
-	Username string `mapstructure:"username"`
-	Password string `mapstructure:"password"`
+	Username    string `mapstructure:"username"`
+	Password    string `mapstructure:"password"`
+	DisableAuth bool   `mapstructure:"disable_auth"`
 }
 
 // AppConfig holds general application settings

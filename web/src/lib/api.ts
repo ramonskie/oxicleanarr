@@ -68,21 +68,33 @@ class ApiClient {
     const query = new URLSearchParams();
     if (params?.limit) query.set('limit', params.limit.toString());
     if (params?.offset) query.set('offset', params.offset.toString());
-    return this.request<MediaListResponse>(`/media/movies?${query}`);
+    const response = await this.request<MediaListResponse>(`/media/movies?${query}`);
+    return {
+      items: response.items || [],
+      total: response.total || 0,
+    };
   }
 
   async listShows(params?: { limit?: number; offset?: number }): Promise<MediaListResponse> {
     const query = new URLSearchParams();
     if (params?.limit) query.set('limit', params.limit.toString());
     if (params?.offset) query.set('offset', params.offset.toString());
-    return this.request<MediaListResponse>(`/media/shows?${query}`);
+    const response = await this.request<MediaListResponse>(`/media/shows?${query}`);
+    return {
+      items: response.items || [],
+      total: response.total || 0,
+    };
   }
 
   async listLeavingSoon(params?: { limit?: number; offset?: number }): Promise<MediaListResponse> {
     const query = new URLSearchParams();
     if (params?.limit) query.set('limit', params.limit.toString());
     if (params?.offset) query.set('offset', params.offset.toString());
-    return this.request<MediaListResponse>(`/media/leaving-soon?${query}`);
+    const response = await this.request<MediaListResponse>(`/media/leaving-soon?${query}`);
+    return {
+      items: response.items || [],
+      total: response.total || 0,
+    };
   }
 
   async listExcluded(params?: { limit?: number; offset?: number }): Promise<MediaListResponse> {
