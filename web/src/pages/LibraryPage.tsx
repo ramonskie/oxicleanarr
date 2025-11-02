@@ -8,7 +8,7 @@ import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { useAuthStore } from '@/store/auth';
 import { useNavigate } from 'react-router-dom';
-import { Clock, LogOut } from 'lucide-react';
+import { Clock, LogOut, Shield, ShieldOff } from 'lucide-react';
 
 type MediaType = 'all' | 'movies' | 'shows';
 type SortField = 'title' | 'year' | 'last_watched' | 'deletion_date';
@@ -353,6 +353,7 @@ export default function LibraryPage() {
                       size="sm"
                       onClick={() => handleUnexclude(item.id)}
                     >
+                      <ShieldOff className="h-4 w-4 mr-2" />
                       Unexclude
                     </Button>
                   ) : (
@@ -361,6 +362,7 @@ export default function LibraryPage() {
                       size="sm"
                       onClick={() => handleExclude(item.id)}
                     >
+                      <Shield className="h-4 w-4 mr-2" />
                       Exclude
                     </Button>
                   )}
