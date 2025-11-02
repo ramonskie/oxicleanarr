@@ -52,8 +52,8 @@ func (h *MediaHandler) ListMovies(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(map[string]interface{}{
-		"movies": movies,
-		"total":  len(movies),
+		"items": movies,
+		"total": len(movies),
 	})
 }
 
@@ -87,7 +87,7 @@ func (h *MediaHandler) ListShows(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(map[string]interface{}{
-		"shows": shows,
+		"items": shows,
 		"total": len(shows),
 	})
 }
@@ -110,7 +110,7 @@ func (h *MediaHandler) ListLeavingSoon(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(map[string]interface{}{
-		"media": leavingSoon,
+		"items": leavingSoon,
 		"total": len(leavingSoon),
 	})
 }

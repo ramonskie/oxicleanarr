@@ -1,6 +1,9 @@
 package models
 
-import "time"
+import (
+	"encoding/json"
+	"time"
+)
 
 // MediaType represents the type of media
 type MediaType string
@@ -22,10 +25,10 @@ type Media struct {
 	FilePath     string    `json:"file_path,omitempty"`
 	FileSize     int64     `json:"file_size,omitempty"`
 	QualityTag   string    `json:"quality_tag,omitempty"`
-	IsExcluded   bool      `json:"is_excluded"`
+	IsExcluded   bool      `json:"excluded"`
 	IsRequested  bool      `json:"is_requested"`
-	DeleteAfter  time.Time `json:"delete_after,omitempty"`
-	DaysUntilDue int       `json:"days_until_due,omitempty"`
+	DeleteAfter  time.Time `json:"deletion_date,omitempty"`
+	DaysUntilDue int       `json:"days_until_deletion,omitempty"`
 
 	// Source system IDs
 	JellyfinID string `json:"jellyfin_id,omitempty"`
@@ -68,4 +71,22 @@ type DeletionTimeline struct {
 	TotalSizeBytes int64              `json:"total_size_bytes"`
 	ByDate         map[string][]Media `json:"by_date"`
 	LeavingSoon    []Media            `json:"leaving_soon"`
+}
+
+// MarshalJSON customizes the JSON output for Media to match frontend expectations
+func (m Media) MarshalJSON() ([]byte, error) {
+	// Convert type for frontend compatibility
+	mediaType := string(m.Type)
+	if mediaType == "tv_show" {
+		mediaType = "show"
+	}
+
+	type Alias Media
+	return json.Marshal(&struct {
+		Type string `json:"type"`
+		*Alias
+	}{
+		Type:  mediaType,
+		Alias: (*Alias)(&m),
+	})
 }
