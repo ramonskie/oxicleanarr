@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"flag"
 	"fmt"
 	"net/http"
 	"os"
@@ -19,6 +20,10 @@ import (
 )
 
 func main() {
+	// Parse command-line flags
+	configPath := flag.String("config", "", "Path to configuration file")
+	flag.Parse()
+
 	// Initialize logger
 	logLevel := getEnv("LOG_LEVEL", "info")
 	logFormat := getEnv("LOG_FORMAT", "json")
@@ -26,9 +31,12 @@ func main() {
 
 	log.Info().Msg("Starting Prunarr...")
 
-	// Load configuration
-	configPath := getEnv("CONFIG_PATH", "")
-	cfg, err := config.Load(configPath)
+	// Load configuration (priority: flag > env var > default)
+	configPathValue := *configPath
+	if configPathValue == "" {
+		configPathValue = getEnv("CONFIG_PATH", "")
+	}
+	cfg, err := config.Load(configPathValue)
 	if err != nil {
 		log.Fatal().Err(err).Msg("Failed to load configuration")
 	}
@@ -36,7 +44,7 @@ func main() {
 	log.Info().
 		Bool("dry_run", cfg.App.DryRun).
 		Int("leaving_soon_days", cfg.App.LeavingSoonDays).
-		Str("config_path", configPath).
+		Str("config_path", configPathValue).
 		Msg("Configuration loaded")
 
 	// Initialize JWT
@@ -85,7 +93,7 @@ func main() {
 		AuthService: authService,
 		SyncEngine:  syncEngine,
 		JobsFile:    jobsFile,
-		SPAHandler:  SPAHandler(),
+		SPAHandler:  nil,
 	})
 	log.Info().Msg("Router initialized")
 
