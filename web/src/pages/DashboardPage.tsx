@@ -92,7 +92,20 @@ export default function DashboardPage() {
       {/* Header */}
       <header className="border-b">
         <div className="container mx-auto px-4 py-4 flex items-center justify-between">
-          <h1 className="text-2xl font-bold">Prunarr</h1>
+          <div className="flex items-center gap-6">
+            <h1 className="text-2xl font-bold">Prunarr</h1>
+            <nav className="flex gap-4">
+              <Button variant="ghost" className="bg-accent">
+                Dashboard
+              </Button>
+              <Button variant="ghost" onClick={() => navigate('/timeline')}>
+                Timeline
+              </Button>
+              <Button variant="ghost" onClick={() => navigate('/library')}>
+                Library
+              </Button>
+            </nav>
+          </div>
           <div className="flex items-center gap-4">
             {syncStatus?.in_progress && (
               <div className="flex items-center gap-2 text-sm text-muted-foreground">
