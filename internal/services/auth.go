@@ -1,0 +1,73 @@
+package services
+
+import (
+	"errors"
+
+	"github.com/ramonskie/prunarr/internal/config"
+	"github.com/ramonskie/prunarr/internal/utils"
+	"golang.org/x/crypto/bcrypt"
+)
+
+var (
+	ErrInvalidCredentials = errors.New("invalid username or password")
+)
+
+// AuthService handles authentication operations
+type AuthService struct {
+	cfg *config.Config
+}
+
+// NewAuthService creates a new AuthService
+func NewAuthService(cfg *config.Config) *AuthService {
+	return &AuthService{
+		cfg: cfg,
+	}
+}
+
+// Login authenticates a user and returns a JWT token
+func (s *AuthService) Login(username, password string) (string, error) {
+	// Check username
+	if username != s.cfg.Admin.Username {
+		return "", ErrInvalidCredentials
+	}
+
+	// Check password
+	if err := bcrypt.CompareHashAndPassword([]byte(s.cfg.Admin.Password), []byte(password)); err != nil {
+		return "", ErrInvalidCredentials
+	}
+
+	// Generate JWT token
+	token, err := utils.GenerateToken(username)
+	if err != nil {
+		return "", err
+	}
+
+	return token, nil
+}
+
+// ChangePassword changes the admin password
+func (s *AuthService) ChangePassword(currentPassword, newPassword string) error {
+	// Verify current password
+	if err := bcrypt.CompareHashAndPassword([]byte(s.cfg.Admin.Password), []byte(currentPassword)); err != nil {
+		return ErrInvalidCredentials
+	}
+
+	// Hash new password
+	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(newPassword), bcrypt.DefaultCost)
+	if err != nil {
+		return err
+	}
+
+	// Update config (in memory)
+	s.cfg.Admin.Password = string(hashedPassword)
+
+	// Note: In a complete implementation, you'd want to persist this to the config file
+	// This would require access to the config file writer
+
+	return nil
+}
+
+// ValidateToken validates a JWT token
+func (s *AuthService) ValidateToken(token string) (*utils.JWTClaims, error) {
+	return utils.ValidateToken(token)
+}

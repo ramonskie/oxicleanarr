@@ -1,0 +1,44 @@
+# Binaries
+prunarr
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Test binaries
+*.test
+
+# Output of the go coverage tool
+*.out
+
+# Go workspace file
+go.work
+
+# Dependency directories
+vendor/
+
+# Configuration files (may contain secrets)
+# Ignore all active config files that may contain real API keys
+config/prunarr.yaml
+config/prunarr.test.yaml
+config/prunarr.*.yaml
+
+# Data files
+data/
+*.json
+
+# Log files
+*.log
+*.pid
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Environment variables
+.env
+.env.local
