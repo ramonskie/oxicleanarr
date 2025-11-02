@@ -888,19 +888,23 @@ Response:
 - Services: 52.2% coverage
 - Clients: 5.3% coverage
 
-**Frontend Progress**: ~50% Complete ⏳
+**Frontend Progress**: ~80% Complete ✅
 - ✅ React + Vite + shadcn/ui initialized
 - ✅ Login page functional
 - ✅ Dashboard with media statistics
-- ✅ Library browser (Movies/TV Shows tabs)
+- ✅ **Deletion timeline page** - Date-grouped deletion calendar view
+- ✅ **Library browser page** - Full paginated catalog with filtering/search/sorting
+- ✅ **Scheduled Deletions page** - Dedicated view for all dry-run deletion candidates
 - ✅ "Leaving Soon" view with countdown timers
 - ✅ Deletion reason tooltips
 - ✅ Exclusion management UI (Keep button)
 - ✅ Type badges and visual indicators
 - ✅ API client with TanStack Query
-- ❌ Deletion timeline view (pending)
-- ❌ Configuration editor (pending)
-- ❌ Advanced rules UI (pending)
+- ✅ Navigation menu across all pages
+- ✅ Job History page with detailed job information
+- ⏳ Configuration editor (pending)
+- ⏳ Advanced rules UI (pending)
+- ⏳ Mobile responsiveness polish (pending)
 
 **Tools Available**:
 - `make dev` - Start development server
@@ -983,15 +987,15 @@ Response:
 - [x] `applyExclusions()` method to reapply exclusions during sync
 
 **Frontend**:
-- [x] Library browser with filters (basic implementation)
+- [x] Library browser with filters (full implementation with pagination)
 - [x] **"Leaving Soon" dashboard** with countdown timers
 - [x] **Deletion reason tooltips** with info icons
-- [ ] **Deletion timeline view** (grouped by date)
+- [x] **Deletion timeline view** (grouped by date with aggregate stats)
 - [x] **"Keep" button** on media cards (exclusion functionality)
 - [ ] Rules configuration page
 
-**Deliverable**: ✅ Backend deletion logic complete, exclusions working correctly through syncs, deletion reasons implemented
-**Status**: Backend complete with comprehensive testing and bug fixes applied. Basic frontend dashboard implemented with leaving-soon view and deletion reason tooltips.
+**Deliverable**: ✅ Backend deletion logic complete, exclusions working correctly through syncs, deletion reasons implemented, Timeline and Library pages complete
+**Status**: Backend complete with comprehensive testing and bug fixes applied. Frontend dashboard, timeline, and library browser fully implemented with navigation.
 
 ---
 
@@ -1011,15 +1015,34 @@ Response:
 - [x] React + Vite + shadcn/ui setup
 - [x] Login page with JWT integration
 - [x] Dashboard with media statistics
-- [x] Library browser with filters (Movies/TV Shows tabs)
-- [x] "Leaving Soon" view with countdown timers
+- [x] **Deletion timeline page** - Date-grouped view with aggregate storage stats
+- [x] **Library browser page** - Paginated catalog (50 items/page) with:
+  - [x] Media type filtering (All/Movies/TV Shows)
+  - [x] Search by title or year
+  - [x] Multi-field sorting (title, year, last watched, deletion date)
+  - [x] Smart pagination controls
+  - [x] Detailed item cards with file size and metadata
+- [x] **Scheduled Deletions page** - Full dry-run preview with:
+  - [x] All deletion candidates from latest job
+  - [x] Media type filtering and search
+  - [x] Sortable by title, year, days overdue, file size
+  - [x] Stats summary (total items, space to be freed, counts by type)
+  - [x] Pagination (50 items/page)
+  - [x] Visual warning indicators
+- [x] **Job History page** - Sync job tracking with:
+  - [x] Job list with status indicators
+  - [x] Detailed job view dialog
+  - [x] Dry-run preview display
+  - [x] Summary statistics per job
+- [x] Navigation menu with active page highlighting
+- [x] "Leaving Soon" section on dashboard with countdown timers
+- [x] Dashboard links to Scheduled Deletions with count
 - [x] Deletion reason tooltips with info icons
 - [x] "Keep" button functionality (Shield/ShieldOff icons)
 - [x] Type badges (Movie/TV Show indicators)
 - [x] API client with null safety
-- [ ] Deletion timeline view (grouped by date)
 - [ ] Configuration page (full YAML editor)
-- [ ] Deletion history
+- [ ] Deletion history tracking (backend support needed)
 - [ ] Statistics/charts
 - [ ] User-based rules UI
 - [ ] Mobile responsive design improvements
@@ -1029,7 +1052,7 @@ Response:
 **Deliverable**: Production-ready UI + advanced backend features
 **Status**: 
 - Backend ~90% complete (user-based rules pending)
-- Frontend ~50% complete (basic dashboard operational, advanced features pending)
+- Frontend ~80% complete (Dashboard, Timeline, Library, Scheduled Deletions, and Job History pages operational; advanced features pending)
 
 ---
 
