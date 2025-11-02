@@ -31,16 +31,16 @@ type JellyfinItemsResponse struct {
 
 // RadarrMovie represents a movie in Radarr
 type RadarrMovie struct {
-	ID             int              `json:"id"`
-	Title          string           `json:"title"`
-	Year           int              `json:"year"`
-	Added          time.Time        `json:"added"`
-	Path           string           `json:"path"`
-	SizeOnDisk     int64            `json:"sizeOnDisk"`
-	HasFile        bool             `json:"hasFile"`
-	QualityProfile RadarrQuality    `json:"qualityProfileId"`
-	TmdbId         int              `json:"tmdbId"`
-	MovieFile      *RadarrMovieFile `json:"movieFile,omitempty"`
+	ID               int              `json:"id"`
+	Title            string           `json:"title"`
+	Year             int              `json:"year"`
+	Added            time.Time        `json:"added"`
+	Path             string           `json:"path"`
+	SizeOnDisk       int64            `json:"sizeOnDisk"`
+	HasFile          bool             `json:"hasFile"`
+	QualityProfileId int              `json:"qualityProfileId"`
+	TmdbId           int              `json:"tmdbId"`
+	MovieFile        *RadarrMovieFile `json:"movieFile,omitempty"`
 }
 
 // RadarrMovieFile represents a movie file in Radarr

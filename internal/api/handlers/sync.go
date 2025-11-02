@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 
@@ -22,11 +23,12 @@ func NewSyncHandler(syncEngine *services.SyncEngine) *SyncHandler {
 
 // TriggerFullSync handles POST /api/sync/full
 func (h *SyncHandler) TriggerFullSync(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
-
 	log.Info().Msg("Manual full sync triggered via API")
 
+	// Use background context for async operation, not request context
+	// which would be canceled when the response is sent
 	go func() {
+		ctx := context.Background()
 		if err := h.syncEngine.FullSync(ctx); err != nil {
 			log.Error().Err(err).Msg("Manual full sync failed")
 		}
@@ -42,11 +44,12 @@ func (h *SyncHandler) TriggerFullSync(w http.ResponseWriter, r *http.Request) {
 
 // TriggerIncrementalSync handles POST /api/sync/incremental
 func (h *SyncHandler) TriggerIncrementalSync(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
-
 	log.Info().Msg("Manual incremental sync triggered via API")
 
+	// Use background context for async operation, not request context
+	// which would be canceled when the response is sent
 	go func() {
+		ctx := context.Background()
 		if err := h.syncEngine.IncrementalSync(ctx); err != nil {
 			log.Error().Err(err).Msg("Manual incremental sync failed")
 		}

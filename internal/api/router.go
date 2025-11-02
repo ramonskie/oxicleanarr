@@ -1,6 +1,7 @@
 package api
 
 import (
+	"net/http"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -17,6 +18,7 @@ type RouterDependencies struct {
 	AuthService *services.AuthService
 	SyncEngine  *services.SyncEngine
 	JobsFile    *storage.JobsFile
+	SPAHandler  http.Handler // Optional: handler for serving the SPA frontend
 }
 
 // NewRouter creates and configures the HTTP router
@@ -79,6 +81,11 @@ func NewRouter(deps *RouterDependencies) *chi.Mux {
 			r.Get("/jobs/{id}", jobsHandler.GetJob)
 		})
 	})
+
+	// Mount SPA handler for frontend (if provided)
+	if deps.SPAHandler != nil {
+		r.Handle("/*", deps.SPAHandler)
+	}
 
 	return r
 }

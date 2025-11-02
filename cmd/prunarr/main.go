@@ -85,6 +85,7 @@ func main() {
 		AuthService: authService,
 		SyncEngine:  syncEngine,
 		JobsFile:    jobsFile,
+		SPAHandler:  SPAHandler(),
 	})
 	log.Info().Msg("Router initialized")
 
