@@ -36,15 +36,37 @@ export interface SyncStatus {
   status?: string;
 }
 
+export interface DeletionCandidate {
+  id: string;
+  title: string;
+  year?: number;
+  type: 'movie' | 'tv_show';
+  file_size?: number;
+  delete_after: string;
+  days_overdue: number;
+  reason?: string;
+  last_watched?: string;
+}
+
+export interface JobSummary {
+  movies?: number;
+  tv_shows?: number;
+  total_media?: number;
+  scheduled_deletions?: number;
+  dry_run?: boolean;
+  would_delete?: DeletionCandidate[];
+  [key: string]: any; // Allow other summary fields
+}
+
 export interface Job {
   id: string;
-  type: string;
-  status: string;
-  created_at: string;
-  updated_at: string;
+  type: 'full_sync' | 'incremental_sync';
+  status: 'pending' | 'running' | 'completed' | 'failed';
+  started_at: string;
   completed_at?: string;
+  duration_ms: number;
+  summary?: JobSummary;
   error?: string;
-  progress?: number;
 }
 
 export interface JobListResponse {
