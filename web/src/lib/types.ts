@@ -21,6 +21,8 @@ export interface MediaItem {
   deletion_date?: string;
   deletion_reason?: string;
   excluded: boolean;
+  file_size?: number;
+  file_path?: string;
 }
 
 export interface MediaListResponse {
