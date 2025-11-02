@@ -4,6 +4,7 @@ import { apiClient } from '@/lib/api';
 import { useAuthStore } from '@/store/auth';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
 import { Film, Tv, Clock, LogOut, Shield, ShieldOff } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 
@@ -184,6 +185,9 @@ export default function DashboardPage() {
                         </div>
                       </div>
                       <div className="flex items-center gap-4">
+                        <Badge variant={item.type === 'movie' ? 'movie' : 'show'}>
+                          {item.type === 'movie' ? 'Movie' : 'TV Show'}
+                        </Badge>
                         <div className="text-right">
                           {item.days_until_deletion !== undefined && (
                             <p className="text-sm font-medium">
@@ -255,6 +259,9 @@ export default function DashboardPage() {
                         </div>
                       </div>
                       <div className="flex items-center gap-4">
+                        <Badge variant={item.type === 'movie' ? 'movie' : 'show'}>
+                          {item.type === 'movie' ? 'Movie' : 'TV Show'}
+                        </Badge>
                         <div className="flex items-center gap-2 text-sm text-muted-foreground">
                           <Shield className="h-4 w-4 text-green-600" />
                           <span>Protected</span>
