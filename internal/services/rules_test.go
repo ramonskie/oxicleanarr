@@ -1387,3 +1387,270 @@ func TestRulesEngine_DisabledRetention_GetLeavingSoon(t *testing.T) {
 		assert.Empty(t, leavingSoon, "Should have no leaving soon items when retention is disabled")
 	})
 }
+
+func TestRulesEngine_GenerateDeletionReason(t *testing.T) {
+	now := time.Now()
+
+	t.Run("standard movie retention - watched", func(t *testing.T) {
+		cfg := createMockConfig("90d", "120d", 14)
+		exclusions := createMockExclusions()
+		engine := NewRulesEngine(cfg, exclusions)
+
+		media := models.Media{
+			ID:          "movie-1",
+			Type:        models.MediaTypeMovie,
+			Title:       "Test Movie",
+			AddedAt:     now.AddDate(0, 0, -100),
+			LastWatched: now.AddDate(0, 0, -50), // Watched 50 days ago
+			WatchCount:  3,
+		}
+
+		deleteAfter := now.AddDate(0, 0, 40) // 90 days from last watched
+		reason := engine.GenerateDeletionReason(&media, deleteAfter, "within retention")
+
+		assert.Contains(t, reason, "This movie was last watched 50 days ago")
+		assert.Contains(t, reason, "retention policy for movies is 90d")
+		assert.Contains(t, reason, "will be deleted after that period of inactivity")
+	})
+
+	t.Run("standard movie retention - never watched", func(t *testing.T) {
+		cfg := createMockConfig("90d", "120d", 14)
+		exclusions := createMockExclusions()
+		engine := NewRulesEngine(cfg, exclusions)
+
+		media := models.Media{
+			ID:         "movie-2",
+			Type:       models.MediaTypeMovie,
+			Title:      "Unwatched Movie",
+			AddedAt:    now.AddDate(0, 0, -30), // Added 30 days ago
+			WatchCount: 0,
+		}
+
+		deleteAfter := now.AddDate(0, 0, 60) // 90 days from added date
+		reason := engine.GenerateDeletionReason(&media, deleteAfter, "within retention")
+
+		assert.Contains(t, reason, "This movie was added 30 days ago")
+		assert.Contains(t, reason, "retention policy for movies is 90d")
+		assert.Contains(t, reason, "will be deleted after that period of inactivity")
+	})
+
+	t.Run("standard TV show retention - watched", func(t *testing.T) {
+		cfg := createMockConfig("90d", "120d", 14)
+		exclusions := createMockExclusions()
+		engine := NewRulesEngine(cfg, exclusions)
+
+		media := models.Media{
+			ID:          "tv-1",
+			Type:        models.MediaTypeTVShow,
+			Title:       "Test TV Show",
+			AddedAt:     now.AddDate(0, 0, -150),
+			LastWatched: now.AddDate(0, 0, -70), // Watched 70 days ago
+			WatchCount:  10,
+		}
+
+		deleteAfter := now.AddDate(0, 0, 50) // 120 days from last watched
+		reason := engine.GenerateDeletionReason(&media, deleteAfter, "within retention")
+
+		assert.Contains(t, reason, "This TV show was last watched 70 days ago")
+		assert.Contains(t, reason, "retention policy for TV shows is 120d")
+		assert.Contains(t, reason, "will be deleted after that period of inactivity")
+	})
+
+	t.Run("standard TV show retention - never watched", func(t *testing.T) {
+		cfg := createMockConfig("90d", "120d", 14)
+		exclusions := createMockExclusions()
+		engine := NewRulesEngine(cfg, exclusions)
+
+		media := models.Media{
+			ID:         "tv-2",
+			Type:       models.MediaTypeTVShow,
+			Title:      "Unwatched TV Show",
+			AddedAt:    now.AddDate(0, 0, -45), // Added 45 days ago
+			WatchCount: 0,
+		}
+
+		deleteAfter := now.AddDate(0, 0, 75) // 120 days from added date
+		reason := engine.GenerateDeletionReason(&media, deleteAfter, "within retention")
+
+		assert.Contains(t, reason, "This TV show was added 45 days ago")
+		assert.Contains(t, reason, "retention policy for TV shows is 120d")
+		assert.Contains(t, reason, "will be deleted after that period of inactivity")
+	})
+
+	t.Run("user rule within retention - watched movie", func(t *testing.T) {
+		cfg := createMockConfig("90d", "120d", 14)
+		exclusions := createMockExclusions()
+		engine := NewRulesEngine(cfg, exclusions)
+
+		media := models.Media{
+			ID:          "movie-3",
+			Type:        models.MediaTypeMovie,
+			Title:       "Trial User Movie",
+			AddedAt:     now.AddDate(0, 0, -50),
+			LastWatched: now.AddDate(0, 0, -22), // Watched 22 days ago
+			WatchCount:  1,
+		}
+
+		deleteAfter := now.AddDate(0, 0, 8)                           // 30 days from last watched
+		reasonStr := "user rule 'Trial Users' within retention (30d)" // From applyUserRule
+		reason := engine.GenerateDeletionReason(&media, deleteAfter, reasonStr)
+
+		assert.Contains(t, reason, "This movie was last watched 22 days ago")
+		assert.Contains(t, reason, "matches the 'Trial Users' user rule with 30d retention")
+		assert.Contains(t, reason, "will be deleted after that period of inactivity")
+		assert.NotContains(t, reason, "90d") // Should NOT mention standard retention
+	})
+
+	t.Run("user rule retention expired - watched movie", func(t *testing.T) {
+		cfg := createMockConfig("90d", "120d", 14)
+		exclusions := createMockExclusions()
+		engine := NewRulesEngine(cfg, exclusions)
+
+		media := models.Media{
+			ID:          "movie-4",
+			Type:        models.MediaTypeMovie,
+			Title:       "Overdue Movie",
+			AddedAt:     now.AddDate(0, 0, -100),
+			LastWatched: now.AddDate(0, 0, -45), // Watched 45 days ago
+			WatchCount:  2,
+		}
+
+		deleteAfter := now.AddDate(0, 0, -15)                          // Should have been deleted 15 days ago
+		reasonStr := "user rule 'Trial Users' retention expired (30d)" // From applyUserRule
+		reason := engine.GenerateDeletionReason(&media, deleteAfter, reasonStr)
+
+		assert.Contains(t, reason, "This movie was last watched 45 days ago")
+		assert.Contains(t, reason, "matched the 'Trial Users' user rule with 30d retention")
+		assert.Contains(t, reason, "is now scheduled for deletion")
+		assert.NotContains(t, reason, "will be deleted") // Different wording for overdue
+	})
+
+	t.Run("user rule within retention - unwatched TV show", func(t *testing.T) {
+		cfg := createMockConfig("90d", "120d", 14)
+		exclusions := createMockExclusions()
+		engine := NewRulesEngine(cfg, exclusions)
+
+		media := models.Media{
+			ID:         "tv-3",
+			Type:       models.MediaTypeTVShow,
+			Title:      "Trial User TV Show",
+			AddedAt:    now.AddDate(0, 0, -10), // Added 10 days ago
+			WatchCount: 0,
+		}
+
+		deleteAfter := now.AddDate(0, 0, 20) // 30 days from added date
+		reasonStr := "user rule 'Short Retention' within retention (30d)"
+		reason := engine.GenerateDeletionReason(&media, deleteAfter, reasonStr)
+
+		assert.Contains(t, reason, "This TV show was added 10 days ago")
+		assert.Contains(t, reason, "matches the 'Short Retention' user rule with 30d retention")
+		assert.Contains(t, reason, "will be deleted after that period of inactivity")
+		assert.NotContains(t, reason, "120d") // Should NOT mention standard TV retention
+	})
+
+	t.Run("user rule retention expired - unwatched TV show", func(t *testing.T) {
+		cfg := createMockConfig("90d", "120d", 14)
+		exclusions := createMockExclusions()
+		engine := NewRulesEngine(cfg, exclusions)
+
+		media := models.Media{
+			ID:         "tv-4",
+			Type:       models.MediaTypeTVShow,
+			Title:      "Overdue TV Show",
+			AddedAt:    now.AddDate(0, 0, -50), // Added 50 days ago
+			WatchCount: 0,
+		}
+
+		deleteAfter := now.AddDate(0, 0, -20) // Should have been deleted 20 days ago
+		reasonStr := "user rule 'Short Retention' retention expired (30d)"
+		reason := engine.GenerateDeletionReason(&media, deleteAfter, reasonStr)
+
+		assert.Contains(t, reason, "This TV show was added 50 days ago")
+		assert.Contains(t, reason, "matched the 'Short Retention' user rule with 30d retention")
+		assert.Contains(t, reason, "is now scheduled for deletion")
+	})
+
+	t.Run("different retention periods", func(t *testing.T) {
+		testCases := []struct {
+			name              string
+			movieRetention    string
+			tvRetention       string
+			mediaType         models.MediaType
+			expectedRetention string
+		}{
+			{
+				name:              "7d movie retention",
+				movieRetention:    "7d",
+				tvRetention:       "30d",
+				mediaType:         models.MediaTypeMovie,
+				expectedRetention: "7d",
+			},
+			{
+				name:              "30d movie retention",
+				movieRetention:    "30d",
+				tvRetention:       "60d",
+				mediaType:         models.MediaTypeMovie,
+				expectedRetention: "30d",
+			},
+			{
+				name:              "180d TV retention",
+				movieRetention:    "90d",
+				tvRetention:       "180d",
+				mediaType:         models.MediaTypeTVShow,
+				expectedRetention: "180d",
+			},
+			{
+				name:              "365d movie retention",
+				movieRetention:    "365d",
+				tvRetention:       "90d",
+				mediaType:         models.MediaTypeMovie,
+				expectedRetention: "365d",
+			},
+		}
+
+		for _, tc := range testCases {
+			t.Run(tc.name, func(t *testing.T) {
+				cfg := createMockConfig(tc.movieRetention, tc.tvRetention, 14)
+				exclusions := createMockExclusions()
+				engine := NewRulesEngine(cfg, exclusions)
+
+				media := models.Media{
+					ID:         "test-media",
+					Type:       tc.mediaType,
+					Title:      "Test",
+					AddedAt:    now.AddDate(0, 0, -20),
+					WatchCount: 0,
+				}
+
+				deleteAfter := now.AddDate(0, 0, 30)
+				reason := engine.GenerateDeletionReason(&media, deleteAfter, "within retention")
+
+				assert.Contains(t, reason, tc.expectedRetention, "Should mention the correct retention period")
+			})
+		}
+	})
+
+	t.Run("fallback when user rule parsing fails", func(t *testing.T) {
+		cfg := createMockConfig("90d", "120d", 14)
+		exclusions := createMockExclusions()
+		engine := NewRulesEngine(cfg, exclusions)
+
+		media := models.Media{
+			ID:          "movie-5",
+			Type:        models.MediaTypeMovie,
+			Title:       "Malformed Rule Movie",
+			AddedAt:     now.AddDate(0, 0, -30),
+			LastWatched: now.AddDate(0, 0, -15),
+			WatchCount:  1,
+		}
+
+		deleteAfter := now.AddDate(0, 0, 15)
+		// Malformed reason string (missing quotes or parentheses)
+		reasonStr := "user rule something wrong"
+		reason := engine.GenerateDeletionReason(&media, deleteAfter, reasonStr)
+
+		// Should fall back to basic format
+		assert.Contains(t, reason, "This movie was last watched 15 days ago")
+		assert.Contains(t, reason, reasonStr)
+	})
+}
