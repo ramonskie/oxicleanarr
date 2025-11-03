@@ -102,10 +102,13 @@ type AdvancedRule struct {
 }
 
 // UserRule represents a user-based cleanup rule
+// Note: Only ONE identifier (UserID, Username, OR Email) is required per rule.
+// Multiple identifiers can be provided for redundancy but are not necessary.
+// Matching is case-insensitive for Username and Email.
 type UserRule struct {
-	UserID         *int   `mapstructure:"user_id"`
-	Username       string `mapstructure:"username"`
-	Email          string `mapstructure:"email"`
-	Retention      string `mapstructure:"retention"`
-	RequireWatched *bool  `mapstructure:"require_watched"`
+	UserID         *int   `mapstructure:"user_id"`         // Jellyseerr user ID (most reliable)
+	Username       string `mapstructure:"username"`        // Jellyseerr username (case-insensitive)
+	Email          string `mapstructure:"email"`           // User email address (case-insensitive)
+	Retention      string `mapstructure:"retention"`       // Required: duration format (e.g., "7d", "30d")
+	RequireWatched *bool  `mapstructure:"require_watched"` // Optional: only delete if user watched the content
 }

@@ -656,21 +656,31 @@ advanced_rules:
 
 ### 7.3 Matching Strategies
 
-User matching supports multiple identifiers (in order of priority):
+User matching is **flexible and simple** - provide **any ONE** of these identifiers:
 
 1. **user_id** (integer) - Most reliable, from Jellyseerr user ID
 2. **username** (string) - Jellyseerr username (case-insensitive)
 3. **email** (string) - User email address (case-insensitive)
 
-**Example:**
+**Important:** You only need to specify **ONE** identifier per user. The system will match based on whichever field you provide.
+
+**Example - Simple single-identifier matching:**
 ```yaml
 users:
-  - user_id: 42              # Matches Jellyseerr user ID 42
+  - user_id: 42              # ✅ Matches ONLY by user ID
     retention: 14d
-  - username: john_doe       # Matches username "john_doe" (case-insensitive)
+  - username: john_doe       # ✅ Matches ONLY by username (case-insensitive)
     retention: 30d
-  - email: temp@example.com  # Matches email "temp@example.com"
+  - email: temp@example.com  # ✅ Matches ONLY by email (case-insensitive)
     retention: 7d
+```
+
+**Advanced - Multiple identifiers (optional redundancy):**
+```yaml
+users:
+  - user_id: 42              # Matches by ID OR email (whichever is available)
+    email: user@example.com
+    retention: 14d
 ```
 
 ### 7.4 Watch Tracking Logic

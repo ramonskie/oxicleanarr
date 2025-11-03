@@ -49,3 +49,26 @@ integrations:
 #   host: 0.0.0.0
 #   port: 8080
 
+# Advanced Rules (optional) - Tag-based, episode limits, or user-based cleanup
+# advanced_rules:
+#   # Example 1: User-Based Cleanup
+#   # Match users by EITHER user_id, username, OR email (any one is sufficient)
+#   - name: Trial Users
+#     type: user
+#     enabled: true
+#     users:
+#       - user_id: 1                # Match by Jellyseerr user ID
+#         retention: 30d
+#       - email: guest@example.com  # Match by email address
+#         retention: 7d
+#         require_watched: true     # Only delete after user has watched
+#       - username: trial_user      # Match by username
+#         retention: 14d
+#   
+#   # Example 2: Tag-Based Rules (future feature)
+#   # - name: Kids Content
+#   #   type: tag
+#   #   enabled: true
+#   #   tag: kids
+#   #   retention: 60d
+
