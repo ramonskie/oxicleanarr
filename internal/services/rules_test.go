@@ -1116,3 +1116,274 @@ func TestRulesEngine_UserBased_MultipleRulesFirstMatch(t *testing.T) {
 		assert.NotContains(t, reason, "30d")
 	})
 }
+
+// ==================== Disabled Retention Tests ====================
+
+func TestParseDuration_DisabledValues(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected time.Duration
+	}{
+		{
+			name:     "parse never - disables retention",
+			input:    "never",
+			expected: 0,
+		},
+		{
+			name:     "parse 0d - disables retention",
+			input:    "0d",
+			expected: 0,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result, err := parseDuration(tt.input)
+			require.NoError(t, err)
+			assert.Equal(t, tt.expected, result)
+		})
+	}
+}
+
+func TestRulesEngine_DisabledMovieRetention(t *testing.T) {
+	t.Run("movie retention disabled with 'never'", func(t *testing.T) {
+		cfg := createMockConfig("never", "120d", 14)
+		exclusions := createMockExclusions()
+		engine := NewRulesEngine(cfg, exclusions)
+
+		// Very old unwatched movie - would normally be deleted
+		media := createMockMedia("movie-1", models.MediaTypeMovie, 365, -1, false, false)
+
+		shouldDelete, deleteAfter, reason := engine.EvaluateMedia(&media)
+
+		assert.False(t, shouldDelete)
+		assert.True(t, deleteAfter.IsZero())
+		assert.Equal(t, "retention disabled", reason)
+	})
+
+	t.Run("movie retention disabled with '0d'", func(t *testing.T) {
+		cfg := createMockConfig("0d", "120d", 14)
+		exclusions := createMockExclusions()
+		engine := NewRulesEngine(cfg, exclusions)
+
+		// Very old unwatched movie - would normally be deleted
+		media := createMockMedia("movie-1", models.MediaTypeMovie, 365, -1, false, false)
+
+		shouldDelete, deleteAfter, reason := engine.EvaluateMedia(&media)
+
+		assert.False(t, shouldDelete)
+		assert.True(t, deleteAfter.IsZero())
+		assert.Equal(t, "retention disabled", reason)
+	})
+
+	t.Run("TV retention still applies when movie retention disabled", func(t *testing.T) {
+		cfg := createMockConfig("never", "120d", 14)
+		exclusions := createMockExclusions()
+		engine := NewRulesEngine(cfg, exclusions)
+
+		// Old TV show past 120d retention
+		media := createMockMedia("tv-1", models.MediaTypeTVShow, 150, -1, false, false)
+
+		shouldDelete, deleteAfter, reason := engine.EvaluateMedia(&media)
+
+		assert.True(t, shouldDelete)
+		assert.False(t, deleteAfter.IsZero())
+		assert.Contains(t, reason, "retention period expired")
+		assert.Contains(t, reason, "120d")
+	})
+}
+
+func TestRulesEngine_DisabledTVRetention(t *testing.T) {
+	t.Run("TV retention disabled with 'never'", func(t *testing.T) {
+		cfg := createMockConfig("90d", "never", 14)
+		exclusions := createMockExclusions()
+		engine := NewRulesEngine(cfg, exclusions)
+
+		// Very old unwatched TV show - would normally be deleted
+		media := createMockMedia("tv-1", models.MediaTypeTVShow, 365, -1, false, false)
+
+		shouldDelete, deleteAfter, reason := engine.EvaluateMedia(&media)
+
+		assert.False(t, shouldDelete)
+		assert.True(t, deleteAfter.IsZero())
+		assert.Equal(t, "retention disabled", reason)
+	})
+
+	t.Run("TV retention disabled with '0d'", func(t *testing.T) {
+		cfg := createMockConfig("90d", "0d", 14)
+		exclusions := createMockExclusions()
+		engine := NewRulesEngine(cfg, exclusions)
+
+		// Very old unwatched TV show - would normally be deleted
+		media := createMockMedia("tv-1", models.MediaTypeTVShow, 365, -1, false, false)
+
+		shouldDelete, deleteAfter, reason := engine.EvaluateMedia(&media)
+
+		assert.False(t, shouldDelete)
+		assert.True(t, deleteAfter.IsZero())
+		assert.Equal(t, "retention disabled", reason)
+	})
+
+	t.Run("movie retention still applies when TV retention disabled", func(t *testing.T) {
+		cfg := createMockConfig("90d", "never", 14)
+		exclusions := createMockExclusions()
+		engine := NewRulesEngine(cfg, exclusions)
+
+		// Old movie past 90d retention
+		media := createMockMedia("movie-1", models.MediaTypeMovie, 120, -1, false, false)
+
+		shouldDelete, deleteAfter, reason := engine.EvaluateMedia(&media)
+
+		assert.True(t, shouldDelete)
+		assert.False(t, deleteAfter.IsZero())
+		assert.Contains(t, reason, "retention period expired")
+		assert.Contains(t, reason, "90d")
+	})
+}
+
+func TestRulesEngine_BothRetentionsDisabled(t *testing.T) {
+	t.Run("both movie and TV retention disabled", func(t *testing.T) {
+		cfg := createMockConfig("never", "never", 14)
+		exclusions := createMockExclusions()
+		engine := NewRulesEngine(cfg, exclusions)
+
+		// Very old movie
+		movie := createMockMedia("movie-1", models.MediaTypeMovie, 365, -1, false, false)
+		shouldDelete, deleteAfter, reason := engine.EvaluateMedia(&movie)
+
+		assert.False(t, shouldDelete)
+		assert.True(t, deleteAfter.IsZero())
+		assert.Equal(t, "retention disabled", reason)
+
+		// Very old TV show
+		tv := createMockMedia("tv-1", models.MediaTypeTVShow, 365, -1, false, false)
+		shouldDelete, deleteAfter, reason = engine.EvaluateMedia(&tv)
+
+		assert.False(t, shouldDelete)
+		assert.True(t, deleteAfter.IsZero())
+		assert.Equal(t, "retention disabled", reason)
+	})
+
+	t.Run("user rules still apply when standard retention disabled", func(t *testing.T) {
+		userID := 100
+		advancedRules := []config.AdvancedRule{
+			{
+				Name:    "User Rule",
+				Type:    "user",
+				Enabled: true,
+				Users: []config.UserRule{
+					{
+						UserID:    &userID,
+						Retention: "7d",
+					},
+				},
+			},
+		}
+
+		cfg := &config.Config{
+			Rules: config.RulesConfig{
+				MovieRetention: "never", // Standard retention disabled
+				TVRetention:    "never", // Standard retention disabled
+			},
+			AdvancedRules: advancedRules,
+			App: config.AppConfig{
+				LeavingSoonDays: 14,
+			},
+		}
+		exclusions := createMockExclusions()
+		engine := NewRulesEngine(cfg, exclusions)
+
+		username := "testuser"
+		email := "test@example.com"
+		// Media matches user rule and is past 7d retention
+		media := createMockMediaWithUser("movie-1", models.MediaTypeMovie, 10, 10, &userID, &username, &email)
+
+		shouldDelete, deleteAfter, reason := engine.EvaluateMedia(&media)
+
+		// User rule should apply even though standard retention is disabled
+		assert.True(t, shouldDelete)
+		assert.False(t, deleteAfter.IsZero())
+		assert.Contains(t, reason, "user rule")
+		assert.Contains(t, reason, "7d")
+	})
+
+	t.Run("non-matching users with disabled standard retention", func(t *testing.T) {
+		userID := 100
+		advancedRules := []config.AdvancedRule{
+			{
+				Name:    "User Rule",
+				Type:    "user",
+				Enabled: true,
+				Users: []config.UserRule{
+					{
+						UserID:    &userID,
+						Retention: "7d",
+					},
+				},
+			},
+		}
+
+		cfg := &config.Config{
+			Rules: config.RulesConfig{
+				MovieRetention: "never", // Standard retention disabled
+				TVRetention:    "never", // Standard retention disabled
+			},
+			AdvancedRules: advancedRules,
+			App: config.AppConfig{
+				LeavingSoonDays: 14,
+			},
+		}
+		exclusions := createMockExclusions()
+		engine := NewRulesEngine(cfg, exclusions)
+
+		differentUserID := 999
+		username := "otheruser"
+		email := "other@example.com"
+		// Media does NOT match user rule, very old
+		media := createMockMediaWithUser("movie-1", models.MediaTypeMovie, 365, -1, &differentUserID, &username, &email)
+
+		shouldDelete, deleteAfter, reason := engine.EvaluateMedia(&media)
+
+		// Standard retention is disabled, so should NOT delete
+		assert.False(t, shouldDelete)
+		assert.True(t, deleteAfter.IsZero())
+		assert.Equal(t, "retention disabled", reason)
+	})
+}
+
+func TestRulesEngine_DisabledRetention_GetDeletionCandidates(t *testing.T) {
+	t.Run("no candidates when retention disabled", func(t *testing.T) {
+		cfg := createMockConfig("never", "never", 14)
+		exclusions := createMockExclusions()
+		engine := NewRulesEngine(cfg, exclusions)
+
+		mediaList := []models.Media{
+			createMockMedia("movie-1", models.MediaTypeMovie, 365, -1, false, false),
+			createMockMedia("movie-2", models.MediaTypeMovie, 180, -1, false, false),
+			createMockMedia("tv-1", models.MediaTypeTVShow, 365, -1, false, false),
+			createMockMedia("tv-2", models.MediaTypeTVShow, 180, -1, false, false),
+		}
+
+		candidates := engine.GetDeletionCandidates(mediaList)
+
+		assert.Empty(t, candidates, "Should have no candidates when retention is disabled")
+	})
+}
+
+func TestRulesEngine_DisabledRetention_GetLeavingSoon(t *testing.T) {
+	t.Run("no leaving soon items when retention disabled", func(t *testing.T) {
+		cfg := createMockConfig("never", "never", 14)
+		exclusions := createMockExclusions()
+		engine := NewRulesEngine(cfg, exclusions)
+
+		mediaList := []models.Media{
+			createMockMedia("movie-1", models.MediaTypeMovie, 75, -1, false, false), // Would be leaving soon with normal retention
+			createMockMedia("tv-1", models.MediaTypeTVShow, 105, -1, false, false),  // Would be leaving soon with normal retention
+		}
+
+		leavingSoon := engine.GetLeavingSoon(mediaList)
+
+		assert.Empty(t, leavingSoon, "Should have no leaving soon items when retention is disabled")
+	})
+}

@@ -195,6 +195,11 @@ func validateIntegration(errors ValidationErrors, prefix, urlStr, apiKey string)
 }
 
 // isValidDuration checks if a duration string is valid (e.g., "30d", "1h", "90d")
+// Special values "never" and "0d" are allowed to disable retention rules
 func isValidDuration(duration string) bool {
+	// Allow special values for disabling retention
+	if duration == "never" || duration == "0d" {
+		return true
+	}
 	return durationRegex.MatchString(duration)
 }

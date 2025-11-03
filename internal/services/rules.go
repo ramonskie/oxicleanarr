@@ -67,6 +67,15 @@ func (e *RulesEngine) EvaluateMedia(media *models.Media) (shouldDelete bool, del
 		return false, time.Time{}, "invalid retention"
 	}
 
+	// Check if retention is disabled (0d or "never")
+	if retentionDuration == 0 {
+		log.Debug().
+			Str("media_id", media.ID).
+			Str("type", string(media.Type)).
+			Msg("Standard retention disabled for this media type")
+		return false, time.Time{}, "retention disabled"
+	}
+
 	// Calculate deletion time based on last watched or added date
 	var baseTime time.Time
 	if !media.LastWatched.IsZero() {
@@ -295,10 +304,15 @@ func (e *RulesEngine) getRetentionString(mediaType models.MediaType) string {
 	return e.config.Rules.TVRetention
 }
 
-// parseDuration parses duration strings like "90d", "24h", "30m"
+// parseDuration parses duration strings like "90d", "24h", "30m", or special values "never"/"0d" to disable
 func parseDuration(s string) (time.Duration, error) {
 	if s == "" {
 		return 0, fmt.Errorf("empty duration string")
+	}
+
+	// Handle special values to disable retention
+	if s == "never" || s == "0d" {
+		return 0, nil // Return 0 to indicate disabled
 	}
 
 	// Match patterns like "90d", "24h", "30m"
@@ -306,7 +320,7 @@ func parseDuration(s string) (time.Duration, error) {
 	matches := re.FindStringSubmatch(s)
 
 	if len(matches) != 3 {
-		return 0, fmt.Errorf("invalid duration format: %s (expected format: 90d, 24h, 30m)", s)
+		return 0, fmt.Errorf("invalid duration format: %s (expected format: 90d, 24h, 30m, or 'never')", s)
 	}
 
 	value, err := strconv.Atoi(matches[1])

@@ -42,8 +42,12 @@ integrations:
 #   auto_start: true
 
 # rules:
-#   movie_retention: 90d
-#   tv_retention: 120d
+#   movie_retention: 90d        # How long to keep movies (e.g., "90d", "30d", "180d")
+#   tv_retention: 120d          # How long to keep TV shows (e.g., "120d", "60d", "240d")
+#   # Use "never" or "0d" to disable standard retention rules entirely
+#   # Useful when you only want user-based cleanup or advanced rules
+#   # movie_retention: never    # Disable movie retention (only user rules apply)
+#   # tv_retention: never       # Disable TV retention (only user rules apply)
 
 # server:
 #   host: 0.0.0.0

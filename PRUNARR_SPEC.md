@@ -119,8 +119,8 @@ sync:
 
 # Optional simple retention rules (defaults shown)
 rules:
-  movie_retention: 90d        # Default: 90d
-  tv_retention: 120d          # Default: 120d
+  movie_retention: 90d        # Default: 90d (or "never"/"0d" to disable)
+  tv_retention: 120d          # Default: 120d (or "never"/"0d" to disable)
 
 # Optional advanced rules (tag-based, episode limits)
 advanced_rules:
@@ -200,7 +200,7 @@ integrations:
 - ✅ Admin credentials present
 - ✅ At least one integration enabled
 - ✅ Valid URLs for enabled integrations (parseable, non-empty)
-- ✅ Valid duration formats (`30d`, `1h`, `90d`)
+- ✅ Valid duration formats (`30d`, `1h`, `90d`, `never`, `0d`)
 - ✅ API keys provided for enabled integrations
 - ✅ Port ranges valid (1-65535)
 
@@ -211,6 +211,12 @@ ERROR: Configuration validation failed
   - integrations.radarr.api_key: required when enabled=true
   - rules.movie_retention: invalid duration format "30 days" (use "30d")
 ```
+
+**Special Duration Values:**
+- **`never`** or **`0d`** - Disables standard retention rules entirely
+- Use when you only want user-based cleanup or advanced rules without fallback retention
+- Example: `movie_retention: never` means movies are never auto-deleted by standard rules
+- User-based rules and advanced rules still apply when standard retention is disabled
 
 ### 2.5 Password Auto-Hashing
 

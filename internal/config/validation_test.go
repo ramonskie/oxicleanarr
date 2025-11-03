@@ -220,3 +220,183 @@ func TestValidate_UserRules_RetentionFormat(t *testing.T) {
 		})
 	}
 }
+
+func TestValidate_DisabledRetention_MovieAndTV(t *testing.T) {
+	tests := []struct {
+		name           string
+		movieRetention string
+		tvRetention    string
+		shouldError    bool
+		errorContains  string
+	}{
+		{
+			name:           "both retention disabled with 'never'",
+			movieRetention: "never",
+			tvRetention:    "never",
+			shouldError:    false,
+		},
+		{
+			name:           "both retention disabled with '0d'",
+			movieRetention: "0d",
+			tvRetention:    "0d",
+			shouldError:    false,
+		},
+		{
+			name:           "movie retention disabled with 'never', TV normal",
+			movieRetention: "never",
+			tvRetention:    "120d",
+			shouldError:    false,
+		},
+		{
+			name:           "movie retention disabled with '0d', TV normal",
+			movieRetention: "0d",
+			tvRetention:    "120d",
+			shouldError:    false,
+		},
+		{
+			name:           "TV retention disabled with 'never', movie normal",
+			movieRetention: "90d",
+			tvRetention:    "never",
+			shouldError:    false,
+		},
+		{
+			name:           "TV retention disabled with '0d', movie normal",
+			movieRetention: "90d",
+			tvRetention:    "0d",
+			shouldError:    false,
+		},
+		{
+			name:           "mixed - 'never' and '0d'",
+			movieRetention: "never",
+			tvRetention:    "0d",
+			shouldError:    false,
+		},
+		{
+			name:           "mixed - '0d' and 'never'",
+			movieRetention: "0d",
+			tvRetention:    "never",
+			shouldError:    false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := &Config{
+				Admin: AdminConfig{
+					Username: "admin",
+					Password: "pass",
+				},
+				Rules: RulesConfig{
+					MovieRetention: tt.movieRetention,
+					TVRetention:    tt.tvRetention,
+				},
+				Server: ServerConfig{
+					Host: "0.0.0.0",
+					Port: 8080,
+				},
+				Integrations: IntegrationsConfig{
+					Jellyfin: JellyfinConfig{
+						BaseIntegrationConfig: BaseIntegrationConfig{
+							Enabled: true,
+							URL:     "http://jellyfin:8096",
+							APIKey:  "test-key",
+						},
+					},
+				},
+			}
+
+			err := Validate(cfg)
+			if tt.shouldError && err == nil {
+				t.Errorf("expected validation error but got none")
+			}
+			if !tt.shouldError && err != nil {
+				t.Errorf("unexpected validation error: %v", err)
+			}
+			if tt.shouldError && tt.errorContains != "" && err != nil {
+				if !strings.Contains(err.Error(), tt.errorContains) {
+					t.Errorf("expected error containing %q, got: %v", tt.errorContains, err)
+				}
+			}
+		})
+	}
+}
+
+func TestValidate_DisabledRetention_AdvancedRules(t *testing.T) {
+	userID := 123
+
+	tests := []struct {
+		name          string
+		ruleRetention string
+		shouldError   bool
+	}{
+		{
+			name:          "advanced rule with 'never' retention",
+			ruleRetention: "never",
+			shouldError:   false,
+		},
+		{
+			name:          "advanced rule with '0d' retention",
+			ruleRetention: "0d",
+			shouldError:   false,
+		},
+		{
+			name:          "user rule with 'never' retention",
+			ruleRetention: "never",
+			shouldError:   false,
+		},
+		{
+			name:          "user rule with '0d' retention",
+			ruleRetention: "0d",
+			shouldError:   false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := &Config{
+				Admin: AdminConfig{
+					Username: "admin",
+					Password: "pass",
+				},
+				Rules: RulesConfig{
+					MovieRetention: "90d",
+					TVRetention:    "120d",
+				},
+				Server: ServerConfig{
+					Host: "0.0.0.0",
+					Port: 8080,
+				},
+				Integrations: IntegrationsConfig{
+					Jellyfin: JellyfinConfig{
+						BaseIntegrationConfig: BaseIntegrationConfig{
+							Enabled: true,
+							URL:     "http://jellyfin:8096",
+							APIKey:  "test-key",
+						},
+					},
+				},
+				AdvancedRules: []AdvancedRule{
+					{
+						Name:    "Test Rule",
+						Type:    "user",
+						Enabled: true,
+						Users: []UserRule{
+							{
+								UserID:    &userID,
+								Retention: tt.ruleRetention,
+							},
+						},
+					},
+				},
+			}
+
+			err := Validate(cfg)
+			if tt.shouldError && err == nil {
+				t.Errorf("expected validation error but got none")
+			}
+			if !tt.shouldError && err != nil {
+				t.Errorf("unexpected validation error: %v", err)
+			}
+		})
+	}
+}
