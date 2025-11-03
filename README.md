@@ -1,6 +1,6 @@
 # Prunarr
 
-A lightweight media cleanup automation tool for the *arr stack with Jellyfin/Plex integration.
+A lightweight media cleanup automation tool for the *arr stack with Jellyfin integration.
 
 ## Features
 
@@ -17,7 +17,7 @@ A lightweight media cleanup automation tool for the *arr stack with Jellyfin/Ple
 
 - Go 1.21+ (for building from source)
 - Active *arr stack services (Radarr, Sonarr)
-- Jellyfin or Plex instance
+- Jellyfin instance
 
 ### Installation
 

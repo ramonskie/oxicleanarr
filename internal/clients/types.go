@@ -133,15 +133,13 @@ type JellyseerrMedia struct {
 	TvdbId int `json:"tvdbId"`
 }
 
-// JellyseerrUser represents a user in Jellyseerr
+// JellyseerrUser represents a user in Jellyseerr (Jellyfin-focused)
 type JellyseerrUser struct {
 	ID               int    `json:"id"`
 	Email            string `json:"email"`
-	Username         string `json:"username"`
-	PlexUsername     string `json:"plexUsername"`
-	JellyfinUsername string `json:"jellyfinUsername"`
-	DisplayName      string `json:"displayName"`
-	PlexID           int    `json:"plexId,omitempty"`
+	Username         string `json:"username"`         // Usually empty
+	JellyfinUsername string `json:"jellyfinUsername"` // Actual Jellyfin username
+	DisplayName      string `json:"displayName"`      // Display name (preferred)
 }
 
 // JellyseerrResponse represents paginated response
