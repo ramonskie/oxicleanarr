@@ -90,6 +90,13 @@ export default function ScheduledDeletionsPage() {
     return latestJob.summary?.would_delete || [];
   })();
 
+  // Check if app is in dry-run mode
+  const isDryRunMode = (() => {
+    if (!jobsData?.jobs || jobsData.jobs.length === 0) return true; // Default to safe mode
+    const latestJob = jobsData.jobs[0];
+    return latestJob.summary?.dry_run === true;
+  })();
+
   // Combine and filter deletion candidates
   const allItems: DeletionCandidate[] = (() => {
     let items = [...scheduledDeletions];
@@ -298,17 +305,41 @@ export default function ScheduledDeletionsPage() {
                   </div>
                 </div>
                 <div className="flex items-center gap-3">
-                  <Badge variant="outline" className="bg-yellow-500/10 text-yellow-700 border-yellow-500/50">
-                    Dry Run Preview
-                  </Badge>
-                  <Button
-                    variant="destructive"
-                    onClick={() => setShowDeleteDialog(true)}
-                    disabled={executeDeletionsMutation.isPending}
-                  >
-                    <Trash2 className="h-4 w-4 mr-2" />
-                    Execute Deletions
-                  </Button>
+                  {isDryRunMode ? (
+                    <>
+                      <Badge variant="outline" className="bg-yellow-500/10 text-yellow-700 border-yellow-500/50">
+                        Dry Run Active
+                      </Badge>
+                      <div className="flex flex-col items-end">
+                        <Button
+                          variant="destructive"
+                          onClick={() => setShowDeleteDialog(true)}
+                          disabled={true}
+                          title="Deletions are disabled in dry-run mode. Change app.dry_run to false in config to enable."
+                        >
+                          <Trash2 className="h-4 w-4 mr-2" />
+                          Execute Deletions
+                        </Button>
+                        <p className="text-xs text-muted-foreground mt-1">
+                          Set <code className="bg-muted px-1 py-0.5 rounded">app.dry_run: false</code> in config to enable
+                        </p>
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <Badge variant="outline" className="bg-green-500/10 text-green-700 border-green-500/50">
+                        Deletions Enabled
+                      </Badge>
+                      <Button
+                        variant="destructive"
+                        onClick={() => setShowDeleteDialog(true)}
+                        disabled={executeDeletionsMutation.isPending}
+                      >
+                        <Trash2 className="h-4 w-4 mr-2" />
+                        Execute Deletions
+                      </Button>
+                    </>
+                  )}
                 </div>
               </div>
             </div>
