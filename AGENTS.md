@@ -412,7 +412,81 @@ When ending a session, update this section with:
 
 ---
 
-## Last Session: Nov 3, 2025 (Session 11 - Configuration & Rules Management UI ✅)
+## Last Session: Nov 3, 2025 (Session 12 - Config YAML Serialization Bug Fix ✅)
+
+**Work Completed:**
+- ✅ Resumed from Session 11 summary (identified YAML serialization bug)
+- ✅ Fixed malformed YAML field names by adding `yaml` tags to all config structs
+- ✅ Fixed directory path extraction using `filepath.Dir()` instead of hardcoded string trimming
+- ✅ Added comprehensive debug logging for config write operations
+- ✅ Added `GetPath()` function to retrieve current config file path
+- ✅ Fixed ConfigurationPage `useEffect` hook for proper form initialization
+- ✅ All 111 tests still passing
+- ✅ Config update API now works end-to-end
+
+**Problem Fixed:**
+- Config update endpoint was writing malformed YAML with incorrect field names
+- Example: `dryrun` instead of `dry_run`, `disableauth` instead of `disable_auth`
+- Root cause: Missing `yaml` tags on Go struct fields (only had `mapstructure` and `json` tags)
+- Impact: Config reload validation failures after API updates
+
+**Solution:**
+- Added `yaml:"field_name"` tags to all 14 config struct types (types.go)
+- Used `yaml:",inline"` for embedded `BaseIntegrationConfig` structs
+- Used `yaml:",omitempty"` for optional fields (advanced_rules, user rules)
+- All fields now have triple tags: `mapstructure:"name" yaml:"name" json:"name"`
+
+**Files Modified & Committed:**
+- `internal/config/types.go` - Added `yaml` tags to all 14 config struct types (~60 lines changed)
+- `internal/config/config.go` - Added `GetPath()` function (+5 lines)
+- `internal/api/handlers/config.go` - Fixed directory handling, added debug logging (~23 lines changed)
+- `web/src/pages/ConfigurationPage.tsx` - Fixed `useEffect` hook (changed from `useState` to `useEffect`)
+
+**Commits:**
+1. `e47330c` - fix: add YAML tags for proper config file serialization and improve write logging
+
+**Current State:**
+- Running: Yes (backend + frontend dev server)
+- Tests passing: 111/111 ✅
+- Known issues: None
+- Config update: Working end-to-end ✅
+- YAML serialization: Correct snake_case field names ✅
+
+**Technical Details:**
+
+**Config Handler Improvements:**
+- `writeConfigToFile()` now uses `filepath.Dir(configPath)` to extract directory path
+- Added 7 new log statements for debugging config write operations:
+  - "About to write config to file" (with leaving_soon_days value)
+  - "Writing config to file" (with path)
+  - "Ensuring directory exists" (with dir path)
+  - "Writing file" (with path and byte count)
+  - "Config file written successfully"
+  - "Write config completed successfully"
+  - Error logs for marshal, mkdir, and write failures
+
+**Verification Tests:**
+- ✅ `GET /api/config` returns correct JSON with snake_case fields
+- ✅ `PUT /api/config` updates file with correct YAML field names
+- ✅ Updated config values reflected immediately via API
+- ✅ No more validation errors on config reload
+- ✅ All integration settings preserved correctly
+
+**Next Session TODO:**
+- [ ] Manual UI testing: Configuration page form (load/save)
+- [ ] Manual UI testing: Advanced Rules page (create/edit/delete)
+- [ ] Mobile responsiveness improvements
+- [ ] Statistics/charts for disk space trends
+- [ ] User-based cleanup with watch tracking
+
+**Key Lesson:**
+- Go structs used for YAML marshaling require explicit `yaml` tags
+- Without `yaml` tags, Go uses field names directly (e.g., `DryRun` becomes `dryrun`)
+- Triple tags pattern ensures correct serialization across all formats: `mapstructure:"x" yaml:"x" json:"x"`
+
+---
+
+## Previous Session: Nov 3, 2025 (Session 11 - Configuration & Rules Management UI ✅)
 
 **Work Completed:**
 - ✅ Resumed from Session 10 summary (Config & Rules UI implementation)
@@ -441,7 +515,7 @@ When ending a session, update this section with:
 **Current State:**
 - Running: Yes (backend + frontend dev server)
 - Tests passing: 111/111 ✅
-- Known issues: None
+- Known issues: Config YAML serialization bug (fixed in Session 12)
 - Total new code: ~1,951 lines (10 files changed)
 - Backend endpoints: 11 new routes (6 config, 5 rules)
 - Frontend pages: 2 new pages (Configuration, Rules)
@@ -493,13 +567,6 @@ When ending a session, update this section with:
 - ✅ DELETE /api/rules/{name} removes rule and reloads config
 - ✅ TypeScript compilation successful (no errors)
 - ✅ Frontend build successful (404.18 kB)
-
-**Next Session TODO:**
-- [ ] Manual UI testing: Create/edit/delete rules in browser
-- [ ] Manual UI testing: Update configuration settings
-- [ ] Mobile responsiveness improvements
-- [ ] Statistics/charts for disk space trends
-- [ ] User-based cleanup with watch tracking
 
 ---
 
