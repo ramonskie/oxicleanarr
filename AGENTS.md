@@ -46,8 +46,8 @@ This document provides essential context for AI coding agents working on the Pru
 ⏳ Comprehensive error handling  
 
 ### Testing Status
-- **208 tests passing**
-- **Coverage**: Handlers 89.0%, Storage 92.7%, Services 52.2%, Clients 5.3%
+- **282 tests passing** (89 test functions total)
+- **Coverage**: Handlers 89.0%, Storage 92.7%, Services 57.1%, Clients 8.2%
 
 ---
 
@@ -397,7 +397,55 @@ When ending a session, update this section with:
 
 ---
 
-## Last Session: Nov 3, 2025 (Session 2 - Simplified User Rules)
+## Last Session: Nov 3, 2025 (Session 3 - Jellyseerr & Jellystat Tests)
+
+**Work Completed:**
+- ✅ Resumed from previous session (committed deletion reason tests)
+- ✅ Refactored client file structure (split optional.go into separate files)
+- ✅ Created comprehensive Jellyseerr client tests
+- ✅ Created comprehensive Jellystat client tests
+- ✅ Added integration and unit tests following existing patterns
+- ✅ Test coverage increased for clients module
+
+**Files Modified:**
+- `internal/clients/jellyseerr.go` - Extracted from optional.go (106 lines)
+- `internal/clients/jellystat.go` - Extracted from optional.go (108 lines)
+- `internal/clients/jellyseerr_test.go` - NEW: 273 lines, 10 test cases
+- `internal/clients/jellystat_test.go` - NEW: 352 lines, 10 test cases
+- Deleted: `internal/clients/optional.go` (refactored into separate files)
+
+**Commits:**
+1. `f734151` - test: add comprehensive deletion reason generation tests (13 tests)
+2. `26eb686` - refactor: split optional clients into separate files
+3. `ac4605e` - test: add comprehensive tests for Jellyseerr and Jellystat clients
+
+**Current State:**
+- Running: No (tests only)
+- Tests passing: 282/282 ✅ (up from 269, +13 new tests)
+- Known issues: None
+
+**Test Coverage Changes:**
+- Services: 52.3% → 57.1% (+4.8%) - from deletion reason tests
+- Clients: 4.9% → 8.2% (+3.3%) - from new client tests
+- Total test functions: 89 (previously 76, +13)
+
+**Key Changes:**
+- Client file structure now matches pattern: each client has its own file + test file
+- Jellyseerr tests: Ping, GetRequests, pagination, request types, requester validation
+- Jellystat tests: Ping, GetHistory, pagination, user activity, playback duration
+- All tests follow integration + unit test pattern from existing clients
+- Integration tests require `PRUNARR_INTEGRATION_TEST=1` environment variable
+
+**Next Session TODO:**
+- [ ] Configuration UI page (allow editing prunarr.yaml via web)
+- [ ] Collection management for "Leaving Soon" in Jellyfin
+- [ ] Advanced rules UI (user-based rules editor)
+- [ ] Mobile responsiveness improvements
+- [ ] Consider adding more client tests (e.g., error handling, retry logic)
+
+---
+
+## Previous Session: Nov 3, 2025 (Session 2 - Simplified User Rules)
 
 **Work Completed:**
 - ✅ Simplified user-based rules configuration (single identifier per user)
@@ -408,32 +456,11 @@ When ending a session, update this section with:
 - ✅ Updated PRUNARR_SPEC.md with clarified matching strategy
 - ✅ Updated config/prunarr.yaml.example with clear examples
 
-**Files Modified:**
-- `config/prunarr.yaml.example` - Added advanced_rules examples
-- `internal/config/types.go` - Enhanced UserRule comments
-- `internal/config/validation_test.go` - NEW: 21 validation tests
-- `internal/config/load_test.go` - NEW: Config loading test
-- `PRUNARR_SPEC.md` - Clarified user matching strategy (section 7.3)
-- `AGENTS.md` - Updated session summary
-
-**Current State:**
-- Running: Tested and working ✅
-- Tests passing: 269/269 ✅ (up from 208)
-- Known issues: None
-
-**Key Changes:**
-- User rules now clearly documented as requiring **ONLY ONE** identifier (user_id, username, OR email)
-- Validation already enforced this requirement (lines 126-130 in validation.go)
-- Matching logic already supported OR behavior (lines 104-121 in rules.go)
-- No breaking changes - only documentation and examples improved
-
-**Next Session TODO:**
-- [ ] Configuration UI page (allow editing prunarr.yaml via web)
-- [ ] Collection management for "Leaving Soon" in Jellyfin
-- [ ] Advanced rules UI (user-based rules editor)
-- [ ] Mobile responsiveness improvements
+**Commits:**
+- `14f1d7d` - feat: add config hot-reload support for retention rules
+- `d68b990` - feat: improve deletion reasons and add Jellystat watch tracking
 
 ---
 
 **Last Updated**: Nov 3, 2025  
-**Document Version**: 1.1
+**Document Version**: 1.2
