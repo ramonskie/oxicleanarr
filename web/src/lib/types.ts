@@ -86,3 +86,14 @@ export interface ApiError {
   error: string;
   message?: string;
 }
+
+export interface DeletionExecutionResponse {
+  success: boolean;
+  scheduled_count: number;
+  deleted_count?: number;
+  failed_count?: number;
+  dry_run?: boolean;
+  message: string;
+  candidates?: DeletionCandidate[];
+  deleted_items?: DeletionCandidate[];
+}

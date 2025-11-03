@@ -5,6 +5,7 @@ func DefaultConfig() *Config {
 	return &Config{
 		App: AppConfig{
 			DryRun:          true,
+			EnableDeletion:  false,
 			LeavingSoonDays: 14,
 		},
 		Sync: SyncConfig{

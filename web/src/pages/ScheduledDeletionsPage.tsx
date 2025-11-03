@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiClient } from '@/lib/api';
 import { useAuthStore } from '@/store/auth';
 import type { DeletionCandidate } from '@/lib/types';
@@ -8,7 +8,16 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
-import { Clock, LogOut, Film, Tv, HardDrive, AlertTriangle, Info } from 'lucide-react';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import { Clock, LogOut, Film, Tv, HardDrive, AlertTriangle, Info, Trash2 } from 'lucide-react';
+import { useToast } from '@/hooks/use-toast';
 
 type MediaType = 'all' | 'movies' | 'shows';
 type SortField = 'title' | 'year' | 'days_overdue' | 'file_size';
@@ -19,12 +28,15 @@ const ITEMS_PER_PAGE = 50;
 export default function ScheduledDeletionsPage() {
   const navigate = useNavigate();
   const logout = useAuthStore((state) => state.logout);
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
   
   const [mediaType, setMediaType] = useState<MediaType>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [sortField, setSortField] = useState<SortField>('days_overdue');
   const [sortOrder, setSortOrder] = useState<SortOrder>('desc');
   const [currentPage, setCurrentPage] = useState(1);
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false);
 
   // Fetch latest job to get scheduled deletions
   const { data: jobsData, isLoading } = useQuery({
@@ -39,9 +51,36 @@ export default function ScheduledDeletionsPage() {
     refetchInterval: 5000,
   });
 
+  // Execute deletions mutation
+  const executeDeletionsMutation = useMutation({
+    mutationFn: () => apiClient.executeDeletions(false),
+    onSuccess: (data) => {
+      toast({
+        title: 'Deletions Executed',
+        description: `Successfully deleted ${data.deleted_count} items. ${data.failed_count || 0} failed.`,
+        variant: data.failed_count && data.failed_count > 0 ? 'destructive' : 'default',
+      });
+      // Refetch jobs to update the list
+      queryClient.invalidateQueries({ queryKey: ['jobs'] });
+      setShowDeleteDialog(false);
+    },
+    onError: (error: Error) => {
+      toast({
+        title: 'Deletion Failed',
+        description: error.message || 'Failed to execute deletions',
+        variant: 'destructive',
+      });
+      setShowDeleteDialog(false);
+    },
+  });
+
   const handleLogout = () => {
     logout();
     navigate('/login');
+  };
+
+  const handleExecuteDeletions = () => {
+    executeDeletionsMutation.mutate();
   };
 
   // Get scheduled deletions from latest job
@@ -258,9 +297,19 @@ export default function ScheduledDeletionsPage() {
                     <p className="text-2xl font-bold">{showCount}</p>
                   </div>
                 </div>
-                <Badge variant="outline" className="bg-yellow-500/10 text-yellow-700 border-yellow-500/50">
-                  Dry Run Preview
-                </Badge>
+                <div className="flex items-center gap-3">
+                  <Badge variant="outline" className="bg-yellow-500/10 text-yellow-700 border-yellow-500/50">
+                    Dry Run Preview
+                  </Badge>
+                  <Button
+                    variant="destructive"
+                    onClick={() => setShowDeleteDialog(true)}
+                    disabled={executeDeletionsMutation.isPending}
+                  >
+                    <Trash2 className="h-4 w-4 mr-2" />
+                    Execute Deletions
+                  </Button>
+                </div>
               </div>
             </div>
 
@@ -468,6 +517,31 @@ export default function ScheduledDeletionsPage() {
           </>
         )}
       </main>
+
+      {/* Confirmation Dialog */}
+      <Dialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Execute Deletions</DialogTitle>
+            <DialogDescription>
+              Are you sure you want to delete {scheduledDeletions.length} items 
+              ({getTotalFileSize()} total)? This action cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowDeleteDialog(false)}>
+              Cancel
+            </Button>
+            <Button 
+              variant="destructive" 
+              onClick={handleExecuteDeletions}
+              disabled={executeDeletionsMutation.isPending}
+            >
+              {executeDeletionsMutation.isPending ? 'Deleting...' : 'Delete'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

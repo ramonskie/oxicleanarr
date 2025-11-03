@@ -270,7 +270,14 @@ func (e *SyncEngine) FullSync(ctx context.Context) error {
 	}
 
 	// Calculate scheduled deletions and dry-run preview
-	scheduledCount, wouldDelete := e.calculateDeletionInfo()
+	scheduledCount, wouldDelete := e.CalculateDeletionInfo()
+
+	// Execute deletions if enabled and not in dry-run mode
+	deletedCount := 0
+	deletedItems := make([]map[string]interface{}, 0)
+	if e.config.App.EnableDeletion && !e.config.App.DryRun && len(wouldDelete) > 0 {
+		deletedCount, deletedItems = e.ExecuteDeletions(ctx, wouldDelete)
+	}
 
 	// Update job
 	completedAt := time.Now()
@@ -283,10 +290,17 @@ func (e *SyncEngine) FullSync(ctx context.Context) error {
 	job.Summary["total_media"] = e.GetMediaCount()
 	job.Summary["scheduled_deletions"] = scheduledCount
 	job.Summary["dry_run"] = e.config.App.DryRun
+	job.Summary["enable_deletion"] = e.config.App.EnableDeletion
 
-	// Add deletion preview for dry-run mode
+	// Add deletion preview for dry-run mode or when deletion is disabled
 	if e.config.App.DryRun && len(wouldDelete) > 0 {
 		job.Summary["would_delete"] = wouldDelete
+	}
+
+	// Add actual deletions when executed
+	if deletedCount > 0 {
+		job.Summary["deleted_count"] = deletedCount
+		job.Summary["deleted_items"] = deletedItems
 	}
 
 	if lastErr != nil {
@@ -308,7 +322,9 @@ func (e *SyncEngine) FullSync(ctx context.Context) error {
 		Int("movies", movieCount).
 		Int("tv_shows", tvShowCount).
 		Int("scheduled_deletions", scheduledCount).
+		Int("deleted_count", deletedCount).
 		Bool("dry_run", e.config.App.DryRun).
+		Bool("enable_deletion", e.config.App.EnableDeletion).
 		Dur("duration", duration).
 		Msg("Full sync completed")
 
@@ -681,8 +697,8 @@ func (e *SyncEngine) applyExclusions() {
 		Msg("Applied exclusions to media")
 }
 
-// calculateDeletionInfo calculates scheduled deletions and returns dry-run preview
-func (e *SyncEngine) calculateDeletionInfo() (int, []map[string]interface{}) {
+// CalculateDeletionInfo calculates scheduled deletions and returns dry-run preview
+func (e *SyncEngine) CalculateDeletionInfo() (int, []map[string]interface{}) {
 	e.mediaLibraryLock.RLock()
 	defer e.mediaLibraryLock.RUnlock()
 
@@ -721,6 +737,50 @@ func (e *SyncEngine) calculateDeletionInfo() (int, []map[string]interface{}) {
 	}
 
 	return scheduledCount, wouldDelete
+}
+
+// ExecuteDeletions performs actual deletion of overdue media items
+func (e *SyncEngine) ExecuteDeletions(ctx context.Context, candidates []map[string]interface{}) (int, []map[string]interface{}) {
+	deletedCount := 0
+	deletedItems := make([]map[string]interface{}, 0)
+
+	log.Info().
+		Int("candidates", len(candidates)).
+		Msg("Executing deletions for overdue items")
+
+	for _, candidate := range candidates {
+		mediaID, ok := candidate["id"].(string)
+		if !ok {
+			log.Warn().Interface("candidate", candidate).Msg("Invalid media ID in deletion candidate")
+			continue
+		}
+
+		// Attempt deletion
+		if err := e.DeleteMedia(ctx, mediaID, false); err != nil {
+			log.Error().
+				Err(err).
+				Str("media_id", mediaID).
+				Str("title", candidate["title"].(string)).
+				Msg("Failed to delete media")
+			continue
+		}
+
+		// Track successful deletion
+		deletedCount++
+		deletedItems = append(deletedItems, candidate)
+
+		log.Info().
+			Str("media_id", mediaID).
+			Str("title", candidate["title"].(string)).
+			Msg("Successfully deleted media")
+	}
+
+	log.Info().
+		Int("deleted", deletedCount).
+		Int("failed", len(candidates)-deletedCount).
+		Msg("Deletion execution completed")
+
+	return deletedCount, deletedItems
 }
 
 // GetMediaLibrary returns the internal media library map (for testing purposes)

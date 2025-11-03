@@ -43,8 +43,9 @@ integrations:
 
 # Optional settings with defaults (uncomment to override)
 # app:
-#   dry_run: true
-#   leaving_soon_days: 14
+#   dry_run: true                   # Preview mode - no actual deletions (recommended for testing)
+#   enable_deletion: false          # Enable automatic deletions during sync (requires dry_run: false)
+#   leaving_soon_days: 14           # Show items in "Leaving Soon" window
 
 # sync:
 #   full_interval: 3600

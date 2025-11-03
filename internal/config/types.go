@@ -21,6 +21,7 @@ type AdminConfig struct {
 // AppConfig holds general application settings
 type AppConfig struct {
 	DryRun          bool `mapstructure:"dry_run"`
+	EnableDeletion  bool `mapstructure:"enable_deletion"`
 	LeavingSoonDays int  `mapstructure:"leaving_soon_days"`
 }
 

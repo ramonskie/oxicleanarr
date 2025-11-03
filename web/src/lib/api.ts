@@ -1,4 +1,4 @@
-import type { AuthResponse, LoginRequest, MediaListResponse, MediaItem, SyncStatus, Job, JobListResponse } from './types';
+import type { AuthResponse, LoginRequest, MediaListResponse, MediaItem, SyncStatus, Job, JobListResponse, DeletionExecutionResponse } from './types';
 
 const API_BASE = '/api';
 
@@ -169,6 +169,14 @@ class ApiClient {
 
   async getJob(id: string): Promise<Job> {
     return this.request<Job>(`/jobs/${id}`);
+  }
+
+  // Deletions
+  async executeDeletions(dryRun: boolean = false): Promise<DeletionExecutionResponse> {
+    const query = dryRun ? '?dry_run=true' : '';
+    return this.request<DeletionExecutionResponse>(`/deletions/execute${query}`, {
+      method: 'POST',
+    });
   }
 }
 

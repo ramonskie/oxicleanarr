@@ -75,6 +75,9 @@ func NewRouter(deps *RouterDependencies) *chi.Mux {
 			r.Post("/sync/incremental", syncHandler.TriggerIncrementalSync)
 			r.Get("/sync/status", syncHandler.GetSyncStatus)
 
+			// Deletion routes
+			r.Post("/deletions/execute", syncHandler.ExecuteDeletions)
+
 			// Jobs routes
 			r.Get("/jobs", jobsHandler.ListJobs)
 			r.Get("/jobs/latest", jobsHandler.GetLatestJob)
