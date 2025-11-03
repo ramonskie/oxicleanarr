@@ -292,8 +292,10 @@ func (e *SyncEngine) FullSync(ctx context.Context) error {
 	job.Summary["dry_run"] = e.config.App.DryRun
 	job.Summary["enable_deletion"] = e.config.App.EnableDeletion
 
-	// Add deletion preview for dry-run mode or when deletion is disabled
-	if e.config.App.DryRun && len(wouldDelete) > 0 {
+	// Always add deletion candidates to job summary for UI display
+	// In dry-run mode, these are candidates that would be deleted
+	// Otherwise, these are candidates that will be deleted (if enable_deletion is true)
+	if len(wouldDelete) > 0 {
 		job.Summary["would_delete"] = wouldDelete
 	}
 
