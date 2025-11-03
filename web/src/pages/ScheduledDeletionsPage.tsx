@@ -482,7 +482,7 @@ export default function ScheduledDeletionsPage() {
                     </div>
 
                     <div className="flex-shrink-0">
-                      <Badge variant="destructive" className="whitespace-nowrap">
+                      <Badge variant="destructive" className="whitespace-nowrap hover:bg-destructive">
                         Scheduled for Deletion
                       </Badge>
                     </div>
