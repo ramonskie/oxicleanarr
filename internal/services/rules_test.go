@@ -790,7 +790,7 @@ func TestRulesEngine_UserBased_RequireWatchedFlag(t *testing.T) {
 
 		assert.False(t, shouldDelete)
 		assert.False(t, deleteAfter.IsZero())
-		assert.Equal(t, "user rule: within retention", reason)
+		assert.Equal(t, "user rule 'Require Watched Rule' within retention (7d)", reason)
 	})
 
 	t.Run("does not delete unwatched media when require_watched is true", func(t *testing.T) {
@@ -852,7 +852,7 @@ func TestRulesEngine_UserBased_RequireWatchedFalse(t *testing.T) {
 
 		assert.False(t, shouldDelete)
 		assert.False(t, deleteAfter.IsZero())
-		assert.Equal(t, "user rule: within retention", reason)
+		assert.Equal(t, "user rule 'No Require Watched Rule' within retention (7d)", reason)
 	})
 }
 
@@ -907,7 +907,7 @@ func TestRulesEngine_UserBased_CustomRetentionPeriods(t *testing.T) {
 
 		// 10 days ago with 14d retention = within retention
 		assert.False(t, shouldDelete)
-		assert.Equal(t, "user rule: within retention", reason)
+		assert.Equal(t, "user rule 'Multiple User Rules' within retention (14d)", reason)
 	})
 
 	t.Run("applies 30d retention for user 303", func(t *testing.T) {
@@ -919,7 +919,7 @@ func TestRulesEngine_UserBased_CustomRetentionPeriods(t *testing.T) {
 
 		// 20 days ago with 30d retention = within retention
 		assert.False(t, shouldDelete)
-		assert.Equal(t, "user rule: within retention", reason)
+		assert.Equal(t, "user rule 'Multiple User Rules' within retention (30d)", reason)
 	})
 }
 

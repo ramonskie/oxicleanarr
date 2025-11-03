@@ -130,46 +130,63 @@ func NewJellystatClient(cfg config.JellystatConfig) *JellystatClient {
 	}
 }
 
-// GetActivity fetches watch activity from Jellystat
-func (c *JellystatClient) GetActivity(ctx context.Context, itemID string) (*JellystatActivity, error) {
-	url := fmt.Sprintf("%s/api/activity/%s", c.baseURL, itemID)
+// GetHistory fetches watch history from Jellystat (handles pagination)
+func (c *JellystatClient) GetHistory(ctx context.Context) ([]JellystatHistoryItem, error) {
+	var allHistory []JellystatHistoryItem
+	page := 1
+	pageSize := 100
 
-	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
-	if err != nil {
-		return nil, fmt.Errorf("creating request: %w", err)
+	for {
+		url := fmt.Sprintf("%s/api/getHistory?page=%d&size=%d", c.baseURL, page, pageSize)
+
+		req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+		if err != nil {
+			return nil, fmt.Errorf("creating request: %w", err)
+		}
+
+		req.Header.Set("x-api-token", c.apiKey)
+		req.Header.Set("Accept", "application/json")
+
+		resp, err := c.client.Do(req)
+		if err != nil {
+			return nil, fmt.Errorf("making request: %w", err)
+		}
+
+		if resp.StatusCode != http.StatusOK {
+			resp.Body.Close()
+			return nil, fmt.Errorf("unexpected status code: %d", resp.StatusCode)
+		}
+
+		var result JellystatHistoryResponse
+		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+			resp.Body.Close()
+			return nil, fmt.Errorf("decoding response: %w", err)
+		}
+		resp.Body.Close()
+
+		allHistory = append(allHistory, result.Results...)
+
+		// Check if we've fetched all pages
+		if page >= result.Pages || len(result.Results) == 0 {
+			break
+		}
+
+		page++
 	}
 
-	req.Header.Set("Authorization", "Bearer "+c.apiKey)
-	req.Header.Set("Accept", "application/json")
-
-	resp, err := c.client.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("making request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("unexpected status code: %d", resp.StatusCode)
-	}
-
-	var activity JellystatActivity
-	if err := json.NewDecoder(resp.Body).Decode(&activity); err != nil {
-		return nil, fmt.Errorf("decoding response: %w", err)
-	}
-
-	return &activity, nil
+	return allHistory, nil
 }
 
 // Ping checks if Jellystat is reachable
 func (c *JellystatClient) Ping(ctx context.Context) error {
-	url := fmt.Sprintf("%s/api/health", c.baseURL)
+	url := fmt.Sprintf("%s/api/getLibraries", c.baseURL)
 
 	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {
 		return fmt.Errorf("creating request: %w", err)
 	}
 
-	req.Header.Set("Authorization", "Bearer "+c.apiKey)
+	req.Header.Set("x-api-token", c.apiKey)
 
 	resp, err := c.client.Do(req)
 	if err != nil {

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"regexp"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/ramonskie/prunarr/internal/config"
@@ -208,12 +209,13 @@ func (e *RulesEngine) applyUserRule(media *models.Media, userRule *config.UserRu
 	}
 
 	// Within retention period
+	reason = fmt.Sprintf("user rule '%s' within retention (%s)", ruleName, userRule.Retention)
 	log.Debug().
 		Str("media_id", media.ID).
 		Str("rule_name", ruleName).
 		Time("delete_after", deleteAfter).
 		Msg("Media matched user rule but within retention period")
-	return true, false, deleteAfter, "user rule: within retention"
+	return true, false, deleteAfter, reason
 }
 
 // equalsCaseInsensitive compares two strings case-insensitively
@@ -273,13 +275,13 @@ func (e *RulesEngine) GetLeavingSoon(mediaList []models.Media) []models.Media {
 	leavingSoonDays := cfg.App.LeavingSoonDays
 
 	for _, media := range mediaList {
-		shouldDelete, deleteAfter, _ := e.EvaluateMedia(&media)
+		shouldDelete, deleteAfter, reason := e.EvaluateMedia(&media)
 		if !shouldDelete && !deleteAfter.IsZero() {
 			daysUntilDue := int(time.Until(deleteAfter).Hours() / 24)
 			if daysUntilDue > 0 && daysUntilDue <= leavingSoonDays {
 				media.DeleteAfter = deleteAfter
 				media.DaysUntilDue = daysUntilDue
-				media.DeletionReason = e.GenerateDeletionReason(&media, deleteAfter)
+				media.DeletionReason = e.GenerateDeletionReason(&media, deleteAfter, reason)
 				leavingSoon = append(leavingSoon, media)
 			}
 		}
@@ -294,9 +296,7 @@ func (e *RulesEngine) GetLeavingSoon(mediaList []models.Media) []models.Media {
 }
 
 // GenerateDeletionReason creates a human-readable explanation for why an item is scheduled for deletion
-func (e *RulesEngine) GenerateDeletionReason(media *models.Media, deleteAfter time.Time) string {
-	retentionPeriod := e.getRetentionString(media.Type)
-
+func (e *RulesEngine) GenerateDeletionReason(media *models.Media, deleteAfter time.Time, reason string) string {
 	// Determine if based on last watched or added date
 	var baseEvent string
 	var baseDate time.Time
@@ -316,6 +316,63 @@ func (e *RulesEngine) GenerateDeletionReason(media *models.Media, deleteAfter ti
 		mediaType = "TV show"
 	}
 
+	// Check if this is a user-based rule (reason contains "user rule")
+	if len(reason) > 10 && reason[:9] == "user rule" {
+		// Extract rule name and retention from reason like:
+		// - "user rule 'Trial Users' retention expired (30d)" -> overdue
+		// - "user rule 'Trial Users' within retention (30d)" -> leaving soon
+
+		// Find the rule name between single quotes
+		start := -1
+		end := -1
+		for i := 10; i < len(reason); i++ {
+			if reason[i] == '\'' {
+				if start == -1 {
+					start = i + 1
+				} else {
+					end = i
+					break
+				}
+			}
+		}
+
+		// Find retention period in parentheses
+		retentionStart := -1
+		retentionEnd := -1
+		for i := 0; i < len(reason); i++ {
+			if reason[i] == '(' {
+				retentionStart = i + 1
+			} else if reason[i] == ')' {
+				retentionEnd = i
+				break
+			}
+		}
+
+		if start != -1 && end != -1 && retentionStart != -1 && retentionEnd != -1 {
+			ruleName := reason[start:end]
+			retention := reason[retentionStart:retentionEnd]
+
+			// Check if this is an expired rule or within retention
+			isExpired := strings.Contains(reason, "retention expired")
+
+			if isExpired {
+				// Item is overdue for deletion
+				return fmt.Sprintf("This %s was %s %d days ago. It matched the '%s' user rule with %s retention and is now scheduled for deletion.",
+					mediaType, baseEvent, daysSinceBase, ruleName, retention)
+			} else {
+				// Item is leaving soon (within retention but will be deleted)
+				return fmt.Sprintf("This %s was %s %d days ago. It matches the '%s' user rule with %s retention, meaning it will be deleted after that period of inactivity.",
+					mediaType, baseEvent, daysSinceBase, ruleName, retention)
+			}
+		}
+
+		// Fallback if parsing fails
+		return fmt.Sprintf("This %s was %s %d days ago. %s.",
+			mediaType, baseEvent, daysSinceBase, reason)
+	}
+
+	// Standard retention rule
+	retentionPeriod := e.getRetentionString(media.Type)
 	return fmt.Sprintf("This %s was %s %d days ago. The retention policy for %ss is %s, meaning it will be deleted after that period of inactivity.",
 		mediaType, baseEvent, daysSinceBase, mediaType, retentionPeriod)
 }

@@ -153,10 +153,24 @@ type JellyseerrPageInfo struct {
 	Results int `json:"results"`
 }
 
-// JellystatActivity represents watch activity from Jellystat
-type JellystatActivity struct {
-	ItemID     string    `json:"item_id"`
-	UserID     string    `json:"user_id"`
-	PlayCount  int       `json:"play_count"`
-	LastPlayed time.Time `json:"last_played"`
+// JellystatHistoryResponse represents paginated history response from Jellystat
+type JellystatHistoryResponse struct {
+	CurrentPage int                    `json:"current_page"`
+	Pages       int                    `json:"pages"`
+	Size        int                    `json:"size"`
+	Results     []JellystatHistoryItem `json:"results"`
+}
+
+// JellystatHistoryItem represents a single watch history entry
+type JellystatHistoryItem struct {
+	ID                   string    `json:"Id"`
+	UserID               string    `json:"UserId"`
+	UserName             string    `json:"UserName"`
+	NowPlayingItemID     string    `json:"NowPlayingItemId"`
+	NowPlayingItemName   string    `json:"NowPlayingItemName"`
+	SeriesName           string    `json:"SeriesName"` // null for movies, series name for TV
+	EpisodeID            string    `json:"EpisodeId"`
+	SeasonID             string    `json:"SeasonId"`
+	PlaybackDuration     int       `json:"PlaybackDuration"`     // Duration in seconds
+	ActivityDateInserted time.Time `json:"ActivityDateInserted"` // Last watched timestamp
 }

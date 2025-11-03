@@ -28,6 +28,7 @@ type SyncEngine struct {
 	radarrClient     *clients.RadarrClient
 	sonarrClient     *clients.SonarrClient
 	jellyseerrClient *clients.JellyseerrClient
+	jellystatClient  *clients.JellystatClient
 
 	mediaLibrary     map[string]models.Media
 	mediaLibraryLock sync.RWMutex
@@ -69,6 +70,9 @@ func NewSyncEngine(
 	}
 	if cfg.Integrations.Jellyseerr.Enabled {
 		engine.jellyseerrClient = clients.NewJellyseerrClient(cfg.Integrations.Jellyseerr)
+	}
+	if cfg.Integrations.Jellystat.Enabled {
+		engine.jellystatClient = clients.NewJellystatClient(cfg.Integrations.Jellystat)
 	}
 
 	return engine
@@ -219,6 +223,14 @@ func (e *SyncEngine) FullSync(ctx context.Context) error {
 		if err := e.syncJellyfin(ctx); err != nil {
 			lastErr = err
 			log.Error().Err(err).Msg("Failed to sync Jellyfin")
+		}
+	}
+
+	// Sync detailed watch history from Jellystat
+	if e.jellystatClient != nil {
+		if err := e.syncJellystat(ctx); err != nil {
+			lastErr = err
+			log.Error().Err(err).Msg("Failed to sync Jellystat")
 		}
 	}
 
@@ -496,6 +508,52 @@ func (e *SyncEngine) syncJellyseerr(ctx context.Context) error {
 	return nil
 }
 
+// syncJellystat syncs detailed watch history from Jellystat
+func (e *SyncEngine) syncJellystat(ctx context.Context) error {
+	history, err := e.jellystatClient.GetHistory(ctx)
+	if err != nil {
+		return err
+	}
+
+	e.mediaLibraryLock.Lock()
+	defer e.mediaLibraryLock.Unlock()
+
+	// Create a map of Jellyfin ID to most recent watch date
+	// This gives us the most accurate "last watched" timestamp per item
+	lastWatchedMap := make(map[string]time.Time)
+
+	for _, item := range history {
+		// Track the most recent watch for each Jellyfin item
+		if existing, found := lastWatchedMap[item.NowPlayingItemID]; !found || item.ActivityDateInserted.After(existing) {
+			lastWatchedMap[item.NowPlayingItemID] = item.ActivityDateInserted
+		}
+	}
+
+	// Update media library with accurate last watched dates
+	updatedCount := 0
+	for id, media := range e.mediaLibrary {
+		if media.JellyfinID == "" {
+			continue
+		}
+
+		if lastWatched, found := lastWatchedMap[media.JellyfinID]; found {
+			// Only update if Jellystat has a more recent date than what we have
+			if media.LastWatched.IsZero() || lastWatched.After(media.LastWatched) {
+				media.LastWatched = lastWatched
+				e.mediaLibrary[id] = media
+				updatedCount++
+			}
+		}
+	}
+
+	log.Info().
+		Int("total_history_items", len(history)).
+		Int("updated_media", updatedCount).
+		Msg("Jellystat sync completed")
+
+	return nil
+}
+
 // GetMediaList returns all synced media items
 func (e *SyncEngine) GetMediaList() []models.Media {
 	e.mediaLibraryLock.RLock()
@@ -532,7 +590,7 @@ func (e *SyncEngine) applyRetentionRules() {
 	defer e.mediaLibraryLock.Unlock()
 
 	for id, media := range e.mediaLibrary {
-		_, deleteAfter, _ := e.rules.EvaluateMedia(&media)
+		_, deleteAfter, reason := e.rules.EvaluateMedia(&media)
 
 		// Update media with deletion date
 		media.DeleteAfter = deleteAfter
@@ -540,10 +598,8 @@ func (e *SyncEngine) applyRetentionRules() {
 			daysUntilDue := int(time.Until(deleteAfter).Hours() / 24)
 			media.DaysUntilDue = daysUntilDue
 
-			// Set deletion reason for all items with future deletion dates
-			if daysUntilDue > 0 {
-				media.DeletionReason = e.rules.GenerateDeletionReason(&media, deleteAfter)
-			}
+			// Set deletion reason for all items with deletion dates (both future and overdue)
+			media.DeletionReason = e.rules.GenerateDeletionReason(&media, deleteAfter, reason)
 		}
 
 		e.mediaLibrary[id] = media
