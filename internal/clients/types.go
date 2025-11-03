@@ -135,10 +135,13 @@ type JellyseerrMedia struct {
 
 // JellyseerrUser represents a user in Jellyseerr
 type JellyseerrUser struct {
-	ID       int    `json:"id"`
-	Email    string `json:"email"`
-	Username string `json:"username"`
-	PlexID   int    `json:"plexId,omitempty"`
+	ID               int    `json:"id"`
+	Email            string `json:"email"`
+	Username         string `json:"username"`
+	PlexUsername     string `json:"plexUsername"`
+	JellyfinUsername string `json:"jellyfinUsername"`
+	DisplayName      string `json:"displayName"`
+	PlexID           int    `json:"plexId,omitempty"`
 }
 
 // JellyseerrResponse represents paginated response

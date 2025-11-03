@@ -489,12 +489,30 @@ func (e *SyncEngine) syncJellyseerr(ctx context.Context) error {
 				if req.RequestedBy.ID > 0 {
 					media.RequestedByUserID = &req.RequestedBy.ID
 				}
-				if req.RequestedBy.Username != "" {
-					media.RequestedByUsername = &req.RequestedBy.Username
+				// Use DisplayName first, fallback to JellyfinUsername, then Email
+				username := req.RequestedBy.DisplayName
+				if username == "" {
+					username = req.RequestedBy.JellyfinUsername
+				}
+				if username == "" {
+					username = req.RequestedBy.Username
+				}
+				if username != "" {
+					media.RequestedByUsername = &username
 				}
 				if req.RequestedBy.Email != "" {
 					media.RequestedByEmail = &req.RequestedBy.Email
 				}
+
+				log.Debug().
+					Str("media_title", media.Title).
+					Str("display_name", req.RequestedBy.DisplayName).
+					Str("jellyfin_username", req.RequestedBy.JellyfinUsername).
+					Str("username", req.RequestedBy.Username).
+					Str("resolved_username", username).
+					Str("email", req.RequestedBy.Email).
+					Msg("Matched Jellyseerr request to media")
+
 				e.mediaLibrary[id] = media
 				break
 			}
