@@ -397,7 +397,57 @@ When ending a session, update this section with:
 
 ---
 
-## Last Session: Nov 3, 2025 (Session 4 - Client Logging)
+## Last Session: Nov 3, 2025 (Session 5 - Requester Info Feature Complete)
+
+**Work Completed:**
+- ✅ Completed requester information feature end-to-end
+- ✅ Fixed Jellyseerr username resolution (DisplayName → JellyfinUsername fallback)
+- ✅ Added requester fields to scheduled deletion candidates in job summaries
+- ✅ Verified frontend displays requester info correctly on all three pages
+- ✅ Removed Plex-related fields (Prunarr is Jellyfin-only)
+- ✅ All 282 tests passing
+
+**Files Modified:**
+- `internal/clients/types.go` - Added DisplayName/JellyfinUsername, removed Plex fields
+- `internal/services/sync.go` - Updated username resolution (lines 489-514), added requester fields to deletion candidates (lines 689-694)
+- `README.md` - Changed "Jellyfin/Plex" → "Jellyfin"
+
+**Commits:**
+1. `d9fcab5` - fix: use DisplayName/JellyfinUsername for requester display
+2. `f08b17a` - refactor: remove Plex-related fields and focus on Jellyfin
+3. `1b4d30d` - feat: add requester info to scheduled deletion candidates
+
+**Current State:**
+- Running: Yes (Prunarr with test config)
+- Tests passing: 282/282 ✅
+- Known issues: None
+- Media tracked: 378 items (255 movies, 123 TV shows)
+- Requested items: 164 tracked, 45 in deletion queue
+
+**Feature Verification:**
+- ✅ Requester info in media library API (`/api/media/movies`, `/api/media/shows`)
+- ✅ Requester info in job summaries (`/api/jobs`)
+- ✅ Frontend displays on Library, Timeline, and Scheduled Deletions pages
+- ✅ Test script confirms 164 items with requester data
+
+**Key Implementation Details:**
+- Username fallback chain: DisplayName → JellyfinUsername → Username
+- Job summary includes 4 requester fields: `is_requested`, `requested_by_user_id`, `requested_by_username`, `requested_by_email`
+- Frontend conditionally shows requester only when `is_requested == true`
+- Jellyseerr API uses `displayName` field (not `username`) for display names
+
+**Next Session TODO:**
+- [ ] Configuration UI page (allow editing prunarr.yaml via web)
+- [ ] Collection management for "Leaving Soon" in Jellyfin
+- [ ] Advanced rules UI (user-based rules editor)
+- [ ] Mobile responsiveness improvements
+- [ ] Statistics/charts for disk space trends
+
+---
+
+---
+
+## Previous Session: Nov 3, 2025 (Session 4 - Client Logging)
 
 **Work Completed:**
 - ✅ Added consistent structured logging to Jellyseerr client
@@ -425,13 +475,6 @@ When ending a session, update this section with:
 - Error level: Failed requests, connection issues, unexpected status codes
 - Success confirmations: Ping operations, data fetch completions
 - All six clients now have consistent logging patterns
-
-**Next Session TODO:**
-- [ ] Test logging output with `LOG_LEVEL=debug` in production environment
-- [ ] Configuration UI page (allow editing prunarr.yaml via web)
-- [ ] Collection management for "Leaving Soon" in Jellyfin
-- [ ] Advanced rules UI (user-based rules editor)
-- [ ] Mobile responsiveness improvements
 
 ---
 
