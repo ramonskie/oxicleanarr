@@ -397,7 +397,45 @@ When ending a session, update this section with:
 
 ---
 
-## Last Session: Nov 3, 2025 (Session 3 - Jellyseerr & Jellystat Tests)
+## Last Session: Nov 3, 2025 (Session 4 - Client Logging)
+
+**Work Completed:**
+- ✅ Added consistent structured logging to Jellyseerr client
+- ✅ Added consistent structured logging to Jellystat client
+- ✅ Implemented logging patterns matching existing clients (Jellyfin, Radarr, Sonarr)
+- ✅ Added debug logs for API requests and responses
+- ✅ Added pagination progress logging
+- ✅ Added error logs with context for failures
+- ✅ All tests passing (282/282)
+
+**Files Modified:**
+- `internal/clients/jellyseerr.go` - Added zerolog logging (+46 lines)
+- `internal/clients/jellystat.go` - Added zerolog logging (+46 lines)
+
+**Commits:**
+1. `e55870e` - feat: add consistent logging to Jellyseerr and Jellystat clients
+
+**Current State:**
+- Running: No (code changes only)
+- Tests passing: 282/282 ✅
+- Known issues: None
+
+**Logging Improvements:**
+- Debug level: API requests, responses, counts, pagination progress
+- Error level: Failed requests, connection issues, unexpected status codes
+- Success confirmations: Ping operations, data fetch completions
+- All six clients now have consistent logging patterns
+
+**Next Session TODO:**
+- [ ] Test logging output with `LOG_LEVEL=debug` in production environment
+- [ ] Configuration UI page (allow editing prunarr.yaml via web)
+- [ ] Collection management for "Leaving Soon" in Jellyfin
+- [ ] Advanced rules UI (user-based rules editor)
+- [ ] Mobile responsiveness improvements
+
+---
+
+## Previous Session: Nov 3, 2025 (Session 3 - Jellyseerr & Jellystat Tests)
 
 **Work Completed:**
 - ✅ Resumed from previous session (committed deletion reason tests)
