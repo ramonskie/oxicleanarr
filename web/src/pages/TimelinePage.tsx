@@ -264,6 +264,12 @@ export default function TimelinePage() {
                                       {item.deletion_reason}
                                     </p>
                                   )}
+                                  {item.is_requested && item.requested_by_username && (
+                                    <p className="text-xs text-muted-foreground mt-1">
+                                      Requested by: {item.requested_by_username}
+                                      {item.requested_by_email && ` (${item.requested_by_email})`}
+                                    </p>
+                                  )}
                                 </div>
                               </div>
                               <div className="flex items-center gap-3 flex-shrink-0">

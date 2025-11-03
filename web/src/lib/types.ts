@@ -23,6 +23,10 @@ export interface MediaItem {
   excluded: boolean;
   file_size?: number;
   file_path?: string;
+  is_requested?: boolean;
+  requested_by_user_id?: number;
+  requested_by_username?: string;
+  requested_by_email?: string;
 }
 
 export interface MediaListResponse {
@@ -46,6 +50,10 @@ export interface DeletionCandidate {
   days_overdue: number;
   reason?: string;
   last_watched?: string;
+  is_requested?: boolean;
+  requested_by_user_id?: number;
+  requested_by_username?: string;
+  requested_by_email?: string;
 }
 
 export interface JobSummary {

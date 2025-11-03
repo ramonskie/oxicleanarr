@@ -338,6 +338,13 @@ export default function LibraryPage() {
                     </div>
                   </div>
 
+                  {item.is_requested && item.requested_by_username && (
+                    <div className="mt-2 text-sm text-gray-600">
+                      <span className="font-medium">Requested by:</span> {item.requested_by_username}
+                      {item.requested_by_email && ` (${item.requested_by_email})`}
+                    </div>
+                  )}
+
                   {item.deletion_reason && (
                     <div className="mt-2 text-sm text-gray-600">
                       <span className="font-medium">Reason:</span> {item.deletion_reason}
