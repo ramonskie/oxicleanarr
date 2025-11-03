@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"os"
-	"strings"
+	"path/filepath"
 
 	"github.com/ramonskie/prunarr/internal/config"
 	"github.com/rs/zerolog/log"
@@ -332,6 +332,8 @@ func (h *ConfigHandler) UpdateConfig(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	log.Info().Int("leaving_soon_days", newCfg.App.LeavingSoonDays).Msg("About to write config to file")
+
 	// Write to config file
 	if err := writeConfigToFile(&newCfg); err != nil {
 		log.Error().Err(err).Msg("Failed to write config to file")
@@ -340,6 +342,8 @@ func (h *ConfigHandler) UpdateConfig(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode(ErrorResponse{Error: "Failed to save configuration"})
 		return
 	}
+
+	log.Info().Msg("Write config completed successfully")
 
 	// Reload config to apply changes
 	if err := config.Reload(); err != nil {
@@ -358,15 +362,19 @@ func (h *ConfigHandler) UpdateConfig(w http.ResponseWriter, r *http.Request) {
 
 // writeConfigToFile writes the config to the YAML file
 func writeConfigToFile(cfg *config.Config) error {
-	// Get the config file path (from environment or default)
-	configPath := os.Getenv("PRUNARR_CONFIG_PATH")
+	// Get the config file path from the loaded config
+	configPath := config.GetPath()
 	if configPath == "" {
+		// Fallback to default if not set (shouldn't happen)
 		configPath = "./config/prunarr.yaml"
 	}
+
+	log.Info().Str("path", configPath).Msg("Writing config to file")
 
 	// Marshal config to YAML
 	data, err := yaml.Marshal(cfg)
 	if err != nil {
+		log.Error().Err(err).Msg("Failed to marshal config to YAML")
 		return err
 	}
 
@@ -381,10 +389,20 @@ func writeConfigToFile(cfg *config.Config) error {
 		perm = info.Mode()
 	}
 
-	// Ensure directory exists
-	if err := os.MkdirAll(strings.TrimSuffix(configPath, "/prunarr.yaml"), 0755); err != nil {
+	// Ensure directory exists (extract directory from full path)
+	dir := filepath.Dir(configPath)
+	log.Info().Str("dir", dir).Msg("Ensuring directory exists")
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		log.Error().Err(err).Str("dir", dir).Msg("Failed to create directory")
 		return err
 	}
 
-	return os.WriteFile(configPath, []byte(content), perm)
+	log.Info().Str("path", configPath).Int("bytes", len(content)).Msg("Writing file")
+	if err := os.WriteFile(configPath, []byte(content), perm); err != nil {
+		log.Error().Err(err).Str("path", configPath).Msg("Failed to write config file")
+		return err
+	}
+
+	log.Info().Str("path", configPath).Msg("Config file written successfully")
+	return nil
 }

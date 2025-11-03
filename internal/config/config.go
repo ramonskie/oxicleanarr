@@ -73,6 +73,11 @@ func Get() *Config {
 	return globalConfig
 }
 
+// GetPath returns the current config file path
+func GetPath() string {
+	return configPath
+}
+
 // Reload reloads the configuration from disk
 func Reload() error {
 	log.Info().Msg("Reloading configuration from disk")

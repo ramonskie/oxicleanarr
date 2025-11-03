@@ -7,7 +7,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Input } from '@/components/ui/input';
 import { LogOut, Save, Settings } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import type { Config, UpdateConfigRequest } from '@/lib/types';
 
 export default function ConfigurationPage() {
@@ -21,14 +21,14 @@ export default function ConfigurationPage() {
     queryFn: () => apiClient.getConfig(),
   });
 
-  const [formData, setFormData] = useState<Partial<Config>>(config || {});
+  const [formData, setFormData] = useState<Partial<Config>>({});
 
   // Update formData when config loads
-  useState(() => {
+  useEffect(() => {
     if (config) {
       setFormData(config);
     }
-  });
+  }, [config]);
 
   const updateConfigMutation = useMutation({
     mutationFn: (data: UpdateConfigRequest) => apiClient.updateConfig(data),
