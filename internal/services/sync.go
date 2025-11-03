@@ -689,6 +689,11 @@ func (e *SyncEngine) calculateDeletionInfo() (int, []map[string]interface{}) {
 				"days_overdue": daysOverdue,
 				"reason":       media.DeletionReason,
 				"last_watched": media.LastWatched,
+				// Requester information
+				"is_requested":          media.IsRequested,
+				"requested_by_user_id":  media.RequestedByUserID,
+				"requested_by_username": media.RequestedByUsername,
+				"requested_by_email":    media.RequestedByEmail,
 			}
 			wouldDelete = append(wouldDelete, candidate)
 		}
