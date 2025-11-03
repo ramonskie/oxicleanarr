@@ -1330,6 +1330,123 @@ Applied to:
 - Graceful handling of empty responses
 - Consistent return types
 
+### 14.5 Jellyfin Fallback Removal (Nov 3, 2025)
+
+**Problem**:
+The sync engine had fallback logic that created media entries from Jellyfin when items weren't found in Radarr/Sonarr. This caused issues:
+- Media entries with incorrect file sizes (Jellyfin doesn't provide accurate file size data)
+- Phantom entries appearing with `id: jellyfin-*` prefix
+- Example: "Revolution (2018)" showing unknown file size when only "Revolution (2012)" exists in Sonarr
+- Confusion about source of truth for media library
+
+**Solution**:
+Removed Jellyfin fallback logic from `internal/services/sync.go`:
+1. Deleted code blocks that created media entries from Jellyfin when not found in Radarr/Sonarr
+2. Removed `found` variable tracking in `syncJellyfin()` method
+3. **New behavior**: Jellyfin now ONLY updates watch data (play counts, last watched dates) on existing media entries
+4. **Radarr and Sonarr are now the sole source of truth** for what media exists in the library
+
+**Files Modified**:
+- `internal/services/sync.go` - Removed fallback logic (lines ~419-438 for movies, ~468-486 for TV shows)
+- Removed 46 lines total
+
+**Impact**:
+- ✅ File sizes now always accurate (from Radarr/Sonarr)
+- ✅ No more phantom entries with unknown file sizes
+- ✅ Clear data ownership: Radarr/Sonarr = media library, Jellyfin = watch data only
+- ✅ Cleaner sync logic with fewer edge cases
+
+**Testing**:
+- Verified "Revolution" (2012) shows correct file size (145.5 GB) from Sonarr
+- Confirmed phantom "Revolution (2018)" entry no longer appears
+- Watch data still correctly synced from Jellyfin to existing entries
+
+**Commits**:
+- `483cb62` - fix: remove Jellyfin fallback logic for media entries
+
+### 14.6 UI Formatting Improvements (Nov 3, 2025)
+
+**Problem**:
+Scheduled Deletions page displayed invalid dates and zero file sizes as "0.00 GB" instead of showing "Unknown", creating confusion.
+
+**Solution**:
+Enhanced date and file size formatting in `web/src/pages/ScheduledDeletionsPage.tsx`:
+1. **Date formatting**: Filter out zero/invalid dates (Jan 1, 0001 or Jan 1, 1970) and display "Unknown"
+2. **File size formatting**: Handle zero byte values and display "Unknown" instead of "0.00 GB"
+
+**Files Modified**:
+- `web/src/pages/ScheduledDeletionsPage.tsx` - Updated `formatDate()` and `formatFileSize()` functions
+
+**Code Changes**:
+```typescript
+// Date validation
+if (date.getFullYear() <= 1970 && date.getMonth() === 0 && date.getDate() === 1) {
+  return 'Unknown';
+}
+
+// File size validation
+if (!bytes || bytes === 0) return 'Unknown';
+```
+
+**Benefits**:
+- ✅ Better UX with "Unknown" instead of misleading values
+- ✅ Handles edge cases from Go zero values
+- ✅ Consistent formatting across the UI
+
+**Commits**:
+- `1574ca3` - fix: improve date and file size formatting in Scheduled Deletions
+
+### 14.7 User-Based Rules Logic Fix (Nov 3, 2025)
+
+**Problem**:
+The user-based cleanup rules had incorrect fallback behavior. When user-based rules were configured but no rule matched a requested item, it would fall back to blanket "requested" protection. This was not the intended design and prevented standard retention rules from working correctly.
+
+**Example scenario**:
+- User-based rules configured for specific users (e.g., user ID 123, 456)
+- Media requested by user ID 999 (not in any rule)
+- **Old behavior**: Protected indefinitely with "requested" reason
+- **Correct behavior**: Apply standard retention rules (90d movies, 120d TV)
+
+**Solution**:
+Modified `internal/services/rules.go` to only apply blanket "requested" protection when NO user-based rules exist:
+
+```go
+// Before (incorrect):
+if media.IsRequested {
+    return false, time.Time{}, "requested"
+}
+
+// After (correct):
+if media.IsRequested && len(e.config.AdvancedRules) == 0 {
+    return false, time.Time{}, "requested"
+}
+```
+
+**Logic flow now**:
+1. Check if media matches any enabled user-based rule → apply custom retention
+2. If no user rule matched → **fall through to standard retention rules**
+3. Only apply blanket "requested" protection if zero user-based rules configured
+
+**Files Modified**:
+- `internal/services/rules.go` - Added condition check for AdvancedRules length
+- `internal/services/rules_test.go` - Updated 9 test scenarios to expect standard retention
+- Renamed test: `TestRulesEngine_UserBased_FallbackToBlanketProtection` → `TestRulesEngine_UserBased_FallbackToStandardRules`
+
+**Test Updates**:
+- Tests now verify standard retention applies when user rules don't match
+- Expected reasons changed from "requested" to "within retention" or "retention period expired (90d)"
+- All 208 tests passing
+
+**Impact**:
+- ✅ User-based rules no longer accidentally over-protect media
+- ✅ Standard retention policies work correctly alongside user rules
+- ✅ Clear separation: user rules → custom retention, no match → standard retention
+- ✅ Blanket protection only when user-based cleanup is not configured
+
+**Commits**:
+- `5257927` - fix: apply standard retention when user-based rules don't match
+- `e02b979` - feat: populate requester user data from Jellyseerr API
+
 ---
 
 ## Summary
