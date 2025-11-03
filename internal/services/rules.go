@@ -16,6 +16,7 @@ import (
 type RulesEngine struct {
 	config     *config.Config
 	exclusions *storage.ExclusionsFile
+	useGlobal  bool // If true, always fetch from config.Get() for hot-reload
 }
 
 // NewRulesEngine creates a new rules engine
@@ -23,7 +24,21 @@ func NewRulesEngine(cfg *config.Config, exclusions *storage.ExclusionsFile) *Rul
 	return &RulesEngine{
 		config:     cfg,
 		exclusions: exclusions,
+		useGlobal:  false, // Default to using passed config (for testing)
 	}
+}
+
+// UseGlobalConfig enables fetching config from config.Get() for hot-reload support
+func (e *RulesEngine) UseGlobalConfig() {
+	e.useGlobal = true
+}
+
+// getConfig returns the appropriate config based on useGlobal setting
+func (e *RulesEngine) getConfig() *config.Config {
+	if e.useGlobal {
+		return config.Get()
+	}
+	return e.config
 }
 
 // EvaluateMedia determines if a media item should be deleted and when
@@ -43,8 +58,11 @@ func (e *RulesEngine) EvaluateMedia(media *models.Media) (shouldDelete bool, del
 		// If no user rule matched, fall through to standard retention rules
 	}
 
+	// Get latest config for hot-reload support
+	cfg := e.getConfig()
+
 	// Check if requested without user data (blanket protection only when no user-based rules exist)
-	if media.IsRequested && len(e.config.AdvancedRules) == 0 {
+	if media.IsRequested && len(cfg.AdvancedRules) == 0 {
 		return false, time.Time{}, "requested"
 	}
 
@@ -53,9 +71,9 @@ func (e *RulesEngine) EvaluateMedia(media *models.Media) (shouldDelete bool, del
 	var err error
 
 	if media.Type == models.MediaTypeMovie {
-		retentionDuration, err = parseDuration(e.config.Rules.MovieRetention)
+		retentionDuration, err = parseDuration(cfg.Rules.MovieRetention)
 	} else {
-		retentionDuration, err = parseDuration(e.config.Rules.TVRetention)
+		retentionDuration, err = parseDuration(cfg.Rules.TVRetention)
 	}
 
 	if err != nil {
@@ -97,13 +115,16 @@ func (e *RulesEngine) EvaluateMedia(media *models.Media) (shouldDelete bool, del
 
 // evaluateUserBasedRules checks if media matches any user-based advanced rules
 func (e *RulesEngine) evaluateUserBasedRules(media *models.Media) (matched bool, shouldDelete bool, deleteAfter time.Time, reason string) {
+	// Get latest config for hot-reload support
+	cfg := e.getConfig()
+
 	// No advanced rules configured
-	if len(e.config.AdvancedRules) == 0 {
+	if len(cfg.AdvancedRules) == 0 {
 		return false, false, time.Time{}, ""
 	}
 
 	// Find user-based rules
-	for _, rule := range e.config.AdvancedRules {
+	for _, rule := range cfg.AdvancedRules {
 		if !rule.Enabled || rule.Type != "user" {
 			continue
 		}
@@ -245,8 +266,11 @@ func (e *RulesEngine) GetDeletionCandidates(mediaList []models.Media) []models.D
 
 // GetLeavingSoon returns media items that will be deleted soon
 func (e *RulesEngine) GetLeavingSoon(mediaList []models.Media) []models.Media {
+	// Get latest config for hot-reload support
+	cfg := e.getConfig()
+
 	leavingSoon := make([]models.Media, 0)
-	leavingSoonDays := e.config.App.LeavingSoonDays
+	leavingSoonDays := cfg.App.LeavingSoonDays
 
 	for _, media := range mediaList {
 		shouldDelete, deleteAfter, _ := e.EvaluateMedia(&media)
@@ -298,10 +322,13 @@ func (e *RulesEngine) GenerateDeletionReason(media *models.Media, deleteAfter ti
 
 // getRetentionString returns the human-readable retention period
 func (e *RulesEngine) getRetentionString(mediaType models.MediaType) string {
+	// Get latest config for hot-reload support
+	cfg := e.getConfig()
+
 	if mediaType == models.MediaTypeMovie {
-		return e.config.Rules.MovieRetention
+		return cfg.Rules.MovieRetention
 	}
-	return e.config.Rules.TVRetention
+	return cfg.Rules.TVRetention
 }
 
 // parseDuration parses duration strings like "90d", "24h", "30m", or special values "never"/"0d" to disable

@@ -76,6 +76,7 @@ func main() {
 
 	// Initialize rules engine
 	rulesEngine := services.NewRulesEngine(cfg, exclusionsFile)
+	rulesEngine.UseGlobalConfig() // Enable hot-reload support
 	log.Info().Msg("Rules engine initialized")
 
 	// Initialize sync engine
@@ -99,8 +100,9 @@ func main() {
 
 	// Start config watcher for hot-reload
 	if err := config.StartWatcher(func() {
-		log.Info().Msg("Configuration reloaded, clearing cache")
+		log.Info().Msg("Configuration reloaded, clearing cache and reapplying retention rules")
 		appCache.Clear()
+		syncEngine.ReapplyRetentionRules()
 	}); err != nil {
 		log.Warn().Err(err).Msg("Failed to start config watcher, hot-reload disabled")
 	}

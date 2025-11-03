@@ -484,9 +484,14 @@ func (e *SyncEngine) syncJellyseerr(ctx context.Context) error {
 					media.RequestedByEmail = &req.RequestedBy.Email
 				}
 				e.mediaLibrary[id] = media
+				break
 			}
 		}
 	}
+
+	log.Info().
+		Int("total_requests", len(requests)).
+		Msg("Jellyseerr sync completed")
 
 	return nil
 }
@@ -545,6 +550,14 @@ func (e *SyncEngine) applyRetentionRules() {
 	}
 
 	log.Debug().Int("media_count", len(e.mediaLibrary)).Msg("Applied retention rules to media")
+}
+
+// ReapplyRetentionRules re-evaluates retention rules for all media items
+// This is useful after config changes to update deletion dates without a full sync
+func (e *SyncEngine) ReapplyRetentionRules() {
+	log.Info().Msg("Reapplying retention rules after config change")
+	e.applyRetentionRules()
+	log.Info().Msg("Retention rules reapplied successfully")
 }
 
 // applyExclusions applies exclusions from the exclusions file to all media items
