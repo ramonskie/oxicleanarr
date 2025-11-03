@@ -557,10 +557,11 @@ func TestRulesEngine_UserBased_UserIDMatching(t *testing.T) {
 
 		shouldDelete, deleteAfter, reason := engine.EvaluateMedia(&media)
 
-		// Should fall back to blanket "requested" protection
+		// Should apply standard retention rules (90d for movies)
+		// 10 days old is within 90d retention
 		assert.False(t, shouldDelete)
-		assert.True(t, deleteAfter.IsZero())
-		assert.Equal(t, "requested", reason)
+		assert.False(t, deleteAfter.IsZero())
+		assert.Equal(t, "within retention", reason)
 	})
 
 	t.Run("handles media with nil user ID", func(t *testing.T) {
@@ -570,10 +571,11 @@ func TestRulesEngine_UserBased_UserIDMatching(t *testing.T) {
 
 		shouldDelete, deleteAfter, reason := engine.EvaluateMedia(&media)
 
-		// Should fall back to blanket "requested" protection
+		// Should apply standard retention rules (90d for movies)
+		// 10 days old is within 90d retention
 		assert.False(t, shouldDelete)
-		assert.True(t, deleteAfter.IsZero())
-		assert.Equal(t, "requested", reason)
+		assert.False(t, deleteAfter.IsZero())
+		assert.Equal(t, "within retention", reason)
 	})
 }
 
@@ -642,8 +644,9 @@ func TestRulesEngine_UserBased_UsernameMatching(t *testing.T) {
 
 		shouldDelete, _, reason := engine.EvaluateMedia(&media)
 
+		// Should apply standard retention rules (20 days within 90d)
 		assert.False(t, shouldDelete)
-		assert.Equal(t, "requested", reason)
+		assert.Equal(t, "within retention", reason)
 	})
 
 	t.Run("handles media with nil username", func(t *testing.T) {
@@ -653,8 +656,9 @@ func TestRulesEngine_UserBased_UsernameMatching(t *testing.T) {
 
 		shouldDelete, _, reason := engine.EvaluateMedia(&media)
 
+		// Should apply standard retention rules (20 days within 90d)
 		assert.False(t, shouldDelete)
-		assert.Equal(t, "requested", reason)
+		assert.Equal(t, "within retention", reason)
 	})
 }
 
@@ -723,8 +727,9 @@ func TestRulesEngine_UserBased_EmailMatching(t *testing.T) {
 
 		shouldDelete, _, reason := engine.EvaluateMedia(&media)
 
+		// Should apply standard retention rules (5 days within 90d)
 		assert.False(t, shouldDelete)
-		assert.Equal(t, "requested", reason)
+		assert.Equal(t, "within retention", reason)
 	})
 
 	t.Run("handles media with nil email", func(t *testing.T) {
@@ -734,8 +739,9 @@ func TestRulesEngine_UserBased_EmailMatching(t *testing.T) {
 
 		shouldDelete, _, reason := engine.EvaluateMedia(&media)
 
+		// Should apply standard retention rules (5 days within 90d)
 		assert.False(t, shouldDelete)
-		assert.Equal(t, "requested", reason)
+		assert.Equal(t, "within retention", reason)
 	})
 }
 
@@ -957,18 +963,18 @@ func TestRulesEngine_UserBased_PriorityOverStandardRules(t *testing.T) {
 		differentUserID := 999
 		username := "otheruser"
 		email := "other@example.com"
-		// Same scenario but different user - should fall back to blanket protection
+		// Same scenario but different user - should apply standard 90d retention
 		media := createMockMediaWithUser("movie-2", models.MediaTypeMovie, 10, 10, &differentUserID, &username, &email)
 
 		shouldDelete, _, reason := engine.EvaluateMedia(&media)
 
-		// Should fall back to blanket "requested" protection
+		// Should apply standard retention rules (10 days within 90d)
 		assert.False(t, shouldDelete)
-		assert.Equal(t, "requested", reason)
+		assert.Equal(t, "within retention", reason)
 	})
 }
 
-func TestRulesEngine_UserBased_FallbackToBlanketProtection(t *testing.T) {
+func TestRulesEngine_UserBased_FallbackToStandardRules(t *testing.T) {
 	userID := 500
 	advancedRules := []config.AdvancedRule{
 		{
@@ -988,43 +994,47 @@ func TestRulesEngine_UserBased_FallbackToBlanketProtection(t *testing.T) {
 	exclusions := createMockExclusions()
 	engine := NewRulesEngine(cfg, exclusions)
 
-	t.Run("protects requested media when no user rule matches", func(t *testing.T) {
+	t.Run("applies standard rules when no user rule matches and media is old", func(t *testing.T) {
 		differentUserID := 999
 		username := "nonmatchinguser"
 		email := "nonmatching@example.com"
-		// Media is old and would be deleted by standard rules
+		// Media is 200 days old - past 90d standard retention
 		media := createMockMediaWithUser("movie-1", models.MediaTypeMovie, 200, 200, &differentUserID, &username, &email)
 
 		shouldDelete, deleteAfter, reason := engine.EvaluateMedia(&media)
 
-		// Should be protected because it's requested (blanket protection)
-		assert.False(t, shouldDelete)
-		assert.True(t, deleteAfter.IsZero())
-		assert.Equal(t, "requested", reason)
+		// Should be deleted by standard rules (200 days > 90d)
+		assert.True(t, shouldDelete)
+		assert.False(t, deleteAfter.IsZero())
+		assert.Equal(t, "retention period expired (90d)", reason)
 	})
 
-	t.Run("protects media with only username when user ID rule doesn't match", func(t *testing.T) {
+	t.Run("applies standard rules when no user rule matches and media is within retention", func(t *testing.T) {
 		differentUserID := 888
 		username := "anotheruser"
 		email := "another@example.com"
-		media := createMockMediaWithUser("movie-2", models.MediaTypeMovie, 100, 100, &differentUserID, &username, &email)
+		// Media is 50 days old - within 90d standard retention
+		media := createMockMediaWithUser("movie-2", models.MediaTypeMovie, 50, 50, &differentUserID, &username, &email)
 
 		shouldDelete, _, reason := engine.EvaluateMedia(&media)
 
+		// Should be kept by standard rules (50 days < 90d)
 		assert.False(t, shouldDelete)
-		assert.Equal(t, "requested", reason)
+		assert.Equal(t, "within retention", reason)
 	})
 
-	t.Run("protects media with only email when user ID rule doesn't match", func(t *testing.T) {
+	t.Run("applies standard rules even with user data present", func(t *testing.T) {
 		differentUserID := 777
 		username := "yetanotheruser"
 		email := "yetanother@example.com"
+		// Media is 150 days old - past 90d standard retention
 		media := createMockMediaWithUser("movie-3", models.MediaTypeMovie, 150, 150, &differentUserID, &username, &email)
 
 		shouldDelete, _, reason := engine.EvaluateMedia(&media)
 
-		assert.False(t, shouldDelete)
-		assert.Equal(t, "requested", reason)
+		// Should be deleted by standard rules (150 days > 90d)
+		assert.True(t, shouldDelete)
+		assert.Equal(t, "retention period expired (90d)", reason)
 	})
 }
 
@@ -1048,17 +1058,17 @@ func TestRulesEngine_UserBased_DisabledRule(t *testing.T) {
 	exclusions := createMockExclusions()
 	engine := NewRulesEngine(cfg, exclusions)
 
-	t.Run("ignores disabled user rule", func(t *testing.T) {
+	t.Run("ignores disabled user rule and applies standard rules", func(t *testing.T) {
 		username := "testuser"
 		email := "test@example.com"
-		// Old media that would be deleted if rule was enabled
+		// Media is 10 days old - within 90d standard retention
 		media := createMockMediaWithUser("movie-1", models.MediaTypeMovie, 10, 10, &userID, &username, &email)
 
 		shouldDelete, _, reason := engine.EvaluateMedia(&media)
 
-		// Should fall back to blanket protection since rule is disabled
+		// Should fall back to standard rules since rule is disabled (10 days < 90d)
 		assert.False(t, shouldDelete)
-		assert.Equal(t, "requested", reason)
+		assert.Equal(t, "within retention", reason)
 	})
 }
 

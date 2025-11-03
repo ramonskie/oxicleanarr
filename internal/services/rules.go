@@ -40,10 +40,11 @@ func (e *RulesEngine) EvaluateMedia(media *models.Media) (shouldDelete bool, del
 		if matched {
 			return shouldDel, delAfter, userReason
 		}
+		// If no user rule matched, fall through to standard retention rules
 	}
 
-	// Check if requested without user-based rule (blanket protection)
-	if media.IsRequested {
+	// Check if requested without user data (blanket protection only when no user-based rules exist)
+	if media.IsRequested && len(e.config.AdvancedRules) == 0 {
 		return false, time.Time{}, "requested"
 	}
 
