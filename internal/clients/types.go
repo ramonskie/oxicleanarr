@@ -16,6 +16,19 @@ type JellyfinItem struct {
 	ProviderIds    map[string]string `json:"ProviderIds"`
 }
 
+// JellyfinCollection represents a collection (BoxSet) in Jellyfin
+type JellyfinCollection struct {
+	ID   string `json:"Id"`
+	Name string `json:"Name"`
+	Type string `json:"Type"` // Should be "BoxSet"
+}
+
+// JellyfinCollectionResponse represents the response when searching for collections
+type JellyfinCollectionResponse struct {
+	Items            []JellyfinCollection `json:"Items"`
+	TotalRecordCount int                  `json:"TotalRecordCount"`
+}
+
 // JellyfinUserData represents user-specific data for a Jellyfin item
 type JellyfinUserData struct {
 	PlayCount      int       `json:"PlayCount"`

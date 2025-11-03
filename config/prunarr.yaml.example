@@ -10,6 +10,16 @@ integrations:
     enabled: true
     url: http://jellyfin:8096
     api_key: your-jellyfin-api-key-here
+    
+    # Collections: Create "Leaving Soon" collections (separate for movies and TV)
+    # collections:
+    #   enabled: true
+    #   movies:
+    #     name: "Movies - Leaving Soon"
+    #     hide_when_empty: true    # Delete/hide collection when no items
+    #   tv_shows:
+    #     name: "TV Shows - Leaving Soon"
+    #     hide_when_empty: true
   
   radarr:
     enabled: true

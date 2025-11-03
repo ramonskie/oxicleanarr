@@ -30,6 +30,8 @@ type SyncEngine struct {
 	jellyseerrClient *clients.JellyseerrClient
 	jellystatClient  *clients.JellystatClient
 
+	collectionManager *JellyfinCollectionManager
+
 	mediaLibrary     map[string]models.Media
 	mediaLibraryLock sync.RWMutex
 
@@ -61,6 +63,15 @@ func NewSyncEngine(
 	// Initialize clients based on config
 	if cfg.Integrations.Jellyfin.Enabled {
 		engine.jellyfinClient = clients.NewJellyfinClient(cfg.Integrations.Jellyfin)
+
+		// Initialize collection manager if collections are enabled
+		if cfg.Integrations.Jellyfin.Collections.Enabled {
+			engine.collectionManager = NewJellyfinCollectionManager(
+				engine.jellyfinClient,
+				&cfg.Integrations.Jellyfin.Collections,
+				cfg.App.DryRun,
+			)
+		}
 	}
 	if cfg.Integrations.Radarr.Enabled {
 		engine.radarrClient = clients.NewRadarrClient(cfg.Integrations.Radarr)
@@ -247,6 +258,16 @@ func (e *SyncEngine) FullSync(ctx context.Context) error {
 
 	// Apply retention rules to all media
 	e.applyRetentionRules()
+
+	// Sync Jellyfin collections with items scheduled for deletion
+	if e.collectionManager != nil {
+		e.mediaLibraryLock.RLock()
+		if err := e.collectionManager.SyncCollections(ctx, e.mediaLibrary); err != nil {
+			log.Error().Err(err).Msg("Failed to sync Jellyfin collections")
+			// Don't fail the entire sync if collections fail
+		}
+		e.mediaLibraryLock.RUnlock()
+	}
 
 	// Calculate scheduled deletions and dry-run preview
 	scheduledCount, wouldDelete := e.calculateDeletionInfo()

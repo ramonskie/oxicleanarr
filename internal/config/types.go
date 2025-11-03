@@ -63,9 +63,23 @@ type BaseIntegrationConfig struct {
 // JellyfinConfig holds Jellyfin integration settings
 type JellyfinConfig struct {
 	BaseIntegrationConfig `mapstructure:",squash"`
-	Username              string `mapstructure:"username"`
-	Password              string `mapstructure:"password"`
-	LeavingSoonType       string `mapstructure:"leaving_soon_type"`
+	Username              string            `mapstructure:"username"`
+	Password              string            `mapstructure:"password"`
+	LeavingSoonType       string            `mapstructure:"leaving_soon_type"`
+	Collections           CollectionsConfig `mapstructure:"collections"`
+}
+
+// CollectionsConfig holds Jellyfin collection management settings
+type CollectionsConfig struct {
+	Enabled bool                 `mapstructure:"enabled"`
+	Movies  CollectionItemConfig `mapstructure:"movies"`
+	TVShows CollectionItemConfig `mapstructure:"tv_shows"`
+}
+
+// CollectionItemConfig holds settings for a specific collection
+type CollectionItemConfig struct {
+	Name          string `mapstructure:"name"`
+	HideWhenEmpty bool   `mapstructure:"hide_when_empty"`
 }
 
 // RadarrConfig holds Radarr integration settings
