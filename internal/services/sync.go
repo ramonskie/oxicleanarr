@@ -456,7 +456,9 @@ func (e *SyncEngine) syncJellyseerr(ctx context.Context) error {
 
 	// Mark requested items
 	for _, req := range requests {
-		if req.Status != 2 { // 2 = approved
+		// Status 2 = approved, 5 = available (approved + downloaded)
+		// We want both because status 5 means the request is fulfilled and in the library
+		if req.Status != 2 && req.Status != 5 {
 			continue
 		}
 
