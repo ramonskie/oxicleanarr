@@ -119,17 +119,26 @@ type SonarrHistory struct {
 
 // JellyseerrRequest represents a request in Jellyseerr
 type JellyseerrRequest struct {
-	ID        int             `json:"id"`
-	Type      string          `json:"type"`
-	Status    int             `json:"status"`
-	Media     JellyseerrMedia `json:"media"`
-	CreatedAt time.Time       `json:"createdAt"`
+	ID          int             `json:"id"`
+	Type        string          `json:"type"`
+	Status      int             `json:"status"`
+	Media       JellyseerrMedia `json:"media"`
+	RequestedBy JellyseerrUser  `json:"requestedBy"`
+	CreatedAt   time.Time       `json:"createdAt"`
 }
 
 // JellyseerrMedia represents media in a Jellyseerr request
 type JellyseerrMedia struct {
 	TmdbId int `json:"tmdbId"`
 	TvdbId int `json:"tvdbId"`
+}
+
+// JellyseerrUser represents a user in Jellyseerr
+type JellyseerrUser struct {
+	ID       int    `json:"id"`
+	Email    string `json:"email"`
+	Username string `json:"username"`
+	PlexID   int    `json:"plexId,omitempty"`
 }
 
 // JellyseerrResponse represents paginated response

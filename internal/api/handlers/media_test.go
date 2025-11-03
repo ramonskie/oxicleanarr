@@ -66,7 +66,7 @@ func TestMediaHandler_ListMovies(t *testing.T) {
 		require.NoError(t, err)
 
 		assert.Equal(t, float64(2), response["total"])
-		movies := response["movies"].([]interface{})
+		movies := response["items"].([]interface{})
 		assert.Len(t, movies, 2)
 	})
 
@@ -169,7 +169,7 @@ func TestMediaHandler_ListShows(t *testing.T) {
 		require.NoError(t, err)
 
 		assert.Equal(t, float64(2), response["total"])
-		shows := response["shows"].([]interface{})
+		shows := response["items"].([]interface{})
 		assert.Len(t, shows, 2)
 	})
 }
@@ -219,7 +219,7 @@ func TestMediaHandler_ListLeavingSoon(t *testing.T) {
 		require.NoError(t, err)
 
 		assert.Equal(t, float64(1), response["total"])
-		media := response["media"].([]interface{})
+		media := response["items"].([]interface{})
 		assert.Len(t, media, 1)
 	})
 }

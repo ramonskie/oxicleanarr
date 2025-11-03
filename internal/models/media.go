@@ -31,6 +31,12 @@ type Media struct {
 	DaysUntilDue   int       `json:"days_until_deletion,omitempty"`
 	DeletionReason string    `json:"deletion_reason,omitempty"`
 
+	// User-based cleanup fields
+	RequestedByUserID   *int    `json:"requested_by_user_id,omitempty"`
+	RequestedByUsername *string `json:"requested_by_username,omitempty"`
+	RequestedByEmail    *string `json:"requested_by_email,omitempty"`
+	WatchedByUsers      []int   `json:"watched_by_users,omitempty"`
+
 	// Source system IDs
 	JellyfinID string `json:"jellyfin_id,omitempty"`
 	RadarrID   int    `json:"radarr_id,omitempty"`

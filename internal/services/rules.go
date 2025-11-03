@@ -33,7 +33,16 @@ func (e *RulesEngine) EvaluateMedia(media *models.Media) (shouldDelete bool, del
 		return false, time.Time{}, "excluded"
 	}
 
-	// Check if requested
+	// Check user-based rules first (higher priority than standard rules)
+	if media.IsRequested && (media.RequestedByUserID != nil || media.RequestedByUsername != nil || media.RequestedByEmail != nil) {
+		// Try to match user-based rules
+		matched, shouldDel, delAfter, userReason := e.evaluateUserBasedRules(media)
+		if matched {
+			return shouldDel, delAfter, userReason
+		}
+	}
+
+	// Check if requested without user-based rule (blanket protection)
 	if media.IsRequested {
 		return false, time.Time{}, "requested"
 	}
@@ -74,6 +83,128 @@ func (e *RulesEngine) EvaluateMedia(media *models.Media) (shouldDelete bool, del
 	}
 
 	return false, deleteAfter, "within retention"
+}
+
+// evaluateUserBasedRules checks if media matches any user-based advanced rules
+func (e *RulesEngine) evaluateUserBasedRules(media *models.Media) (matched bool, shouldDelete bool, deleteAfter time.Time, reason string) {
+	// No advanced rules configured
+	if len(e.config.AdvancedRules) == 0 {
+		return false, false, time.Time{}, ""
+	}
+
+	// Find user-based rules
+	for _, rule := range e.config.AdvancedRules {
+		if !rule.Enabled || rule.Type != "user" {
+			continue
+		}
+
+		// Check each user in the rule
+		for _, userRule := range rule.Users {
+			// Match by user ID
+			if userRule.UserID != nil && media.RequestedByUserID != nil && *userRule.UserID == *media.RequestedByUserID {
+				return e.applyUserRule(media, &userRule, rule.Name)
+			}
+
+			// Match by username (case-insensitive)
+			if userRule.Username != "" && media.RequestedByUsername != nil {
+				if equalsCaseInsensitive(userRule.Username, *media.RequestedByUsername) {
+					return e.applyUserRule(media, &userRule, rule.Name)
+				}
+			}
+
+			// Match by email (case-insensitive)
+			if userRule.Email != "" && media.RequestedByEmail != nil {
+				if equalsCaseInsensitive(userRule.Email, *media.RequestedByEmail) {
+					return e.applyUserRule(media, &userRule, rule.Name)
+				}
+			}
+		}
+	}
+
+	return false, false, time.Time{}, ""
+}
+
+// applyUserRule applies a matched user rule to determine deletion
+func (e *RulesEngine) applyUserRule(media *models.Media, userRule *config.UserRule, ruleName string) (matched bool, shouldDelete bool, deleteAfter time.Time, reason string) {
+	// Parse retention period for this user
+	retentionDuration, err := parseDuration(userRule.Retention)
+	if err != nil {
+		log.Warn().
+			Err(err).
+			Str("media_id", media.ID).
+			Str("rule_name", ruleName).
+			Str("retention", userRule.Retention).
+			Msg("Failed to parse user rule retention duration")
+		return true, false, time.Time{}, "invalid user rule retention"
+	}
+
+	// Check require_watched flag
+	requireWatched := false
+	if userRule.RequireWatched != nil {
+		requireWatched = *userRule.RequireWatched
+	}
+
+	// If require_watched is true and media hasn't been watched, don't delete
+	if requireWatched && media.WatchCount == 0 {
+		log.Debug().
+			Str("media_id", media.ID).
+			Str("rule_name", ruleName).
+			Msg("User rule requires watched, but media not watched - skipping deletion")
+		return true, false, time.Time{}, "user rule: not watched yet"
+	}
+
+	// Calculate deletion time based on last watched or added date
+	var baseTime time.Time
+	if !media.LastWatched.IsZero() {
+		baseTime = media.LastWatched
+	} else {
+		baseTime = media.AddedAt
+	}
+
+	deleteAfter = baseTime.Add(retentionDuration)
+
+	// Check if due for deletion
+	if time.Now().After(deleteAfter) {
+		reason = fmt.Sprintf("user rule '%s' retention expired (%s)", ruleName, userRule.Retention)
+		log.Info().
+			Str("media_id", media.ID).
+			Str("title", media.Title).
+			Str("rule_name", ruleName).
+			Str("retention", userRule.Retention).
+			Time("delete_after", deleteAfter).
+			Msg("Media matched user-based rule for deletion")
+		return true, true, deleteAfter, reason
+	}
+
+	// Within retention period
+	log.Debug().
+		Str("media_id", media.ID).
+		Str("rule_name", ruleName).
+		Time("delete_after", deleteAfter).
+		Msg("Media matched user rule but within retention period")
+	return true, false, deleteAfter, "user rule: within retention"
+}
+
+// equalsCaseInsensitive compares two strings case-insensitively
+func equalsCaseInsensitive(a, b string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	return stringToLower(a) == stringToLower(b)
+}
+
+// stringToLower converts a string to lowercase manually to avoid imports
+func stringToLower(s string) string {
+	result := make([]byte, len(s))
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if c >= 'A' && c <= 'Z' {
+			result[i] = c + 32
+		} else {
+			result[i] = c
+		}
+	}
+	return string(result)
 }
 
 // GetDeletionCandidates returns all media items ready for deletion

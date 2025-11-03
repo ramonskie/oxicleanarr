@@ -486,3 +486,623 @@ func TestRulesEngine_ConcurrentAccess(t *testing.T) {
 		}
 	})
 }
+
+// ==================== User-Based Rules Tests ====================
+
+// Helper function to create media with user data
+func createMockMediaWithUser(id string, mediaType models.MediaType, addedDaysAgo, lastWatchedDaysAgo int, userID *int, username, email *string) models.Media {
+	media := createMockMedia(id, mediaType, addedDaysAgo, lastWatchedDaysAgo, true, false)
+	media.RequestedByUserID = userID
+	media.RequestedByUsername = username
+	media.RequestedByEmail = email
+	return media
+}
+
+// Helper function to create config with advanced user rules
+func createConfigWithUserRules(advancedRules []config.AdvancedRule) *config.Config {
+	return &config.Config{
+		Rules: config.RulesConfig{
+			MovieRetention: "90d",
+			TVRetention:    "120d",
+		},
+		AdvancedRules: advancedRules,
+		App: config.AppConfig{
+			LeavingSoonDays: 14,
+		},
+	}
+}
+
+func TestRulesEngine_UserBased_UserIDMatching(t *testing.T) {
+	userID := 123
+	advancedRules := []config.AdvancedRule{
+		{
+			Name:    "User 123 Cleanup",
+			Type:    "user",
+			Enabled: true,
+			Users: []config.UserRule{
+				{
+					UserID:    &userID,
+					Retention: "7d",
+				},
+			},
+		},
+	}
+
+	cfg := createConfigWithUserRules(advancedRules)
+	exclusions := createMockExclusions()
+	engine := NewRulesEngine(cfg, exclusions)
+
+	t.Run("matches media by user ID and applies custom retention", func(t *testing.T) {
+		username := "testuser"
+		email := "test@example.com"
+		media := createMockMediaWithUser("movie-1", models.MediaTypeMovie, 10, 10, &userID, &username, &email)
+
+		shouldDelete, deleteAfter, reason := engine.EvaluateMedia(&media)
+
+		assert.True(t, shouldDelete)
+		assert.False(t, deleteAfter.IsZero())
+		assert.Contains(t, reason, "user rule")
+		assert.Contains(t, reason, "7d")
+
+		// Verify deletion is based on 7d retention (10 days ago watched, 7d retention = should delete)
+		expectedDeleteAfter := media.LastWatched.Add(7 * 24 * time.Hour)
+		assert.WithinDuration(t, expectedDeleteAfter, deleteAfter, time.Second)
+	})
+
+	t.Run("does not match media with different user ID", func(t *testing.T) {
+		differentUserID := 456
+		username := "otheruser"
+		email := "other@example.com"
+		media := createMockMediaWithUser("movie-2", models.MediaTypeMovie, 10, 10, &differentUserID, &username, &email)
+
+		shouldDelete, deleteAfter, reason := engine.EvaluateMedia(&media)
+
+		// Should fall back to blanket "requested" protection
+		assert.False(t, shouldDelete)
+		assert.True(t, deleteAfter.IsZero())
+		assert.Equal(t, "requested", reason)
+	})
+
+	t.Run("handles media with nil user ID", func(t *testing.T) {
+		username := "testuser"
+		email := "test@example.com"
+		media := createMockMediaWithUser("movie-3", models.MediaTypeMovie, 10, 10, nil, &username, &email)
+
+		shouldDelete, deleteAfter, reason := engine.EvaluateMedia(&media)
+
+		// Should fall back to blanket "requested" protection
+		assert.False(t, shouldDelete)
+		assert.True(t, deleteAfter.IsZero())
+		assert.Equal(t, "requested", reason)
+	})
+}
+
+func TestRulesEngine_UserBased_UsernameMatching(t *testing.T) {
+	advancedRules := []config.AdvancedRule{
+		{
+			Name:    "Username Cleanup",
+			Type:    "user",
+			Enabled: true,
+			Users: []config.UserRule{
+				{
+					Username:  "JohnDoe",
+					Retention: "14d",
+				},
+			},
+		},
+	}
+
+	cfg := createConfigWithUserRules(advancedRules)
+	exclusions := createMockExclusions()
+	engine := NewRulesEngine(cfg, exclusions)
+
+	t.Run("matches media by exact username", func(t *testing.T) {
+		userID := 123
+		username := "JohnDoe"
+		email := "john@example.com"
+		media := createMockMediaWithUser("movie-1", models.MediaTypeMovie, 20, 20, &userID, &username, &email)
+
+		shouldDelete, deleteAfter, reason := engine.EvaluateMedia(&media)
+
+		assert.True(t, shouldDelete)
+		assert.False(t, deleteAfter.IsZero())
+		assert.Contains(t, reason, "user rule")
+		assert.Contains(t, reason, "14d")
+	})
+
+	t.Run("matches media by username case-insensitive", func(t *testing.T) {
+		userID := 123
+		username := "johndoe" // lowercase
+		email := "john@example.com"
+		media := createMockMediaWithUser("movie-2", models.MediaTypeMovie, 20, 20, &userID, &username, &email)
+
+		shouldDelete, _, reason := engine.EvaluateMedia(&media)
+
+		assert.True(t, shouldDelete)
+		assert.Contains(t, reason, "user rule")
+	})
+
+	t.Run("matches media by username with different casing", func(t *testing.T) {
+		userID := 123
+		username := "JOHNDOE" // uppercase
+		email := "john@example.com"
+		media := createMockMediaWithUser("movie-3", models.MediaTypeMovie, 20, 20, &userID, &username, &email)
+
+		shouldDelete, _, reason := engine.EvaluateMedia(&media)
+
+		assert.True(t, shouldDelete)
+		assert.Contains(t, reason, "user rule")
+	})
+
+	t.Run("does not match different username", func(t *testing.T) {
+		userID := 456
+		username := "JaneDoe"
+		email := "jane@example.com"
+		media := createMockMediaWithUser("movie-4", models.MediaTypeMovie, 20, 20, &userID, &username, &email)
+
+		shouldDelete, _, reason := engine.EvaluateMedia(&media)
+
+		assert.False(t, shouldDelete)
+		assert.Equal(t, "requested", reason)
+	})
+
+	t.Run("handles media with nil username", func(t *testing.T) {
+		userID := 123
+		email := "john@example.com"
+		media := createMockMediaWithUser("movie-5", models.MediaTypeMovie, 20, 20, &userID, nil, &email)
+
+		shouldDelete, _, reason := engine.EvaluateMedia(&media)
+
+		assert.False(t, shouldDelete)
+		assert.Equal(t, "requested", reason)
+	})
+}
+
+func TestRulesEngine_UserBased_EmailMatching(t *testing.T) {
+	advancedRules := []config.AdvancedRule{
+		{
+			Name:    "Email Cleanup",
+			Type:    "user",
+			Enabled: true,
+			Users: []config.UserRule{
+				{
+					Email:     "foo@bar.com",
+					Retention: "3d",
+				},
+			},
+		},
+	}
+
+	cfg := createConfigWithUserRules(advancedRules)
+	exclusions := createMockExclusions()
+	engine := NewRulesEngine(cfg, exclusions)
+
+	t.Run("matches media by exact email", func(t *testing.T) {
+		userID := 789
+		username := "foobar"
+		email := "foo@bar.com"
+		media := createMockMediaWithUser("movie-1", models.MediaTypeMovie, 5, 5, &userID, &username, &email)
+
+		shouldDelete, deleteAfter, reason := engine.EvaluateMedia(&media)
+
+		assert.True(t, shouldDelete)
+		assert.False(t, deleteAfter.IsZero())
+		assert.Contains(t, reason, "user rule")
+		assert.Contains(t, reason, "3d")
+	})
+
+	t.Run("matches media by email case-insensitive", func(t *testing.T) {
+		userID := 789
+		username := "foobar"
+		email := "FOO@BAR.COM" // uppercase
+		media := createMockMediaWithUser("movie-2", models.MediaTypeMovie, 5, 5, &userID, &username, &email)
+
+		shouldDelete, _, reason := engine.EvaluateMedia(&media)
+
+		assert.True(t, shouldDelete)
+		assert.Contains(t, reason, "user rule")
+	})
+
+	t.Run("matches media by email with mixed case", func(t *testing.T) {
+		userID := 789
+		username := "foobar"
+		email := "Foo@Bar.Com"
+		media := createMockMediaWithUser("movie-3", models.MediaTypeMovie, 5, 5, &userID, &username, &email)
+
+		shouldDelete, _, reason := engine.EvaluateMedia(&media)
+
+		assert.True(t, shouldDelete)
+		assert.Contains(t, reason, "user rule")
+	})
+
+	t.Run("does not match different email", func(t *testing.T) {
+		userID := 999
+		username := "other"
+		email := "other@example.com"
+		media := createMockMediaWithUser("movie-4", models.MediaTypeMovie, 5, 5, &userID, &username, &email)
+
+		shouldDelete, _, reason := engine.EvaluateMedia(&media)
+
+		assert.False(t, shouldDelete)
+		assert.Equal(t, "requested", reason)
+	})
+
+	t.Run("handles media with nil email", func(t *testing.T) {
+		userID := 789
+		username := "foobar"
+		media := createMockMediaWithUser("movie-5", models.MediaTypeMovie, 5, 5, &userID, &username, nil)
+
+		shouldDelete, _, reason := engine.EvaluateMedia(&media)
+
+		assert.False(t, shouldDelete)
+		assert.Equal(t, "requested", reason)
+	})
+}
+
+func TestRulesEngine_UserBased_RequireWatchedFlag(t *testing.T) {
+	userID := 100
+	requireWatched := true
+	advancedRules := []config.AdvancedRule{
+		{
+			Name:    "Require Watched Rule",
+			Type:    "user",
+			Enabled: true,
+			Users: []config.UserRule{
+				{
+					UserID:         &userID,
+					Retention:      "7d",
+					RequireWatched: &requireWatched,
+				},
+			},
+		},
+	}
+
+	cfg := createConfigWithUserRules(advancedRules)
+	exclusions := createMockExclusions()
+	engine := NewRulesEngine(cfg, exclusions)
+
+	t.Run("deletes watched media past retention", func(t *testing.T) {
+		username := "testuser"
+		email := "test@example.com"
+		// Added 30 days ago, watched 10 days ago (past 7d retention)
+		media := createMockMediaWithUser("movie-1", models.MediaTypeMovie, 30, 10, &userID, &username, &email)
+
+		shouldDelete, deleteAfter, reason := engine.EvaluateMedia(&media)
+
+		assert.True(t, shouldDelete)
+		assert.False(t, deleteAfter.IsZero())
+		assert.Contains(t, reason, "user rule")
+	})
+
+	t.Run("does not delete watched media within retention", func(t *testing.T) {
+		username := "testuser"
+		email := "test@example.com"
+		// Added 30 days ago, watched 3 days ago (within 7d retention)
+		media := createMockMediaWithUser("movie-2", models.MediaTypeMovie, 30, 3, &userID, &username, &email)
+
+		shouldDelete, deleteAfter, reason := engine.EvaluateMedia(&media)
+
+		assert.False(t, shouldDelete)
+		assert.False(t, deleteAfter.IsZero())
+		assert.Equal(t, "user rule: within retention", reason)
+	})
+
+	t.Run("does not delete unwatched media when require_watched is true", func(t *testing.T) {
+		username := "testuser"
+		email := "test@example.com"
+		// Added 30 days ago, never watched (past retention but unwatched)
+		media := createMockMediaWithUser("movie-3", models.MediaTypeMovie, 30, -1, &userID, &username, &email)
+
+		shouldDelete, deleteAfter, reason := engine.EvaluateMedia(&media)
+
+		assert.False(t, shouldDelete)
+		assert.True(t, deleteAfter.IsZero())
+		assert.Contains(t, reason, "not watched")
+	})
+}
+
+func TestRulesEngine_UserBased_RequireWatchedFalse(t *testing.T) {
+	userID := 200
+	requireWatched := false
+	advancedRules := []config.AdvancedRule{
+		{
+			Name:    "No Require Watched Rule",
+			Type:    "user",
+			Enabled: true,
+			Users: []config.UserRule{
+				{
+					UserID:         &userID,
+					Retention:      "7d",
+					RequireWatched: &requireWatched, // Does not require watched
+				},
+			},
+		},
+	}
+
+	cfg := createConfigWithUserRules(advancedRules)
+	exclusions := createMockExclusions()
+	engine := NewRulesEngine(cfg, exclusions)
+
+	t.Run("deletes unwatched media past retention when require_watched is false", func(t *testing.T) {
+		username := "testuser"
+		email := "test@example.com"
+		// Added 10 days ago, never watched (past 7d retention)
+		media := createMockMediaWithUser("movie-1", models.MediaTypeMovie, 10, -1, &userID, &username, &email)
+
+		shouldDelete, deleteAfter, reason := engine.EvaluateMedia(&media)
+
+		assert.True(t, shouldDelete)
+		assert.False(t, deleteAfter.IsZero())
+		assert.Contains(t, reason, "user rule")
+	})
+
+	t.Run("does not delete unwatched media within retention", func(t *testing.T) {
+		username := "testuser"
+		email := "test@example.com"
+		// Added 5 days ago, never watched (within 7d retention)
+		media := createMockMediaWithUser("movie-2", models.MediaTypeMovie, 5, -1, &userID, &username, &email)
+
+		shouldDelete, deleteAfter, reason := engine.EvaluateMedia(&media)
+
+		assert.False(t, shouldDelete)
+		assert.False(t, deleteAfter.IsZero())
+		assert.Equal(t, "user rule: within retention", reason)
+	})
+}
+
+func TestRulesEngine_UserBased_CustomRetentionPeriods(t *testing.T) {
+	userID1 := 301
+	userID2 := 302
+	userID3 := 303
+
+	advancedRules := []config.AdvancedRule{
+		{
+			Name:    "Multiple User Rules",
+			Type:    "user",
+			Enabled: true,
+			Users: []config.UserRule{
+				{
+					UserID:    &userID1,
+					Retention: "3d",
+				},
+				{
+					UserID:    &userID2,
+					Retention: "14d",
+				},
+				{
+					UserID:    &userID3,
+					Retention: "30d",
+				},
+			},
+		},
+	}
+
+	cfg := createConfigWithUserRules(advancedRules)
+	exclusions := createMockExclusions()
+	engine := NewRulesEngine(cfg, exclusions)
+
+	t.Run("applies 3d retention for user 301", func(t *testing.T) {
+		username := "user301"
+		email := "user301@example.com"
+		media := createMockMediaWithUser("movie-1", models.MediaTypeMovie, 5, 5, &userID1, &username, &email)
+
+		shouldDelete, _, reason := engine.EvaluateMedia(&media)
+
+		assert.True(t, shouldDelete)
+		assert.Contains(t, reason, "3d")
+	})
+
+	t.Run("applies 14d retention for user 302", func(t *testing.T) {
+		username := "user302"
+		email := "user302@example.com"
+		media := createMockMediaWithUser("movie-2", models.MediaTypeMovie, 10, 10, &userID2, &username, &email)
+
+		shouldDelete, _, reason := engine.EvaluateMedia(&media)
+
+		// 10 days ago with 14d retention = within retention
+		assert.False(t, shouldDelete)
+		assert.Equal(t, "user rule: within retention", reason)
+	})
+
+	t.Run("applies 30d retention for user 303", func(t *testing.T) {
+		username := "user303"
+		email := "user303@example.com"
+		media := createMockMediaWithUser("movie-3", models.MediaTypeMovie, 20, 20, &userID3, &username, &email)
+
+		shouldDelete, _, reason := engine.EvaluateMedia(&media)
+
+		// 20 days ago with 30d retention = within retention
+		assert.False(t, shouldDelete)
+		assert.Equal(t, "user rule: within retention", reason)
+	})
+}
+
+func TestRulesEngine_UserBased_PriorityOverStandardRules(t *testing.T) {
+	userID := 400
+	advancedRules := []config.AdvancedRule{
+		{
+			Name:    "User Priority Rule",
+			Type:    "user",
+			Enabled: true,
+			Users: []config.UserRule{
+				{
+					UserID:    &userID,
+					Retention: "7d", // Shorter than standard 90d movie retention
+				},
+			},
+		},
+	}
+
+	cfg := createConfigWithUserRules(advancedRules)
+	exclusions := createMockExclusions()
+	engine := NewRulesEngine(cfg, exclusions)
+
+	t.Run("user rule overrides standard movie retention", func(t *testing.T) {
+		username := "testuser"
+		email := "test@example.com"
+		// Added/watched 10 days ago - would be safe with 90d standard retention
+		// but should delete with 7d user rule
+		media := createMockMediaWithUser("movie-1", models.MediaTypeMovie, 10, 10, &userID, &username, &email)
+
+		shouldDelete, _, reason := engine.EvaluateMedia(&media)
+
+		assert.True(t, shouldDelete)
+		assert.Contains(t, reason, "user rule")
+		assert.Contains(t, reason, "7d")
+		// Should NOT mention 90d standard retention
+		assert.NotContains(t, reason, "90d")
+	})
+
+	t.Run("standard retention applies when no user rule matches", func(t *testing.T) {
+		differentUserID := 999
+		username := "otheruser"
+		email := "other@example.com"
+		// Same scenario but different user - should fall back to blanket protection
+		media := createMockMediaWithUser("movie-2", models.MediaTypeMovie, 10, 10, &differentUserID, &username, &email)
+
+		shouldDelete, _, reason := engine.EvaluateMedia(&media)
+
+		// Should fall back to blanket "requested" protection
+		assert.False(t, shouldDelete)
+		assert.Equal(t, "requested", reason)
+	})
+}
+
+func TestRulesEngine_UserBased_FallbackToBlanketProtection(t *testing.T) {
+	userID := 500
+	advancedRules := []config.AdvancedRule{
+		{
+			Name:    "Specific User Only",
+			Type:    "user",
+			Enabled: true,
+			Users: []config.UserRule{
+				{
+					UserID:    &userID,
+					Retention: "7d",
+				},
+			},
+		},
+	}
+
+	cfg := createConfigWithUserRules(advancedRules)
+	exclusions := createMockExclusions()
+	engine := NewRulesEngine(cfg, exclusions)
+
+	t.Run("protects requested media when no user rule matches", func(t *testing.T) {
+		differentUserID := 999
+		username := "nonmatchinguser"
+		email := "nonmatching@example.com"
+		// Media is old and would be deleted by standard rules
+		media := createMockMediaWithUser("movie-1", models.MediaTypeMovie, 200, 200, &differentUserID, &username, &email)
+
+		shouldDelete, deleteAfter, reason := engine.EvaluateMedia(&media)
+
+		// Should be protected because it's requested (blanket protection)
+		assert.False(t, shouldDelete)
+		assert.True(t, deleteAfter.IsZero())
+		assert.Equal(t, "requested", reason)
+	})
+
+	t.Run("protects media with only username when user ID rule doesn't match", func(t *testing.T) {
+		differentUserID := 888
+		username := "anotheruser"
+		email := "another@example.com"
+		media := createMockMediaWithUser("movie-2", models.MediaTypeMovie, 100, 100, &differentUserID, &username, &email)
+
+		shouldDelete, _, reason := engine.EvaluateMedia(&media)
+
+		assert.False(t, shouldDelete)
+		assert.Equal(t, "requested", reason)
+	})
+
+	t.Run("protects media with only email when user ID rule doesn't match", func(t *testing.T) {
+		differentUserID := 777
+		username := "yetanotheruser"
+		email := "yetanother@example.com"
+		media := createMockMediaWithUser("movie-3", models.MediaTypeMovie, 150, 150, &differentUserID, &username, &email)
+
+		shouldDelete, _, reason := engine.EvaluateMedia(&media)
+
+		assert.False(t, shouldDelete)
+		assert.Equal(t, "requested", reason)
+	})
+}
+
+func TestRulesEngine_UserBased_DisabledRule(t *testing.T) {
+	userID := 600
+	advancedRules := []config.AdvancedRule{
+		{
+			Name:    "Disabled User Rule",
+			Type:    "user",
+			Enabled: false, // Rule is disabled
+			Users: []config.UserRule{
+				{
+					UserID:    &userID,
+					Retention: "1d", // Very short retention
+				},
+			},
+		},
+	}
+
+	cfg := createConfigWithUserRules(advancedRules)
+	exclusions := createMockExclusions()
+	engine := NewRulesEngine(cfg, exclusions)
+
+	t.Run("ignores disabled user rule", func(t *testing.T) {
+		username := "testuser"
+		email := "test@example.com"
+		// Old media that would be deleted if rule was enabled
+		media := createMockMediaWithUser("movie-1", models.MediaTypeMovie, 10, 10, &userID, &username, &email)
+
+		shouldDelete, _, reason := engine.EvaluateMedia(&media)
+
+		// Should fall back to blanket protection since rule is disabled
+		assert.False(t, shouldDelete)
+		assert.Equal(t, "requested", reason)
+	})
+}
+
+func TestRulesEngine_UserBased_MultipleRulesFirstMatch(t *testing.T) {
+	userID := 700
+	advancedRules := []config.AdvancedRule{
+		{
+			Name:    "First User Rule",
+			Type:    "user",
+			Enabled: true,
+			Users: []config.UserRule{
+				{
+					UserID:    &userID,
+					Retention: "5d",
+				},
+			},
+		},
+		{
+			Name:    "Second User Rule",
+			Type:    "user",
+			Enabled: true,
+			Users: []config.UserRule{
+				{
+					UserID:    &userID,
+					Retention: "30d", // Different retention
+				},
+			},
+		},
+	}
+
+	cfg := createConfigWithUserRules(advancedRules)
+	exclusions := createMockExclusions()
+	engine := NewRulesEngine(cfg, exclusions)
+
+	t.Run("applies first matching user rule", func(t *testing.T) {
+		username := "testuser"
+		email := "test@example.com"
+		media := createMockMediaWithUser("movie-1", models.MediaTypeMovie, 10, 10, &userID, &username, &email)
+
+		shouldDelete, _, reason := engine.EvaluateMedia(&media)
+
+		// Should use first rule (5d retention) and delete
+		assert.True(t, shouldDelete)
+		assert.Contains(t, reason, "5d")
+		assert.NotContains(t, reason, "30d")
+	})
+}
