@@ -1,4 +1,5 @@
 import { useCallback } from 'react';
+import { toast as sonnerToast } from 'sonner';
 
 export interface Toast {
   title: string;
@@ -8,17 +9,14 @@ export interface Toast {
 
 export function useToast() {
   const toast = useCallback(({ title, description, variant = 'default' }: Toast) => {
-    // For now, use a simple alert-style notification
-    // This can be replaced with a proper toast component later
-    const message = description ? `${title}: ${description}` : title;
-    
     if (variant === 'destructive') {
-      console.error(message);
-      alert(`Error: ${message}`);
+      sonnerToast.error(title, {
+        description: description,
+      });
     } else {
-      console.log(message);
-      // Could add a proper toast notification here
-      // For now, silently succeed (user will see the UI update)
+      sonnerToast.success(title, {
+        description: description,
+      });
     }
   }, []);
 
