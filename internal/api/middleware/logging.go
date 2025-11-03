@@ -16,7 +16,17 @@ func Logger(next http.Handler) http.Handler {
 		ww := middleware.NewWrapResponseWriter(w, r.ProtoMajor)
 
 		defer func() {
-			log.Info().
+			// Use debug level for polling/health check endpoints to reduce log noise
+			isPollingEndpoint := r.URL.Path == "/api/sync/status" ||
+				r.URL.Path == "/api/health" ||
+				r.URL.Path == "/health"
+
+			logger := log.Info()
+			if isPollingEndpoint {
+				logger = log.Debug()
+			}
+
+			logger.
 				Str("method", r.Method).
 				Str("path", r.URL.Path).
 				Int("status", ww.Status()).
