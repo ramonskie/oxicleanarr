@@ -471,6 +471,16 @@ func (e *SyncEngine) syncJellyseerr(ctx context.Context) error {
 
 			if matched {
 				media.IsRequested = true
+				// Populate requester user information
+				if req.RequestedBy.ID > 0 {
+					media.RequestedByUserID = &req.RequestedBy.ID
+				}
+				if req.RequestedBy.Username != "" {
+					media.RequestedByUsername = &req.RequestedBy.Username
+				}
+				if req.RequestedBy.Email != "" {
+					media.RequestedByEmail = &req.RequestedBy.Email
+				}
 				e.mediaLibrary[id] = media
 			}
 		}
