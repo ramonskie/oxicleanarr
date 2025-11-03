@@ -45,6 +45,10 @@
   --color-ring: oklch(0.56 0.149 264.54);
 }
 
+html {
+  overflow-y: scroll;
+}
+
 body {
   @apply bg-background text-foreground;
 }
