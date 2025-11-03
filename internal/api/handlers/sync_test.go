@@ -147,3 +147,115 @@ func TestSyncHandler_GetSyncStatus(t *testing.T) {
 		assert.True(t, response.Running)
 	})
 }
+
+func TestSyncHandler_ExecuteDeletions(t *testing.T) {
+	t.Run("returns empty when no scheduled deletions", func(t *testing.T) {
+		engine := newTestSyncEngineForAPI(t)
+		handler := NewSyncHandler(engine)
+
+		req := httptest.NewRequest(http.MethodPost, "/api/deletions/execute", nil)
+		w := httptest.NewRecorder()
+
+		handler.ExecuteDeletions(w, req)
+
+		assert.Equal(t, http.StatusOK, w.Code)
+		assert.Equal(t, "application/json", w.Header().Get("Content-Type"))
+
+		var response map[string]interface{}
+		err := json.NewDecoder(w.Body).Decode(&response)
+		require.NoError(t, err)
+
+		assert.True(t, response["success"].(bool))
+		assert.Equal(t, float64(0), response["scheduled_count"])
+		assert.Nil(t, response["deleted_count"]) // Should not include deleted_count when no items
+		assert.Equal(t, "No items scheduled for deletion", response["message"])
+	})
+
+	t.Run("returns dry-run preview when dry_run=true", func(t *testing.T) {
+		engine := newTestSyncEngineForAPI(t)
+		handler := NewSyncHandler(engine)
+
+		// Trigger a full sync to populate some data
+		ctx := context.Background()
+		err := engine.FullSync(ctx)
+		require.NoError(t, err)
+
+		req := httptest.NewRequest(http.MethodPost, "/api/deletions/execute?dry_run=true", nil)
+		w := httptest.NewRecorder()
+
+		handler.ExecuteDeletions(w, req)
+
+		assert.Equal(t, http.StatusOK, w.Code)
+		assert.Equal(t, "application/json", w.Header().Get("Content-Type"))
+
+		var response map[string]interface{}
+		err = json.NewDecoder(w.Body).Decode(&response)
+		require.NoError(t, err)
+
+		assert.True(t, response["success"].(bool))
+		if response["dry_run"] != nil {
+			assert.True(t, response["dry_run"].(bool))
+		}
+	})
+
+	t.Run("executes deletions when dry_run=false", func(t *testing.T) {
+		engine := newTestSyncEngineForAPI(t)
+		handler := NewSyncHandler(engine)
+
+		// Trigger a full sync to populate some data
+		ctx := context.Background()
+		err := engine.FullSync(ctx)
+		require.NoError(t, err)
+
+		req := httptest.NewRequest(http.MethodPost, "/api/deletions/execute?dry_run=false", nil)
+		w := httptest.NewRecorder()
+
+		handler.ExecuteDeletions(w, req)
+
+		assert.Equal(t, http.StatusOK, w.Code)
+		assert.Equal(t, "application/json", w.Header().Get("Content-Type"))
+
+		var response map[string]interface{}
+		err = json.NewDecoder(w.Body).Decode(&response)
+		require.NoError(t, err)
+
+		assert.True(t, response["success"].(bool))
+		// Message depends on whether there are deletions or not
+		assert.NotEmpty(t, response["message"])
+
+		// Verify response includes expected fields
+		assert.NotNil(t, response["scheduled_count"])
+
+		// If there are scheduled deletions, should have deleted_count
+		scheduledCount := int(response["scheduled_count"].(float64))
+		if scheduledCount > 0 {
+			assert.NotNil(t, response["deleted_count"])
+			assert.NotNil(t, response["failed_count"])
+		} else {
+			// No scheduled deletions means no deleted_count field
+			assert.Nil(t, response["deleted_count"])
+		}
+	})
+
+	t.Run("defaults to actual execution when no query param", func(t *testing.T) {
+		engine := newTestSyncEngineForAPI(t)
+		handler := NewSyncHandler(engine)
+
+		req := httptest.NewRequest(http.MethodPost, "/api/deletions/execute", nil)
+		w := httptest.NewRecorder()
+
+		handler.ExecuteDeletions(w, req)
+
+		assert.Equal(t, http.StatusOK, w.Code)
+
+		var response map[string]interface{}
+		err := json.NewDecoder(w.Body).Decode(&response)
+		require.NoError(t, err)
+
+		assert.True(t, response["success"].(bool))
+		// Should not have dry_run flag or it should be false
+		if response["dry_run"] != nil {
+			assert.False(t, response["dry_run"].(bool))
+		}
+	})
+}

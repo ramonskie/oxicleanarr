@@ -94,7 +94,6 @@ func (h *SyncHandler) ExecuteDeletions(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode(map[string]interface{}{
 			"success":         true,
 			"scheduled_count": 0,
-			"deleted_count":   0,
 			"message":         "No items scheduled for deletion",
 			"candidates":      []map[string]interface{}{},
 		})
