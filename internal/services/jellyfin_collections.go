@@ -10,15 +10,23 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
+// JellyfinCollectionClient defines the methods needed for collection management
+type JellyfinCollectionClient interface {
+	GetCollectionByName(ctx context.Context, name string) (*clients.JellyfinCollection, error)
+	CreateCollection(ctx context.Context, name string, itemIDs []string, dryRun bool) (string, error)
+	AddItemsToCollection(ctx context.Context, collectionID string, itemIDs []string, dryRun bool) error
+	DeleteCollection(ctx context.Context, collectionID string, dryRun bool) error
+}
+
 // JellyfinCollectionManager manages "Leaving Soon" collections in Jellyfin
 type JellyfinCollectionManager struct {
-	client *clients.JellyfinClient
+	client JellyfinCollectionClient
 	config *config.CollectionsConfig
 	dryRun bool
 }
 
 // NewJellyfinCollectionManager creates a new collection manager
-func NewJellyfinCollectionManager(client *clients.JellyfinClient, cfg *config.CollectionsConfig, dryRun bool) *JellyfinCollectionManager {
+func NewJellyfinCollectionManager(client JellyfinCollectionClient, cfg *config.CollectionsConfig, dryRun bool) *JellyfinCollectionManager {
 	return &JellyfinCollectionManager{
 		client: client,
 		config: cfg,
@@ -50,9 +58,9 @@ func (m *JellyfinCollectionManager) SyncCollections(ctx context.Context, mediaLi
 		// Only include items with deletion date in the future (not overdue)
 		if !media.DeleteAfter.IsZero() && media.DeleteAfter.After(now) {
 			if media.JellyfinID != "" {
-				if media.Type == "movie" {
+				if media.Type == models.MediaTypeMovie {
 					movieIDs = append(movieIDs, media.JellyfinID)
-				} else if media.Type == "show" {
+				} else if media.Type == models.MediaTypeTVShow {
 					tvShowIDs = append(tvShowIDs, media.JellyfinID)
 				}
 			} else {
