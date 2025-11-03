@@ -1,4 +1,4 @@
-.PHONY: build run clean test dev install help
+.PHONY: build run clean test dev dev-full dev-test install help
 
 # Binary name
 BINARY_NAME=prunarr
@@ -20,6 +20,27 @@ run: build
 dev:
 	@echo "Running in development mode..."
 	@go run cmd/prunarr/main.go
+
+# Run backend + frontend in development mode with hot reload
+dev-full:
+	@echo "Starting backend + frontend with hot reload..."
+	@echo "Backend: http://localhost:8080"
+	@echo "Frontend: http://localhost:5173"
+	@echo ""
+	@trap 'kill 0' SIGINT; \
+	(cd web && npm run dev) & \
+	go run cmd/prunarr/main.go
+
+# Run with test config (backend + frontend)
+dev-test:
+	@echo "Starting backend (test config) + frontend with hot reload..."
+	@echo "Backend: http://localhost:8080"
+	@echo "Frontend: http://localhost:5173"
+	@echo "Config: config/prunarr.test.yaml"
+	@echo ""
+	@trap 'kill 0' SIGINT; \
+	(cd web && npm run dev) & \
+	go run cmd/prunarr/main.go --config config/prunarr.test.yaml
 
 # Clean build artifacts
 clean:
@@ -67,13 +88,15 @@ help:
 	@echo "Prunarr - Media Cleanup Automation Tool"
 	@echo ""
 	@echo "Usage:"
-	@echo "  make build    - Build the application"
-	@echo "  make run      - Build and run the application"
-	@echo "  make dev      - Run in development mode (no binary)"
-	@echo "  make test     - Run tests"
-	@echo "  make clean    - Remove build artifacts"
-	@echo "  make install  - Install/update dependencies"
-	@echo "  make fmt      - Format code"
-	@echo "  make lint     - Lint code"
-	@echo "  make setup    - Setup config for first run"
-	@echo "  make help     - Show this help message"
+	@echo "  make build     - Build the application"
+	@echo "  make run       - Build and run the application"
+	@echo "  make dev       - Run backend in development mode (no binary)"
+	@echo "  make dev-full  - Run backend + frontend with hot reload"
+	@echo "  make dev-test  - Run with test config + frontend (hot reload)"
+	@echo "  make test      - Run tests"
+	@echo "  make clean     - Remove build artifacts"
+	@echo "  make install   - Install/update dependencies"
+	@echo "  make fmt       - Format code"
+	@echo "  make lint      - Lint code"
+	@echo "  make setup     - Setup config for first run"
+	@echo "  make help      - Show this help message"
