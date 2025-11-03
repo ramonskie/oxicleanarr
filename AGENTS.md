@@ -40,6 +40,7 @@ This document provides essential context for AI coding agents working on the Pru
 ✅ Jellyfin collections management ("Leaving Soon" collections)  
 ✅ Configuration & Advanced Rules management UI  
 ✅ Toast notifications for user feedback (Sonner)  
+✅ Auto-sync on retention rule changes (immediate effect)  
 
 ### What's Pending
 ⏳ User-based cleanup with watch tracking  
@@ -55,7 +56,7 @@ This document provides essential context for AI coding agents working on the Pru
 
 ## Recent Work (Last Session - Nov 3, 2025, Session 13)
 
-### Toast Notifications UI - COMPLETED ✅
+### Part 1: Toast Notifications UI - COMPLETED ✅
 
 **Implementation**: Added modern toast notifications for user feedback
 - Installed Sonner library (modern React toast notifications)
@@ -76,12 +77,39 @@ This document provides essential context for AI coding agents working on the Pru
 
 **Commits**: `bf5f735`
 
+### Part 2: Auto-Sync on Config Change - COMPLETED ✅
+
+**Implementation**: Config updates now automatically trigger full sync when retention rules change
+- ConfigHandler now accepts SyncEngine dependency injection
+- Detects changes to `movie_retention`, `tv_retention`, or `advanced_rules`
+- Triggers async full sync after config reload to re-evaluate media
+- Eliminates need for manual sync after config changes
+
+**Problem Solved**:
+- User changed retention rules from default to `0d` but still saw 248 items scheduled for deletion
+- Config hot-reload updated in-memory config but didn't re-run rules engine
+- Required manual full sync via UI to see changes take effect
+- Poor UX: changes appeared to not work immediately
+
+**Solution**:
+- Added retention change detection in `UpdateConfig()` handler
+- Runs `h.syncEngine.FullSync(ctx)` asynchronously in goroutine
+- Uses `context.Background()` to avoid blocking HTTP response
+- Comprehensive logging for tracking sync triggers and completion
+- Changes take effect within 1-2 seconds automatically
+
+**Files Modified**:
+- `internal/api/handlers/config.go` (+42 lines, -4 lines) - Detection & trigger logic
+- `internal/api/router.go` (+1 line, -1 line) - Pass SyncEngine dependency
+
+**Commits**: `c3f3118`
+
 **Testing Results**:
 - ✅ All 111 backend tests still passing
-- ✅ Frontend builds successfully (437.92 kB gzipped: 130.28 kB)
-- ✅ TypeScript compilation successful
-- ✅ Vite hot-reload detected changes automatically
-- ✅ Toast notifications ready for manual testing
+- ✅ Manual testing successful (retention 0d → 365d/180d → 0d)
+- ✅ Auto-sync triggered within 1 second after config save
+- ✅ Leaving-soon count updated correctly (0 → 129 → 0 items)
+- ✅ Logs confirm sync trigger and completion
 
 ---
 
@@ -408,7 +436,9 @@ When ending a session, update this section with:
 
 ---
 
-## Last Session: Nov 3, 2025 (Session 13 - Toast Notifications UI ✅)
+## Last Session: Nov 3, 2025 (Session 13 - UI Polish & Auto-Sync ✅)
+
+### Part 1: Toast Notifications UI
 
 **Work Completed:**
 - ✅ Resumed from Session 12 summary (config YAML serialization was fixed)
@@ -417,8 +447,6 @@ When ending a session, update this section with:
 - ✅ Implemented proper toast notifications using Sonner
 - ✅ Added Toaster component to App.tsx for rendering toasts
 - ✅ Fixed use-toast hook to use Sonner instead of console.log/alert
-- ✅ All 111 backend tests still passing
-- ✅ Frontend builds successfully
 
 **Problem Fixed:**
 - Configuration page save appeared to do nothing (no user feedback)
@@ -439,40 +467,63 @@ When ending a session, update this section with:
 **Commits:**
 1. `bf5f735` - feat: add Sonner toast notifications for user feedback
 
+### Part 2: Auto-Sync on Retention Rule Changes
+
+**Work Completed:**
+- ✅ Identified UX issue: config changes didn't take effect until manual sync
+- ✅ Added SyncEngine dependency to ConfigHandler
+- ✅ Implemented retention rule change detection
+- ✅ Added async full sync trigger after config updates
+- ✅ All 111 backend tests still passing
+
+**Problem Fixed:**
+- User changed retention rules from defaults to `0d` but still saw 248 items scheduled for deletion
+- Config hot-reload updated in-memory config but didn't re-run rules engine
+- Required manual full sync via UI to see changes take effect
+- Poor UX: changes appeared to not work immediately
+
+**Solution:**
+- ConfigHandler now accepts `SyncEngine` dependency injection
+- `UpdateConfig()` detects changes to `movie_retention`, `tv_retention`, or `advanced_rules`
+- Triggers `h.syncEngine.FullSync(ctx)` asynchronously in goroutine after config reload
+- Uses `context.Background()` to avoid blocking HTTP response
+- Comprehensive logging tracks retention changes, sync triggers, and completion
+
+**Files Modified & Committed:**
+- `internal/api/handlers/config.go` (+42 lines, -4 lines) - Detection & trigger logic
+- `internal/api/router.go` (+1 line, -1 line) - Pass SyncEngine dependency
+
+**Commits:**
+2. `c3f3118` - feat: auto-trigger full sync when retention rules change in config
+
 **Current State:**
 - Running: Yes (backend + frontend dev server)
 - Tests passing: 111/111 ✅
 - Known issues: None
 - Toast notifications: Working ✅
+- Auto-sync on config change: Working ✅
 - Frontend build: 437.92 kB (gzipped: 130.28 kB)
 
-**Toast Behavior:**
-- **Success toasts**: Green checkmark, shown for config updates and successful operations
-- **Error toasts**: Red X icon, shown for API errors with error messages
-- **Position**: Top-right corner of screen
-- **Styling**: Rich colors enabled (green for success, red for errors)
-- **Auto-dismiss**: Default Sonner behavior (4 seconds)
-
-**Verification:**
-- ✅ Vite hot-reload detected changes and reloaded UI
-- ✅ Sonner dependency optimized by Vite
-- ✅ TypeScript compilation successful (removed unused variable)
-- ✅ Frontend build successful
-- ✅ Toast hook now provides visual feedback for all operations
+**Testing Results:**
+- ✅ Manual test: Changed retention from 0d → 365d/180d via Configuration page
+- ✅ Auto-sync triggered within 1 second (logged: "Triggering full sync to re-apply retention rules")
+- ✅ Leaving-soon count updated correctly: 0 → 129 items
+- ✅ Manual test: Changed retention back to 0d
+- ✅ Auto-sync triggered again, leaving-soon count: 129 → 0 items
+- ✅ Full sync completes in ~1 second for 378 media items
 
 **Next Session TODO:**
-- [ ] Manual UI testing: Configuration page form (verify toast shows on save)
-- [ ] Manual UI testing: Advanced Rules page (verify toast shows on create/edit/delete)
-- [ ] Manual UI testing: Other pages with toast usage (Library exclusions, etc.)
-- [ ] Consider Session 10-13 (Configuration & Rules UI + Toast Notifications) complete
+- [ ] Manual UI testing: Verify Configuration page shows toast + auto-sync behavior end-to-end
+- [ ] Manual UI testing: Advanced Rules page (create/edit/delete rules)
+- [ ] Consider Sessions 10-13 (Config UI + Rules UI + Toast + Auto-Sync) COMPLETE
 - [ ] Move to next feature: mobile responsiveness or user-based cleanup
+- [ ] Statistics/charts for disk space trends
 
-**Key Lesson:**
-- Sonner is the modern standard for React toast notifications
-- Works great with shadcn/ui components and styling
-- Simple API: `toast.success()`, `toast.error()`, `toast.info()`, etc.
-- Single `<Toaster />` component handles all toast rendering
-- Vite's hot-reload automatically picks up new dependencies
+**Key Lessons:**
+- **Sonner**: Modern standard for React toast notifications, works great with shadcn/ui
+- **Auto-sync**: Retention rule changes should trigger immediate re-evaluation for better UX
+- **Async operations**: Use goroutines for sync to avoid blocking HTTP responses
+- **Context**: Use `context.Background()` for background tasks, not request contexts
 
 ---
 
