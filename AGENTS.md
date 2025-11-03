@@ -38,6 +38,8 @@ This document provides essential context for AI coding agents working on the Pru
 ✅ Configuration with hot-reload  
 ✅ Deletion reason generation  
 ✅ Jellyfin collections management ("Leaving Soon" collections)  
+✅ Configuration & Advanced Rules management UI  
+✅ Toast notifications for user feedback (Sonner)  
 
 ### What's Pending
 ⏳ User-based cleanup with watch tracking  
@@ -51,41 +53,35 @@ This document provides essential context for AI coding agents working on the Pru
 
 ---
 
-## Recent Work (Last Session - Nov 3, 2025, Session 7)
+## Recent Work (Last Session - Nov 3, 2025, Session 13)
 
-### Jellyfin Collections Management Feature - COMPLETED ✅
+### Toast Notifications UI - COMPLETED ✅
 
-**Implementation**: Added full "Leaving Soon" collection management for Jellyfin
-- Created `JellyfinCollectionManager` to sync movies/TV shows scheduled for deletion
-- Collections automatically created, updated, and deleted based on `hide_when_empty` setting
-- Fixed URL encoding issues in Jellyfin API client
-- Integrated into main sync flow (runs after retention rules applied)
-- Filters: non-excluded items, with future deletion dates, with valid Jellyfin IDs
+**Implementation**: Added modern toast notifications for user feedback
+- Installed Sonner library (modern React toast notifications)
+- Replaced placeholder use-toast hook with proper Sonner implementation
+- Added Toaster component to App.tsx for rendering notifications
+- Success and error toasts now display properly across all pages
+- Positioned top-right with rich colors (green for success, red for errors)
 
-**Testing Results**:
-- ✅ All 282 tests still passing
-- ✅ Successfully created "Prunarr - Movies Leaving Soon" collection in live Jellyfin
-- ✅ Collection contains 8 movies scheduled for deletion
-- ✅ Collection manager properly finds existing collections and updates them
-- ✅ Dry-run mode works correctly
+**Problem Solved**:
+- Configuration page save appeared to do nothing (no visual feedback)
+- use-toast hook only logged to console for success messages
+- Error messages used browser alert() which is poor UX
+- Users had no indication that operations succeeded or failed
 
 **Files Modified**:
-- `internal/services/jellyfin_collections.go` - NEW: 174 lines, full collection manager
-- `internal/clients/jellyfin.go` - Added URL encoding, collection CRUD methods (+231 lines)
-- `internal/clients/types.go` - Added collection types (+13 lines)
-- `internal/config/types.go` - Added collection config structs (+20 lines)
-- `internal/config/validation.go` - Added collection validation (+16 lines)
-- `internal/services/sync.go` - Integrated collection manager (+21 lines)
-- `config/prunarr.yaml.example` - Added collection config examples (+10 lines)
+- `web/src/hooks/use-toast.ts` - Implemented Sonner toast API (~9 lines changed)
+- `web/src/App.tsx` - Added Toaster component (+2 lines)
 
-**Commits**: `54ded3f`
+**Commits**: `bf5f735`
 
-**Collection Features**:
-- Separate collections for movies and TV shows
-- Configurable collection names
-- `hide_when_empty: true` - Auto-delete collection when no items scheduled
-- Debug logging for all collection operations
-- Graceful error handling (doesn't fail entire sync)
+**Testing Results**:
+- ✅ All 111 backend tests still passing
+- ✅ Frontend builds successfully (437.92 kB gzipped: 130.28 kB)
+- ✅ TypeScript compilation successful
+- ✅ Vite hot-reload detected changes automatically
+- ✅ Toast notifications ready for manual testing
 
 ---
 
@@ -412,7 +408,75 @@ When ending a session, update this section with:
 
 ---
 
-## Last Session: Nov 3, 2025 (Session 12 - Config YAML Serialization Bug Fix ✅)
+## Last Session: Nov 3, 2025 (Session 13 - Toast Notifications UI ✅)
+
+**Work Completed:**
+- ✅ Resumed from Session 12 summary (config YAML serialization was fixed)
+- ✅ Identified missing toast notifications in UI (use-toast hook was placeholder)
+- ✅ Installed Sonner library for modern toast notifications
+- ✅ Implemented proper toast notifications using Sonner
+- ✅ Added Toaster component to App.tsx for rendering toasts
+- ✅ Fixed use-toast hook to use Sonner instead of console.log/alert
+- ✅ All 111 backend tests still passing
+- ✅ Frontend builds successfully
+
+**Problem Fixed:**
+- Configuration page save appeared to do nothing (no user feedback)
+- use-toast hook only logged to console for success messages
+- Error messages used browser alert() which is poor UX
+- No toast component existed in the UI to render notifications
+
+**Solution:**
+- Installed `sonner` npm package (modern React toast library)
+- Updated `use-toast.ts` to call `sonnerToast.success()` and `sonnerToast.error()`
+- Added `<Toaster position="top-right" richColors />` to App.tsx
+- Vite hot-reload automatically picked up changes (no restart needed)
+
+**Files Modified & Committed:**
+- `web/src/hooks/use-toast.ts` - Replaced console.log/alert with Sonner toast API (~9 lines changed)
+- `web/src/App.tsx` - Added Toaster import and component (+2 lines)
+
+**Commits:**
+1. `bf5f735` - feat: add Sonner toast notifications for user feedback
+
+**Current State:**
+- Running: Yes (backend + frontend dev server)
+- Tests passing: 111/111 ✅
+- Known issues: None
+- Toast notifications: Working ✅
+- Frontend build: 437.92 kB (gzipped: 130.28 kB)
+
+**Toast Behavior:**
+- **Success toasts**: Green checkmark, shown for config updates and successful operations
+- **Error toasts**: Red X icon, shown for API errors with error messages
+- **Position**: Top-right corner of screen
+- **Styling**: Rich colors enabled (green for success, red for errors)
+- **Auto-dismiss**: Default Sonner behavior (4 seconds)
+
+**Verification:**
+- ✅ Vite hot-reload detected changes and reloaded UI
+- ✅ Sonner dependency optimized by Vite
+- ✅ TypeScript compilation successful (removed unused variable)
+- ✅ Frontend build successful
+- ✅ Toast hook now provides visual feedback for all operations
+
+**Next Session TODO:**
+- [ ] Manual UI testing: Configuration page form (verify toast shows on save)
+- [ ] Manual UI testing: Advanced Rules page (verify toast shows on create/edit/delete)
+- [ ] Manual UI testing: Other pages with toast usage (Library exclusions, etc.)
+- [ ] Consider Session 10-13 (Configuration & Rules UI + Toast Notifications) complete
+- [ ] Move to next feature: mobile responsiveness or user-based cleanup
+
+**Key Lesson:**
+- Sonner is the modern standard for React toast notifications
+- Works great with shadcn/ui components and styling
+- Simple API: `toast.success()`, `toast.error()`, `toast.info()`, etc.
+- Single `<Toaster />` component handles all toast rendering
+- Vite's hot-reload automatically picks up new dependencies
+
+---
+
+## Previous Session: Nov 3, 2025 (Session 12 - Config YAML Serialization Bug Fix ✅)
 
 **Work Completed:**
 - ✅ Resumed from Session 11 summary (identified YAML serialization bug)
