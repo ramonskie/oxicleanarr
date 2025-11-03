@@ -35,34 +35,50 @@ func NewJellyseerrClient(cfg config.JellyseerrConfig) *JellyseerrClient {
 	}
 }
 
-// GetRequests fetches all requests from Jellyseerr
+// GetRequests fetches all requests from Jellyseerr (handles pagination)
 func (c *JellyseerrClient) GetRequests(ctx context.Context) ([]JellyseerrRequest, error) {
-	url := fmt.Sprintf("%s/api/v1/request", c.baseURL)
+	var allRequests []JellyseerrRequest
+	page := 1
 
-	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
-	if err != nil {
-		return nil, fmt.Errorf("creating request: %w", err)
+	for {
+		url := fmt.Sprintf("%s/api/v1/request?take=50&skip=%d", c.baseURL, (page-1)*50)
+
+		req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+		if err != nil {
+			return nil, fmt.Errorf("creating request: %w", err)
+		}
+
+		req.Header.Set("X-Api-Key", c.apiKey)
+		req.Header.Set("Accept", "application/json")
+
+		resp, err := c.client.Do(req)
+		if err != nil {
+			return nil, fmt.Errorf("making request: %w", err)
+		}
+
+		if resp.StatusCode != http.StatusOK {
+			resp.Body.Close()
+			return nil, fmt.Errorf("unexpected status code: %d", resp.StatusCode)
+		}
+
+		var result JellyseerrResponse
+		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+			resp.Body.Close()
+			return nil, fmt.Errorf("decoding response: %w", err)
+		}
+		resp.Body.Close()
+
+		allRequests = append(allRequests, result.Results...)
+
+		// Check if we've fetched all pages
+		if page >= result.PageInfo.Pages || len(result.Results) == 0 {
+			break
+		}
+
+		page++
 	}
 
-	req.Header.Set("X-Api-Key", c.apiKey)
-	req.Header.Set("Accept", "application/json")
-
-	resp, err := c.client.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("making request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("unexpected status code: %d", resp.StatusCode)
-	}
-
-	var result JellyseerrResponse
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return nil, fmt.Errorf("decoding response: %w", err)
-	}
-
-	return result.Results, nil
+	return allRequests, nil
 }
 
 // Ping checks if Jellyseerr is reachable
