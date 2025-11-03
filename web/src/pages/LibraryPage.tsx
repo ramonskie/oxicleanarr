@@ -157,12 +157,12 @@ export default function LibraryPage() {
     }
   };
 
-  const formatDate = (dateStr?: string) => {
-    if (!dateStr) return 'Never';
+  const formatDate = (dateStr?: string, context: 'watched' | 'deletion' = 'watched') => {
+    if (!dateStr) return context === 'deletion' ? 'N/A' : 'Never';
     const date = new Date(dateStr);
     // Check for zero time values (Jan 1, 0001 or Jan 1, 1970)
     if (date.getFullYear() <= 1970 && date.getMonth() === 0 && date.getDate() === 1) {
-      return 'Never';
+      return context === 'deletion' ? 'N/A' : 'Never';
     }
     return date.toLocaleDateString('en-US', {
       year: 'numeric',
@@ -329,7 +329,7 @@ export default function LibraryPage() {
                     <div>
                       <span className="text-gray-500">Deletion Date:</span>
                       <div className="font-medium">
-                        {item.deletion_date ? formatDate(item.deletion_date) : 'Not scheduled'}
+                        {item.deletion_date ? formatDate(item.deletion_date, 'deletion') : 'Not scheduled'}
                       </div>
                     </div>
                     <div>

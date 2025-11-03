@@ -136,12 +136,12 @@ export default function ScheduledDeletionsPage() {
     setCurrentPage(1);
   };
 
-  const formatDate = (dateStr?: string) => {
-    if (!dateStr) return 'Unknown';
+  const formatDate = (dateStr?: string, context: 'watched' | 'deletion' = 'watched') => {
+    if (!dateStr) return context === 'deletion' ? 'N/A' : 'Unknown';
     const date = new Date(dateStr);
     // Check for zero time values (Jan 1, 0001 or Jan 1, 1970)
     if (date.getFullYear() <= 1970 && date.getMonth() === 0 && date.getDate() === 1) {
-      return 'Unknown';
+      return context === 'deletion' ? 'N/A' : 'Unknown';
     }
     return date.toLocaleDateString('en-US', {
       year: 'numeric',
@@ -379,11 +379,11 @@ export default function ScheduledDeletionsPage() {
                         </div>
                         <div>
                           <span className="text-gray-500">Delete After:</span>
-                          <div className="font-medium">{formatDate(item.delete_after)}</div>
+                          <div className="font-medium">{formatDate(item.delete_after, 'deletion')}</div>
                         </div>
                         <div>
                           <span className="text-gray-500">Last Watched:</span>
-                          <div className="font-medium">{formatDate(item.last_watched)}</div>
+                          <div className="font-medium">{formatDate(item.last_watched, 'watched')}</div>
                         </div>
                       </div>
 

@@ -103,8 +103,9 @@ export default function TimelinePage() {
     const date = new Date(dateString);
     
     // Check for zero time values (Jan 1, 0001 or Jan 1, 1970)
+    // Use "N/A" for deletion dates (not scheduled) vs "Never" for watch dates
     if (date.getFullYear() <= 1970 && date.getMonth() === 0 && date.getDate() === 1) {
-      return 'Unknown';
+      return 'N/A';
     }
     
     const today = new Date();
