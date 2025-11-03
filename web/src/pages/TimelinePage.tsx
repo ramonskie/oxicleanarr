@@ -101,6 +101,12 @@ export default function TimelinePage() {
 
   const formatDate = (dateString: string) => {
     const date = new Date(dateString);
+    
+    // Check for zero time values (Jan 1, 0001 or Jan 1, 1970)
+    if (date.getFullYear() <= 1970 && date.getMonth() === 0 && date.getDate() === 1) {
+      return 'Unknown';
+    }
+    
     const today = new Date();
     const tomorrow = new Date(today);
     tomorrow.setDate(tomorrow.getDate() + 1);

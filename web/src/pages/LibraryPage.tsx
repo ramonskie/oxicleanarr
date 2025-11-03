@@ -160,6 +160,10 @@ export default function LibraryPage() {
   const formatDate = (dateStr?: string) => {
     if (!dateStr) return 'Never';
     const date = new Date(dateStr);
+    // Check for zero time values (Jan 1, 0001 or Jan 1, 1970)
+    if (date.getFullYear() <= 1970 && date.getMonth() === 0 && date.getDate() === 1) {
+      return 'Never';
+    }
     return date.toLocaleDateString('en-US', {
       year: 'numeric',
       month: 'short',
