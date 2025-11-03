@@ -588,11 +588,6 @@ func (e *SyncEngine) calculateDeletionInfo() (int, []map[string]interface{}) {
 			continue
 		}
 
-		// Skip requested items
-		if media.IsRequested {
-			continue
-		}
-
 		// Check if deletion date has passed
 		if !media.DeleteAfter.IsZero() && now.After(media.DeleteAfter) {
 			scheduledCount++
