@@ -412,15 +412,78 @@ When ending a session, update this section with:
 
 ---
 
-## Last Session: Nov 3, 2025 (Session 7 - Jellyfin Collections COMPLETE ✅)
+## Last Session: Nov 3, 2025 (Session 8 - Collection Manager Tests & Bug Fix ✅)
 
 **Work Completed:**
-- ✅ Committed collection management feature (7 files, +482 lines, -3 lines)
-- ✅ Tested with real Jellyfin instance (dry_run disabled)
+- ✅ Task #1 COMPLETE: Added comprehensive unit tests for `JellyfinCollectionManager`
+- ✅ Task #2 COMPLETE: Verified `hide_when_empty` behavior via unit tests
+- ✅ Task #3 COMPLETE: Fixed TV show type bug (collections now properly include TV shows)
+- ✅ Created 13 test cases covering all collection lifecycle scenarios
+- ✅ Introduced `JellyfinCollectionClient` interface for better testability
+- ✅ All 97 tests passing (up from 89, +8 new collection tests)
+- ✅ Test coverage: services 57.1% → 58.3%
+
+**Files Modified & Committed:**
+- `internal/services/jellyfin_collections.go` - Added interface, fixed media type comparison (+12/-4 lines)
+- `internal/services/jellyfin_collections_test.go` - NEW: 484 lines, 13 comprehensive test cases
+
+**Commits:**
+1. `cb0239b` - test: add comprehensive tests for Jellyfin collection manager and fix TV show type bug
+
+**Current State:**
+- Running: No
+- Tests passing: 97/97 ✅
+- Known issues: None
+- Test coverage: Handlers 89.0%, Storage 92.7%, Services 58.3%, Clients 5.8%
+
+**Test Cases Added:**
+1. `TestNewJellyfinCollectionManager` - Constructor validation
+2. `TestSyncCollections_Disabled` - Skip when disabled
+3. `TestSyncCollections_CreateMovieCollection` - Create movie collections
+4. `TestSyncCollections_CreateTVShowCollection` - Create TV show collections
+5. `TestSyncCollections_SeparatesByType` - Movies and TV shows separated
+6. `TestSyncCollections_SkipsExcludedItems` - Excluded items not added
+7. `TestSyncCollections_SkipsItemsWithoutJellyfinID` - Missing IDs skipped
+8. `TestSyncCollections_SkipsPastDeletionDates` - Past dates filtered
+9. `TestSyncCollections_DeletesEmptyCollectionWithHideWhenEmpty` - Auto-delete empty
+10. `TestSyncCollections_KeepsEmptyCollectionWithoutHideWhenEmpty` - Keep empty
+11. `TestSyncCollections_UpdatesExistingCollection` - Update existing
+12. `TestSyncCollections_DryRunMode` - Dry-run behavior
+13. `TestSyncCollection_EmptyName` - Edge case handling
+
+**Bug Fixed:**
+- **Root Cause**: Collection manager checked `media.Type == "show"` but models use `MediaTypeTVShow = "tv_show"`
+- **Impact**: TV shows were never added to collections (always 0 items)
+- **Fix**: Changed to use `models.MediaTypeMovie` and `models.MediaTypeTVShow` constants
+- **Verification**: Unit test `TestSyncCollections_CreateTVShowCollection` now passes
+
+**Interface Design:**
+- Created `JellyfinCollectionClient` interface with 4 methods:
+  - `GetCollectionByName(ctx, name) (*JellyfinCollection, error)`
+  - `CreateCollection(ctx, name, itemIDs, dryRun) (string, error)`
+  - `AddItemsToCollection(ctx, collectionID, itemIDs, dryRun) error`
+  - `DeleteCollection(ctx, collectionID, dryRun) error`
+- Allows mock clients for unit testing
+- Follows Go best practices for dependency injection
+
+**Next Session TODO:**
+- [ ] Configuration UI page (edit prunarr.yaml via web)
+- [ ] Advanced rules UI (user-based rules editor)
+- [ ] Mobile responsiveness improvements
+- [ ] Statistics/charts for disk space trends
+
+---
+
+## Previous Session: Nov 3, 2025 (Session 7 - Jellyfin Collections Implementation ✅)
+
+**Work Completed:**
+- ✅ Implemented Jellyfin collections management feature
+- ✅ Created `JellyfinCollectionManager` service
+- ✅ Added collection CRUD methods to Jellyfin client
+- ✅ Fixed URL encoding issues in Jellyfin API
+- ✅ Integrated into main sync flow (runs after retention rules)
+- ✅ Live tested with real Jellyfin instance
 - ✅ Successfully created "Prunarr - Movies Leaving Soon" collection with 8 movies
-- ✅ Verified collection appears in Jellyfin UI
-- ✅ Verified collection updates work (finds existing, adds items)
-- ✅ All 282 tests still passing
 
 **Files Modified & Committed:**
 - `internal/services/jellyfin_collections.go` - NEW: 174 lines
@@ -431,39 +494,17 @@ When ending a session, update this section with:
 - `internal/services/sync.go` - +21 lines (integrate collection manager)
 - `config/prunarr.yaml.example` - +10 lines (collection config docs)
 
-**Commit:**
+**Commits:**
 1. `54ded3f` - feat: add Jellyfin collections management for "Leaving Soon" items
+2. `bed2d32` - docs: update AGENTS.md with session 7 summary
 
-**Current State:**
-- Running: No (test completed successfully)
-- Tests passing: 282/282 ✅
-- Known issues: None
-- Live testing: ✅ Collection created in Jellyfin with 8 movies
-  - Predator 2 (1990)
-  - Terminator 3: Rise of the Machines (2003)
-  - Pirates of the Caribbean: At World's End (2007)
-  - Pirates of the Caribbean: On Stranger Tides (2011)
-  - The Last Stand (2013)
-  - Terminator Genisys (2015)
-  - Pirates of the Caribbean: Dead Men Tell No Tales (2017)
-  - Jurassic World Dominion (2022)
-
-**Collection Implementation:**
-- `JellyfinCollectionManager` struct with config and dry-run support
-- `SyncCollections()` - Main sync, separates movies/TV shows
-- `syncCollection()` - Individual collection lifecycle (create/update/delete)
-- Filters: non-excluded, future deletion dates, valid Jellyfin IDs
-- `hide_when_empty` support (auto-delete empty collections)
-- URL encoding fixes for collection names with spaces
-- Comprehensive debug logging
-- Errors logged but don't fail entire sync
-
-**Next Session TODO:**
-- [ ] Add unit tests for `JellyfinCollectionManager`
-- [ ] Test `hide_when_empty` behavior (delete collection when 0 items)
-- [ ] Investigate why TV shows have 0 items (check Jellyfin ID population in sync)
-- [ ] Configuration UI page (edit prunarr.yaml via web)
-- [ ] Advanced rules UI (user-based rules editor)
+**Features Implemented:**
+- Separate collections for movies and TV shows
+- Configurable collection names
+- `hide_when_empty: true` - Auto-delete collection when no items scheduled
+- Debug logging for all collection operations
+- Graceful error handling (doesn't fail entire sync)
+- Filters: non-excluded items, with future deletion dates, with valid Jellyfin IDs
 
 ---
 
