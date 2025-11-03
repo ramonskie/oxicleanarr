@@ -397,7 +397,55 @@ When ending a session, update this section with:
 
 ---
 
-## Last Session: Nov 3, 2025 (Session 5 - Requester Info Feature Complete)
+## Last Session: Nov 3, 2025 (Session 6 - Semantic Date Labels)
+
+**Work Completed:**
+- ✅ Resumed from Session 5 (requester info feature was complete)
+- ✅ Verified frontend properly handles missing requester data (no changes needed)
+- ✅ Fixed zero date display bug (Go's `0001-01-01T00:00:00Z` showing as "Jan 1, 1")
+- ✅ Implemented semantic date labels for better UX clarity
+- ✅ Added context-aware `formatDate()` function to all three pages
+- ✅ All 282 tests still passing
+
+**Files Modified:**
+- `web/src/pages/LibraryPage.tsx` - Added context parameter to formatDate(), semantic labels
+- `web/src/pages/ScheduledDeletionsPage.tsx` - Added context parameter, semantic labels  
+- `web/src/pages/TimelinePage.tsx` - Changed "Unknown" → "N/A" for deletion dates
+
+**Commits:**
+1. `08a28b7` - fix: handle zero date values (0001-01-01) in Library and Timeline pages
+2. `6bd6305` - fix: use semantic date labels (N/A for deletions, Never/Unknown for watched)
+
+**Current State:**
+- Running: Yes (Prunarr + Frontend dev server)
+- Tests passing: 282/282 ✅
+- Known issues: None
+- Media tracked: 378 items (255 movies, 123 TV shows)
+- Items with zero dates: 84 movies with zero last_watched, 5 deletions with zero last_watched
+
+**Date Label Semantics (User Clarity):**
+- **"Never"** (watched context) - Item hasn't been watched yet
+- **"N/A"** (deletion context) - No deletion scheduled (doesn't imply exclusion/exemption)
+- **"Unknown"** (scheduled deletions) - Generic unknown value for watched dates
+- **"Not scheduled"** (library page) - When deletion_date is null/undefined
+
+**Implementation Details:**
+- `formatDate(dateStr, context: 'watched' | 'deletion')` - Context-aware formatting
+- Zero date detection: `getFullYear() <= 1970 && getMonth() === 0 && getDate() === 1`
+- Library Page: Uses both contexts (watched for last_watched, deletion for deletion_date)
+- Scheduled Deletions: Uses both contexts (deletion for delete_after, watched for last_watched)
+- Timeline Page: Only uses deletion context (filters out zero dates entirely)
+
+**Next Session TODO:**
+- [ ] Configuration UI page (allow editing prunarr.yaml via web)
+- [ ] Collection management for "Leaving Soon" in Jellyfin
+- [ ] Advanced rules UI (user-based rules editor)
+- [ ] Mobile responsiveness improvements
+- [ ] Statistics/charts for disk space trends
+
+---
+
+## Previous Session: Nov 3, 2025 (Session 5 - Requester Info Feature Complete)
 
 **Work Completed:**
 - ✅ Completed requester information feature end-to-end
@@ -416,32 +464,13 @@ When ending a session, update this section with:
 1. `d9fcab5` - fix: use DisplayName/JellyfinUsername for requester display
 2. `f08b17a` - refactor: remove Plex-related fields and focus on Jellyfin
 3. `1b4d30d` - feat: add requester info to scheduled deletion candidates
-
-**Current State:**
-- Running: Yes (Prunarr with test config)
-- Tests passing: 282/282 ✅
-- Known issues: None
-- Media tracked: 378 items (255 movies, 123 TV shows)
-- Requested items: 164 tracked, 45 in deletion queue
-
-**Feature Verification:**
-- ✅ Requester info in media library API (`/api/media/movies`, `/api/media/shows`)
-- ✅ Requester info in job summaries (`/api/jobs`)
-- ✅ Frontend displays on Library, Timeline, and Scheduled Deletions pages
-- ✅ Test script confirms 164 items with requester data
+4. `5b835f0` - docs: update AGENTS.md with session 5 summary
 
 **Key Implementation Details:**
 - Username fallback chain: DisplayName → JellyfinUsername → Username
 - Job summary includes 4 requester fields: `is_requested`, `requested_by_user_id`, `requested_by_username`, `requested_by_email`
 - Frontend conditionally shows requester only when `is_requested == true`
 - Jellyseerr API uses `displayName` field (not `username`) for display names
-
-**Next Session TODO:**
-- [ ] Configuration UI page (allow editing prunarr.yaml via web)
-- [ ] Collection management for "Leaving Soon" in Jellyfin
-- [ ] Advanced rules UI (user-based rules editor)
-- [ ] Mobile responsiveness improvements
-- [ ] Statistics/charts for disk space trends
 
 ---
 
