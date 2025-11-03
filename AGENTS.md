@@ -24,11 +24,13 @@ This document provides essential context for AI coding agents working on the Pru
 - **Phase**: 4 (Advanced Features & Polish) - IN PROGRESS
 
 ### What's Working
-✅ Complete REST API (auth, sync, media, jobs, exclusions)  
+✅ Complete REST API (auth, sync, media, jobs, exclusions, deletion control)  
 ✅ All service integrations (Jellyfin, Radarr, Sonarr, Jellyseerr, Jellystat)  
 ✅ Sync engine with full/incremental scheduler  
 ✅ Rules engine with retention policies  
 ✅ Deletion executor with dry-run mode  
+✅ Manual deletion control with UI confirmation  
+✅ Automatic deletion toggle (`enable_deletion` config)  
 ✅ Exclusions management with persistence  
 ✅ Job history tracking  
 ✅ React UI with Dashboard, Timeline, Library, Scheduled Deletions, Job History pages  
@@ -46,8 +48,8 @@ This document provides essential context for AI coding agents working on the Pru
 ⏳ Comprehensive error handling  
 
 ### Testing Status
-- **282 tests passing** (89 test functions total)
-- **Coverage**: Handlers 89.0%, Storage 92.7%, Services 57.1%, Clients 8.2%
+- **111 tests passing** (106 test functions total)
+- **Coverage**: Handlers 89.0%, Storage 92.7%, Services 58.3%, Clients 5.8%
 
 ---
 
@@ -412,7 +414,65 @@ When ending a session, update this section with:
 
 ---
 
-## Last Session: Nov 3, 2025 (Session 8 - Collection Manager Tests & Bug Fix ✅)
+## Last Session: Nov 3, 2025 (Session 9 - Deletion Control Feature & Test Fix ✅)
+
+**Work Completed:**
+- ✅ Resumed from Session 8 (97 tests passing, Collection Manager complete)
+- ✅ Implemented manual deletion control feature with "Execute Deletions" button
+- ✅ Added automatic deletion toggle (`enable_deletion` config flag)
+- ✅ Created comprehensive service and handler tests (14 new tests)
+- ✅ Fixed test failure: response format for empty deletion execution
+- ✅ All 111 tests passing (up from 97, +14 new tests)
+
+**Files Modified & Committed:**
+- `internal/config/types.go` - Added `EnableDeletion bool` field to `AppConfig`
+- `internal/config/defaults.go` - Set default `EnableDeletion: false` (safe mode)
+- `config/prunarr.yaml.example` - Documented new config with clear comments
+- `internal/services/sync.go` (+47 lines) - Created `ExecuteDeletions()` and `CalculateDeletionInfo()`, updated `FullSync()`
+- `internal/api/handlers/sync.go` (+59 lines) - Added `ExecuteDeletions()` handler for `POST /api/deletions/execute`
+- `internal/api/router.go` (+1 line) - Added route for manual deletion endpoint
+- `web/src/lib/api.ts` (+9 lines) - Added `executeDeletions(dryRun)` method
+- `web/src/lib/types.ts` (+11 lines) - Added `DeletionExecutionResponse` interface
+- `web/src/pages/ScheduledDeletionsPage.tsx` (+26 lines) - Added "Execute Deletions" button with confirmation dialog
+- `internal/services/sync_test.go` (+186 lines) - 10 new service tests
+- `internal/api/handlers/sync_test.go` (+64 lines) - 4 new handler tests
+
+**Commits:**
+1. `cf21b1b` - feat: add manual deletion control and automatic deletion toggle
+2. `aff6e3d` - fix: correct response format for empty deletion execution and add comprehensive tests
+
+**Current State:**
+- Running: No
+- Tests passing: 111/111 ✅
+- Known issues: None
+- Test coverage: Handlers 89.0%, Storage 92.7%, Services 58.3%, Clients 5.8%
+- Total test functions: 106 (up from 97)
+
+**Feature Implementation:**
+- **Config default:** `enable_deletion: false` (manual-only mode by default)
+- **Automatic deletion:** Requires both `enable_deletion: true` AND `dry_run: false`
+- **Manual deletion:** Available via `POST /api/deletions/execute` endpoint
+- **Safety layers:** Config flag + dry-run check + UI confirmation dialog
+- **Job tracking:** New fields - `enable_deletion`, `deleted_count`, `deleted_items`
+
+**Test Cases Added (14 total):**
+1. Service Tests (10):
+   - `TestSyncEngine_CalculateDeletionInfo` (4 subtests) - Overdue calculation logic
+   - `TestSyncEngine_ExecuteDeletions` (3 subtests) - Deletion execution
+   - `TestSyncEngine_FullSync_EnableDeletion` (2 subtests) - Config toggle behavior
+
+2. Handler Tests (4):
+   - `TestSyncHandler_ExecuteDeletions` - Endpoint behavior with dry-run, empty, and actual execution
+
+**Next Session TODO:**
+- [ ] Configuration UI page (edit prunarr.yaml via web)
+- [ ] Advanced rules UI (user-based rules editor)
+- [ ] Mobile responsiveness improvements
+- [ ] Statistics/charts for disk space trends
+
+---
+
+## Previous Session: Nov 3, 2025 (Session 8 - Collection Manager Tests & Bug Fix ✅)
 
 **Work Completed:**
 - ✅ Task #1 COMPLETE: Added comprehensive unit tests for `JellyfinCollectionManager`
