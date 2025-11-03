@@ -48,6 +48,8 @@ func NewRouter(deps *RouterDependencies) *chi.Mux {
 	mediaHandler := handlers.NewMediaHandler(deps.SyncEngine)
 	syncHandler := handlers.NewSyncHandler(deps.SyncEngine)
 	jobsHandler := handlers.NewJobsHandler(deps.JobsFile)
+	configHandler := handlers.NewConfigHandler()
+	rulesHandler := handlers.NewRulesHandler()
 
 	// Public routes
 	r.Get("/health", healthHandler.Handle)
@@ -82,6 +84,17 @@ func NewRouter(deps *RouterDependencies) *chi.Mux {
 			r.Get("/jobs", jobsHandler.ListJobs)
 			r.Get("/jobs/latest", jobsHandler.GetLatestJob)
 			r.Get("/jobs/{id}", jobsHandler.GetJob)
+
+			// Config routes
+			r.Get("/config", configHandler.GetConfig)
+			r.Put("/config", configHandler.UpdateConfig)
+
+			// Rules routes
+			r.Get("/rules", rulesHandler.ListRules)
+			r.Post("/rules", rulesHandler.CreateRule)
+			r.Put("/rules/{name}", rulesHandler.UpdateRule)
+			r.Delete("/rules/{name}", rulesHandler.DeleteRule)
+			r.Patch("/rules/{name}/toggle", rulesHandler.ToggleRule)
 		})
 	})
 

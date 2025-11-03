@@ -1,4 +1,17 @@
-import type { AuthResponse, LoginRequest, MediaListResponse, MediaItem, SyncStatus, Job, JobListResponse, DeletionExecutionResponse } from './types';
+import type { 
+  AuthResponse, 
+  LoginRequest, 
+  MediaListResponse, 
+  MediaItem, 
+  SyncStatus, 
+  Job, 
+  JobListResponse, 
+  DeletionExecutionResponse,
+  Config,
+  UpdateConfigRequest,
+  RulesListResponse,
+  AdvancedRule
+} from './types';
 
 const API_BASE = '/api';
 
@@ -176,6 +189,50 @@ class ApiClient {
     const query = dryRun ? '?dry_run=true' : '';
     return this.request<DeletionExecutionResponse>(`/deletions/execute${query}`, {
       method: 'POST',
+    });
+  }
+
+  // Configuration
+  async getConfig(): Promise<Config> {
+    return this.request<Config>('/config');
+  }
+
+  async updateConfig(config: UpdateConfigRequest): Promise<{ message: string }> {
+    return this.request<{ message: string }>('/config', {
+      method: 'PUT',
+      body: JSON.stringify(config),
+    });
+  }
+
+  // Rules
+  async listRules(): Promise<RulesListResponse> {
+    return this.request<RulesListResponse>('/rules');
+  }
+
+  async createRule(rule: Omit<AdvancedRule, 'name'> & { name: string }): Promise<AdvancedRule> {
+    return this.request<AdvancedRule>('/rules', {
+      method: 'POST',
+      body: JSON.stringify(rule),
+    });
+  }
+
+  async updateRule(name: string, rule: Omit<AdvancedRule, 'name'> & { name: string }): Promise<AdvancedRule> {
+    return this.request<AdvancedRule>(`/rules/${encodeURIComponent(name)}`, {
+      method: 'PUT',
+      body: JSON.stringify(rule),
+    });
+  }
+
+  async deleteRule(name: string): Promise<{ message: string }> {
+    return this.request<{ message: string }>(`/rules/${encodeURIComponent(name)}`, {
+      method: 'DELETE',
+    });
+  }
+
+  async toggleRule(name: string, enabled: boolean): Promise<AdvancedRule> {
+    return this.request<AdvancedRule>(`/rules/${encodeURIComponent(name)}/toggle`, {
+      method: 'PATCH',
+      body: JSON.stringify({ enabled }),
     });
   }
 }

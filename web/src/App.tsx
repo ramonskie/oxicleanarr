@@ -8,6 +8,8 @@ import TimelinePage from '@/pages/TimelinePage';
 import LibraryPage from '@/pages/LibraryPage';
 import ScheduledDeletionsPage from '@/pages/ScheduledDeletionsPage';
 import JobHistoryPage from '@/pages/JobHistoryPage';
+import ConfigurationPage from '@/pages/ConfigurationPage';
+import RulesPage from '@/pages/RulesPage';
 import ProtectedRoute from '@/components/ProtectedRoute';
 
 const queryClient = new QueryClient({
@@ -68,6 +70,22 @@ function App() {
             element={
               <ProtectedRoute>
                 <JobHistoryPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/configuration"
+            element={
+              <ProtectedRoute>
+                <ConfigurationPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/rules"
+            element={
+              <ProtectedRoute>
+                <RulesPage />
               </ProtectedRoute>
             }
           />

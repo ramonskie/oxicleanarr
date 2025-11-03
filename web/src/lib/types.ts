@@ -97,3 +97,114 @@ export interface DeletionExecutionResponse {
   candidates?: DeletionCandidate[];
   deleted_items?: DeletionCandidate[];
 }
+
+// Configuration types
+export interface Config {
+  admin: AdminConfig;
+  app: AppConfig;
+  sync: SyncConfig;
+  rules: RulesConfig;
+  server: ServerConfig;
+  integrations: IntegrationsConfig;
+  advanced_rules: AdvancedRule[];
+}
+
+export interface AdminConfig {
+  username: string;
+  disable_auth: boolean;
+}
+
+export interface AppConfig {
+  dry_run: boolean;
+  enable_deletion: boolean;
+  leaving_soon_days: number;
+}
+
+export interface SyncConfig {
+  full_interval: number;
+  incremental_interval: number;
+  auto_start: boolean;
+}
+
+export interface RulesConfig {
+  movie_retention: string;
+  tv_retention: string;
+}
+
+export interface ServerConfig {
+  host: string;
+  port: number;
+}
+
+export interface IntegrationsConfig {
+  jellyfin: JellyfinIntegration;
+  radarr: BaseIntegration;
+  sonarr: BaseIntegration;
+  jellyseerr: BaseIntegration;
+  jellystat: BaseIntegration;
+}
+
+export interface BaseIntegration {
+  enabled: boolean;
+  url: string;
+  has_api_key: boolean;
+  timeout: string;
+}
+
+export interface JellyfinIntegration extends BaseIntegration {
+  username: string;
+  has_password: boolean;
+  leaving_soon_type: string;
+  collections: CollectionsConfig;
+}
+
+export interface CollectionsConfig {
+  enabled: boolean;
+  movies: CollectionItemConfig;
+  tv_shows: CollectionItemConfig;
+}
+
+export interface CollectionItemConfig {
+  name: string;
+  hide_when_empty: boolean;
+}
+
+export interface AdvancedRule {
+  name: string;
+  type: 'tag' | 'episode' | 'user';
+  enabled: boolean;
+  tag?: string;
+  retention?: string;
+  max_episodes?: number;
+  max_age?: string;
+  require_watched?: boolean;
+  users?: UserRule[];
+}
+
+export interface UserRule {
+  user_id?: number;
+  username?: string;
+  email?: string;
+  retention: string;
+  require_watched?: boolean;
+}
+
+export interface UpdateConfigRequest {
+  admin?: Partial<AdminConfig & { password?: string }>;
+  app?: AppConfig;
+  sync?: SyncConfig;
+  rules?: RulesConfig;
+  server?: ServerConfig;
+  integrations?: Partial<{
+    jellyfin?: Partial<JellyfinIntegration & { password?: string; api_key?: string }>;
+    radarr?: Partial<BaseIntegration & { api_key?: string }>;
+    sonarr?: Partial<BaseIntegration & { api_key?: string }>;
+    jellyseerr?: Partial<BaseIntegration & { api_key?: string }>;
+    jellystat?: Partial<BaseIntegration & { api_key?: string }>;
+  }>;
+  advanced_rules?: AdvancedRule[];
+}
+
+export interface RulesListResponse {
+  rules: AdvancedRule[];
+}

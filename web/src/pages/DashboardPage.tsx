@@ -5,7 +5,7 @@ import { useAuthStore } from '@/store/auth';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Film, Tv, Clock, LogOut, Shield, ShieldOff, Info } from 'lucide-react';
+import { Film, Tv, Clock, LogOut, Shield, ShieldOff, Info, Settings } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 
 export default function DashboardPage() {
@@ -131,6 +131,10 @@ export default function DashboardPage() {
                 Syncing...
               </div>
             )}
+            <Button variant="ghost" size="sm" onClick={() => navigate('/configuration')}>
+              <Settings className="h-4 w-4 mr-2" />
+              Configuration
+            </Button>
             <Button variant="ghost" size="sm" onClick={handleLogout}>
               <LogOut className="h-4 w-4 mr-2" />
               Logout
