@@ -41,6 +41,7 @@ This document provides essential context for AI coding agents working on the Pru
 ✅ Configuration & Advanced Rules management UI  
 ✅ Toast notifications for user feedback (Sonner)  
 ✅ Auto-sync on retention rule changes (immediate effect)  
+✅ Scheduled Deletions UI displays correctly in all modes (dry-run and live)  
 
 ### What's Pending
 ⏳ User-based cleanup with watch tracking  
@@ -54,7 +55,72 @@ This document provides essential context for AI coding agents working on the Pru
 
 ---
 
-## Recent Work (Last Session - Nov 3, 2025, Session 13)
+## Recent Work (Last Session - Nov 4, 2025, Session 14)
+
+### Scheduled Deletions UI Bug Fix - COMPLETED ✅
+
+**Problem Identified:**
+- Scheduled Deletions page was showing 0 items despite having 23-50 deletion candidates in job history
+- Root cause: `would_delete` array in job summaries was only populated when `dry_run: true`
+- Frontend ScheduledDeletionsPage always expects this array (`latestJob.summary?.would_delete || []`)
+- With `dry_run: false`, the array was never populated, causing empty UI
+
+**Solution Implemented:**
+- Modified `internal/services/sync.go` lines 295-298
+- Removed `dry_run` condition check before populating `would_delete` array
+- Now always populates `would_delete` when deletion candidates exist
+- Added clarifying comment explaining purpose in both modes
+
+**Code Change:**
+```go
+// Before (Session 9):
+if e.config.App.DryRun && len(wouldDelete) > 0 {
+    job.Summary["would_delete"] = wouldDelete
+}
+
+// After (Session 14):
+// Always add deletion candidates to job summary for UI display
+// In dry-run mode, these are candidates that would be deleted
+// Otherwise, these are candidates that will be deleted (if enable_deletion is true)
+if len(wouldDelete) > 0 {
+    job.Summary["would_delete"] = wouldDelete
+}
+```
+
+**Files Modified:**
+- `internal/services/sync.go` - Removed dry_run condition, always populate would_delete array (~4 lines changed)
+
+**Commits:**
+- `ae06c16` - fix: always populate would_delete in job summary for Scheduled Deletions UI
+
+**Testing Results:**
+- ✅ All 111 backend tests passing
+- ✅ No regressions introduced
+- ✅ Config verified safe mode (`dry_run: true`)
+- ✅ Binary rebuilt and tested with real data
+
+**Technical Discovery - Field Name Mapping:**
+- Backend `Media.DeleteAfter` → JSON `deletion_date` → Frontend `MediaItem.deletion_date`
+- Backend `Media.DaysUntilDue` → JSON `days_until_deletion` → Frontend `MediaItem.days_until_deletion`
+- Job summary candidates use `delete_after` → Frontend `DeletionCandidate.delete_after`
+- Overdue items (`now.After(media.DeleteAfter)`) go in `would_delete` array
+- Future deletions (`DaysUntilDue > 0`) returned by `/api/media/leaving-soon` endpoint
+
+**Current State:**
+- Running: No (stopped after testing)
+- Tests passing: 111/111 ✅
+- Known issues: None
+- Scheduled Deletions page: Fixed ✅
+
+**Next Session TODO:**
+- [ ] User-based cleanup with watch tracking
+- [ ] Mobile responsiveness improvements
+- [ ] Statistics/charts for disk space trends
+- [ ] Comprehensive error handling
+
+---
+
+## Previous Session: Nov 3, 2025 (Session 13)
 
 ### Part 1: Toast Notifications UI - COMPLETED ✅
 
@@ -1014,5 +1080,38 @@ When ending a session, update this section with:
 
 ---
 
-**Last Updated**: Nov 3, 2025  
-**Document Version**: 1.2
+## Last Session: Nov 4, 2025 (Session 14 - Scheduled Deletions UI Bug Fix ✅)
+
+**Work Completed:**
+- ✅ Fixed Scheduled Deletions page showing 0 items with `dry_run: false`
+- ✅ Removed `dry_run` condition from `would_delete` array population
+- ✅ Added clarifying comments for array purpose in both modes
+- ✅ All 111 tests passing
+
+**Problem Fixed:**
+- Root cause: `would_delete` array only populated when `dry_run: true`
+- Impact: Frontend ScheduledDeletionsPage showed 0 items in live mode
+- Solution: Always populate array when deletion candidates exist
+
+**Files Modified & Committed:**
+- `internal/services/sync.go` (lines 295-298) - Removed dry_run condition check (~4 lines changed)
+
+**Commits:**
+1. `ae06c16` - fix: always populate would_delete in job summary for Scheduled Deletions UI
+
+**Current State:**
+- Running: No
+- Tests passing: 111/111 ✅
+- Known issues: None
+- Scheduled Deletions UI: Fixed ✅
+
+**Next Session TODO:**
+- [ ] User-based cleanup with watch tracking integration
+- [ ] Mobile responsiveness improvements
+- [ ] Statistics/charts for disk space trends
+- [ ] Comprehensive error handling
+
+---
+
+**Last Updated**: Nov 4, 2025  
+**Document Version**: 1.3
