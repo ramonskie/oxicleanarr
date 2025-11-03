@@ -1,22 +1,28 @@
 package handlers
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"os"
 	"path/filepath"
 
 	"github.com/ramonskie/prunarr/internal/config"
+	"github.com/ramonskie/prunarr/internal/services"
 	"github.com/rs/zerolog/log"
 	"gopkg.in/yaml.v3"
 )
 
 // ConfigHandler handles configuration management requests
-type ConfigHandler struct{}
+type ConfigHandler struct {
+	syncEngine *services.SyncEngine
+}
 
 // NewConfigHandler creates a new ConfigHandler
-func NewConfigHandler() *ConfigHandler {
-	return &ConfigHandler{}
+func NewConfigHandler(syncEngine *services.SyncEngine) *ConfigHandler {
+	return &ConfigHandler{
+		syncEngine: syncEngine,
+	}
 }
 
 // SanitizedConfig represents a sanitized version of the config (without passwords)
@@ -345,6 +351,23 @@ func (h *ConfigHandler) UpdateConfig(w http.ResponseWriter, r *http.Request) {
 
 	log.Info().Msg("Write config completed successfully")
 
+	// Track if retention rules changed (requires full sync to re-evaluate)
+	retentionChanged := false
+	if req.Rules != nil {
+		oldCfg := config.Get()
+		if oldCfg != nil {
+			if req.Rules.MovieRetention != oldCfg.Rules.MovieRetention ||
+				req.Rules.TVRetention != oldCfg.Rules.TVRetention {
+				retentionChanged = true
+				log.Info().Msg("Retention rules changed, will trigger full sync to re-evaluate media")
+			}
+		}
+	}
+	if req.AdvancedRules != nil {
+		retentionChanged = true
+		log.Info().Msg("Advanced rules changed, will trigger full sync to re-evaluate media")
+	}
+
 	// Reload config to apply changes
 	if err := config.Reload(); err != nil {
 		log.Error().Err(err).Msg("Failed to reload config")
@@ -352,6 +375,19 @@ func (h *ConfigHandler) UpdateConfig(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
 		json.NewEncoder(w).Encode(ErrorResponse{Error: "Failed to reload configuration"})
 		return
+	}
+
+	// Trigger full sync if retention rules changed
+	if retentionChanged && h.syncEngine != nil {
+		log.Info().Msg("Triggering full sync to re-apply retention rules")
+		go func() {
+			ctx := context.Background()
+			if err := h.syncEngine.FullSync(ctx); err != nil {
+				log.Error().Err(err).Msg("Failed to trigger full sync after config update")
+			} else {
+				log.Info().Msg("Full sync completed after config update")
+			}
+		}()
 	}
 
 	log.Info().Msg("Configuration updated successfully")

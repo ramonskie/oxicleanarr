@@ -48,7 +48,7 @@ func NewRouter(deps *RouterDependencies) *chi.Mux {
 	mediaHandler := handlers.NewMediaHandler(deps.SyncEngine)
 	syncHandler := handlers.NewSyncHandler(deps.SyncEngine)
 	jobsHandler := handlers.NewJobsHandler(deps.JobsFile)
-	configHandler := handlers.NewConfigHandler()
+	configHandler := handlers.NewConfigHandler(deps.SyncEngine)
 	rulesHandler := handlers.NewRulesHandler()
 
 	// Public routes
