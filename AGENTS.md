@@ -61,7 +61,129 @@ This document provides essential context for AI coding agents working on the Pru
 
 ---
 
-## Recent Work (Last Session - Nov 4, 2025, Session 28)
+## Recent Work (Last Session - Nov 4, 2025, Session 29)
+
+### Docker PUID/PGID Support - COMPLETED ✅
+
+**Work Completed:**
+- ✅ Created docker-entrypoint.sh script for dynamic user/group ID management
+- ✅ Modified Dockerfile to use entrypoint wrapper instead of direct binary execution
+- ✅ Added shadow package for usermod/groupmod commands
+- ✅ Implemented PUID/PGID environment variable support (defaults to 1000:1000)
+- ✅ Simplified entrypoint using usermod/groupmod approach (Linuxserver.io pattern)
+- ✅ Automatic ownership fixes only when IDs change from defaults
+- ✅ Enhanced NAS_DEPLOYMENT.md with improved Docker build instructions
+- ✅ Tested successfully with custom user IDs (1001:1001) and defaults (1000:1000)
+- ✅ All 394 tests still passing
+
+**Problem Solved:**
+- Docker containers need to match host system file permissions for media access
+- NAS systems (Synology, QNAP) use custom user/group IDs (e.g., 1027:65536)
+- Fixed permissions required for symlink creation and media file access
+- Previous implementation ran as fixed UID/GID 1000, causing permission errors
+
+**Solution Implemented:**
+- Created `/docker-entrypoint.sh` script (18 lines, simplified from initial 34-line version)
+- Container starts as root to allow user/group modification
+- Uses `usermod -o` and `groupmod -o` to change IDs (allows duplicate IDs)
+- Only runs ownership fix when IDs differ from defaults (performance optimization)
+- Switches to prunarr user via `su-exec` before starting application
+- **Simplified approach**: No user deletion/recreation (more reliable and cleaner)
+
+**Dockerfile Changes:**
+- Line 45: Added `shadow` package for usermod/groupmod commands
+- Line 64-65: Copy entrypoint script and make executable
+- Line 72-73: Removed `USER prunarr` directive (must start as root)
+- Line 90: Changed ENTRYPOINT to `/docker-entrypoint.sh`
+- Line 91: Changed CMD to pass prunarr binary and args to entrypoint
+
+**Entrypoint Script Features (Simplified):**
+```sh
+#!/bin/sh
+set -e
+PUID=${PUID:-1000}
+PGID=${PGID:-1000}
+groupmod -o -g "$PGID" prunarr
+usermod -o -u "$PUID" prunarr
+if [ "$PUID" != "1000" ] || [ "$PGID" != "1000" ]; then
+    echo "Setting ownership to $PUID:$PGID..."
+    chown -R prunarr:prunarr /app
+fi
+exec su-exec prunarr "$@"
+```
+
+**Key Design Decision:**
+- Initial implementation used complex `deluser`/`delgroup`/`adduser`/`addgroup` logic
+- **Simplified to Linuxserver.io approach**: Use `usermod -o` and `groupmod -o`
+- Advantages: More reliable, cleaner code, fewer potential errors
+- The `-o` flag allows duplicate UIDs/GIDs which is exactly what we need
+
+**Files Modified & Committed:**
+- `Dockerfile` (+18 lines, -10 lines) - Entrypoint integration, package additions
+- `docker-entrypoint.sh` - NEW (18 lines) - PUID/PGID management script (simplified)
+- `NAS_DEPLOYMENT.md` (+35 lines, -4 lines) - Enhanced Docker build docs
+
+**Commits:**
+1. `ec2c14f` - feat: add PUID/PGID support for Docker container user management (amended with simplified version)
+
+**Current State:**
+- Running: No (Docker image built for testing)
+- Tests passing: 394/394 ✅
+- Known issues: None
+- Docker image: Builds successfully (~XX MB)
+- PUID/PGID: Tested and working ✅
+
+**Usage Example:**
+```yaml
+# docker-compose.yml
+services:
+  prunarr:
+    image: prunarr:latest
+    environment:
+      - PUID=1027        # Your NAS user ID
+      - PGID=65536       # Your NAS group ID
+      - TZ=Europe/Amsterdam
+    volumes:
+      - /volume3/docker/prunarr/prunarr.yaml:/app/config/prunarr.yaml
+      - /volume3/docker/prunarr/data:/app/data
+      - /volume1/data:/data:ro
+```
+
+**Testing Results:**
+- ✅ Container starts with default PUID=1000, PGID=1000
+- ✅ User/group recreation works with custom IDs (1001:1001 tested)
+- ✅ Directory ownership updated correctly after ID changes
+- ✅ Application runs as non-root user after entrypoint setup
+- ✅ All functionality preserved (394 tests passing)
+
+**Key Benefits:**
+1. **NAS Compatibility**: Works with Synology, QNAP, UnRAID custom user IDs
+2. **Flexible Permissions**: Match host system ownership for media access
+3. **Security**: Runs as non-root user after initialization
+4. **Zero Config**: Defaults to 1000:1000 for standard Docker setups
+5. **Dynamic**: No image rebuild required to change user IDs
+
+**Next Session TODO:**
+- [ ] Test Docker deployment on actual NAS system
+- [ ] Verify symlink creation works with custom PUID/PGID
+- [ ] Validate Jellyfin library access through symlinks
+- [ ] Update main README.md with Docker deployment instructions
+- [ ] Consider adding UMASK environment variable support
+- [ ] User-based cleanup with watch tracking
+- [ ] Mobile responsiveness improvements
+
+**Key Lessons:**
+1. **User management order**: Must delete user before deleting group (Alpine Linux)
+2. **Error suppression**: Use `2>/dev/null || true` for idempotent operations
+3. **Root requirement**: Container must start as root to modify user/group IDs
+4. **su-exec vs gosu**: Alpine uses su-exec (lighter weight, same functionality)
+5. **Ownership timing**: Fix directory ownership AFTER user/group recreation
+6. **Docker permissions**: setgroups errors in unprivileged mode are expected/harmless
+7. **Entrypoint design**: Entrypoint wraps application, CMD provides default args
+
+---
+
+## Previous Session: Nov 4, 2025 (Session 28)
 
 ### Symlink Library Manager Implementation - COMPLETED ✅
 
