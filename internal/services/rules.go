@@ -70,6 +70,15 @@ func (e *RulesEngine) EvaluateMedia(media *models.Media) (shouldDelete bool, del
 	// Get latest config for hot-reload support
 	cfg := e.getConfig()
 
+	// DEBUG: Log current retention values being used
+	log.Debug().
+		Str("media_id", media.ID).
+		Str("media_type", string(media.Type)).
+		Str("movie_retention", cfg.Rules.MovieRetention).
+		Str("tv_retention", cfg.Rules.TVRetention).
+		Bool("use_global", e.useGlobal).
+		Msg("Rules engine evaluating media with current config")
+
 	// Check if requested without user data (blanket protection only when no user-based rules exist)
 	if media.IsRequested && len(cfg.AdvancedRules) == 0 {
 		return false, time.Time{}, "requested"

@@ -86,7 +86,11 @@ func Reload() error {
 		return err
 	}
 	globalConfig = cfg
-	log.Info().Msg("Configuration reloaded successfully")
+	log.Info().
+		Str("movie_retention", cfg.Rules.MovieRetention).
+		Str("tv_retention", cfg.Rules.TVRetention).
+		Bool("dry_run", cfg.App.DryRun).
+		Msg("Configuration reloaded successfully")
 	return nil
 }
 
