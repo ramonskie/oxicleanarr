@@ -25,6 +25,7 @@ export default function LibraryPage() {
   const [sortField, setSortField] = useState<SortField>('title');
   const [sortOrder, setSortOrder] = useState<SortOrder>('asc');
   const [currentPage, setCurrentPage] = useState(1);
+  const [selectedTags, setSelectedTags] = useState<string[]>([]);
 
   // Fetch movies
   const { data: moviesData } = useQuery({
@@ -52,6 +53,21 @@ export default function LibraryPage() {
     navigate('/login');
   };
 
+  // Get all unique tags from all items
+  const allTags: string[] = (() => {
+    const tagSet = new Set<string>();
+    const allMedia = [
+      ...(moviesData?.items || []),
+      ...(showsData?.items || []),
+    ];
+    allMedia.forEach(item => {
+      if (item.tags) {
+        item.tags.forEach(tag => tagSet.add(tag));
+      }
+    });
+    return Array.from(tagSet).sort();
+  })();
+
   // Combine and filter media items
   const allItems: MediaItem[] = (() => {
     let items: MediaItem[] = [];
@@ -74,6 +90,14 @@ export default function LibraryPage() {
         item.title.toLowerCase().includes(query) ||
         item.year?.toString().includes(query)
       );
+    }
+
+    // Apply tag filter
+    if (selectedTags.length > 0) {
+      items = items.filter(item => {
+        // Item must have at least one of the selected tags
+        return item.tags?.some(tag => selectedTags.includes(tag));
+      });
     }
 
     // Apply sorting
@@ -124,6 +148,22 @@ export default function LibraryPage() {
 
   const handleSearchChange = (value: string) => {
     setSearchQuery(value);
+    setCurrentPage(1);
+  };
+
+  const handleTagToggle = (tag: string) => {
+    setSelectedTags(prev => {
+      if (prev.includes(tag)) {
+        return prev.filter(t => t !== tag);
+      } else {
+        return [...prev, tag];
+      }
+    });
+    setCurrentPage(1);
+  };
+
+  const handleClearTags = () => {
+    setSelectedTags([]);
     setCurrentPage(1);
   };
 
@@ -257,6 +297,32 @@ export default function LibraryPage() {
               />
             </div>
           </div>
+
+          {/* Tag Filter */}
+          {allTags.length > 0 && (
+            <div className="flex gap-2 items-center text-sm flex-wrap">
+              <span className="text-gray-600">Filter by tags:</span>
+              {allTags.map((tag) => (
+                <Button
+                  key={tag}
+                  variant={selectedTags.includes(tag) ? 'default' : 'outline'}
+                  size="sm"
+                  onClick={() => handleTagToggle(tag)}
+                >
+                  {tag}
+                </Button>
+              ))}
+              {selectedTags.length > 0 && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={handleClearTags}
+                >
+                  Clear filters
+                </Button>
+              )}
+            </div>
+          )}
 
           {/* Sort Controls */}
           <div className="flex gap-2 items-center text-sm">
