@@ -61,7 +61,80 @@ This document provides essential context for AI coding agents working on the Pru
 
 ---
 
-## Recent Work (Last Session - Nov 4, 2025, Session 18)
+## Recent Work (Last Session - Nov 4, 2025, Session 20)
+
+### Jellyfin Collections Dry-Run Bug Fix - COMPLETED ✅
+
+**Work Completed:**
+- ✅ Fixed Jellyfin collections to respect config hot-reload for dry_run setting
+- ✅ Removed dryRun field from JellyfinCollectionManager struct
+- ✅ Implemented dynamic config reading at runtime with nil-safety (defaults to dry_run=true)
+- ✅ Improved test safety by adding SetTestConfig() for in-memory test configs
+- ✅ Eliminated live credential loading in tests (was using prunarr.test.yaml)
+- ✅ All 381 tests passing (13 collection tests + 368 others)
+- ✅ Live tested collections creation with dry_run: false
+- ✅ Collections created successfully: 11 movies + 6 TV shows
+
+**Problem Fixed:**
+- Collection manager stored dry_run as a field at construction time
+- Config hot-reload updated in-memory config but collections kept old dry_run value
+- Collections always operated in the mode set at startup, ignoring config changes
+- User reported collections not being created despite dry_run: false in config
+
+**Solution Implemented:**
+1. **Dynamic Config Reading**:
+   - Removed `dryRun bool` field from `JellyfinCollectionManager`
+   - Added runtime config reads: `cfg := config.Get(); dryRun := cfg.App.DryRun`
+   - Safety default: `dryRun = true` when config is nil (prevents accidental operations)
+   - Applied to both `SyncCollections()` and `syncCollection()` methods
+
+2. **Test Safety Improvements**:
+   - Added `SetTestConfig(cfg *Config)` function to config package
+   - Created `setupTestConfig(t)` helper for in-memory test configs
+   - Tests no longer load prunarr.test.yaml (no live credentials)
+   - 6 tests updated to use safe in-memory config
+
+**Files Modified & Committed:**
+- `internal/config/config.go` (+6 lines) - Added SetTestConfig() for test injection
+- `internal/services/jellyfin_collections.go` (~30 lines) - Dynamic config reading with nil safety
+- `internal/services/sync.go` (-1 line) - Removed dryRun parameter from constructor
+- `internal/services/jellyfin_collections_test.go` (+50 lines) - Safe test config setup
+
+**Commits:**
+1. `cfb4a68` - fix: make Jellyfin collections respect config hot-reload for dry_run setting
+
+**Current State:**
+- Running: Yes (backend PID: 597610)
+- Tests passing: 381/381 ✅
+- Known issues: 1 movie (Red Dawn) missing Jellyfin ID (skipped from collections)
+- Collections verified: ✅ Created successfully with 11 movies + 6 TV shows
+- Config hot-reload: ✅ Working correctly for collections
+
+**Testing Results:**
+- ✅ Collections deleted when empty (`hide_when_empty: true`)
+- ✅ Collections created when items scheduled (retention changed to 10d)
+- ✅ Logs show `dry_run: false` correctly applied
+- ✅ Dynamic config reading works at runtime
+- ✅ Safety default (dry_run=true) when config is nil
+
+**Key Lessons:**
+1. **State at construction vs runtime**: Values stored at construction time don't respect hot-reload
+2. **Dynamic config reading**: Always read from `config.Get()` at runtime for hot-reload support
+3. **Nil safety**: Always provide safe defaults when config might be nil
+4. **Test isolation**: Never load real config files in tests - use in-memory configs
+5. **ReapplyRetentionRules limitation**: Only re-evaluates retention, doesn't sync collections
+6. **Full sync needed**: Collection changes require full sync, not just retention rule re-application
+
+**Next Session TODO:**
+- [ ] Investigate "Red Dawn" missing Jellyfin ID (separate sync debugging)
+- [ ] Consider adding collection sync to ReapplyRetentionRules() for faster UI updates
+- [ ] User-based cleanup with watch tracking integration
+- [ ] Mobile responsiveness improvements
+- [ ] Statistics/charts for disk space trends
+
+---
+
+## Previous Session: Nov 4, 2025 (Session 18)
 
 ### Part 1: Scheduled Deletions Data Source Refactoring - COMPLETED ✅
 
