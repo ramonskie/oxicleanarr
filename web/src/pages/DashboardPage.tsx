@@ -213,13 +213,13 @@ export default function DashboardPage() {
                       Media items scheduled for deletion
                     </CardDescription>
                   </div>
-                  {scheduledDeletionsCount > 10 && (
+                  {leavingSoon.total > 10 && (
                     <Button 
                       variant="outline" 
                       size="sm"
-                      onClick={() => navigate('/scheduled-deletions')}
+                      onClick={() => navigate('/timeline')}
                     >
-                      View All {scheduledDeletionsCount} Items
+                      View All {leavingSoon.total} Items
                     </Button>
                   )}
                 </div>
