@@ -56,7 +56,7 @@ This document provides essential context for AI coding agents working on the Pru
 ⏳ Comprehensive error handling  
 
 ### Testing Status
-- **381 tests passing** (109 test functions with subtests)
+- **394 tests passing** (116 test functions with subtests)
 - **Coverage**: Handlers 89.0%, Storage 92.7%, Services 58.3%+, Clients 5.8%
 
 ---
@@ -66,13 +66,15 @@ This document provides essential context for AI coding agents working on the Pru
 ### Symlink Library Manager Implementation - COMPLETED ✅
 
 **Work Completed:**
-- ✅ Implemented complete SymlinkLibraryManager service (397 lines)
+- ✅ Implemented complete SymlinkLibraryManager service (384 lines)
 - ✅ Created Jellyfin Virtual Folder API methods (GET, CREATE, DELETE)
 - ✅ Integrated symlink library sync into FullSync workflow
 - ✅ Updated configuration structures and validation
 - ✅ Replaced Collections config with SymlinkLibrary in example config
 - ✅ Deleted old collection files (jellyfin_collections.go + test file)
-- ✅ All 381 tests passing
+- ✅ Added comprehensive unit tests (13 test cases, 661 lines)
+- ✅ Fixed bugs discovered during testing (JellyfinID validation, source file checks)
+- ✅ All 394 tests passing (381 existing + 13 new)
 - ✅ Binary builds successfully (14MB)
 
 **Decision Reversal:**
@@ -125,13 +127,14 @@ This document provides essential context for AI coding agents working on the Pru
 
 **Commits:**
 1. `492cd6b` - feat: replace Collections with Symlink Library Manager for better visibility
+2. `da211f5` - test: add comprehensive unit tests for SymlinkLibraryManager
 
 **Current State:**
-- Running: No (code complete, testing pending)
-- Tests passing: 381/381 ✅
+- Running: No (implementation complete, manual testing pending)
+- Tests passing: 394/394 ✅ (381 existing + 13 new)
 - Build: ✅ Successful (prunarr-symlink binary 14MB)
 - Known issues: None
-- Net change: -342 lines (588 added, 930 deleted)
+- Net change: +313 lines (1,243 added, 930 deleted)
 
 **Advantages Over Collections:**
 1. **Better Visibility** - Libraries appear in Jellyfin sidebar (not buried in Collections)
@@ -146,21 +149,38 @@ This document provides essential context for AI coding agents working on the Pru
 - Symlink base directory must be writable by Prunarr container
 - See `config/prunarr.yaml.example` for Docker Compose setup
 
+**Unit Tests Added (13 test cases):**
+- `TestNewSymlinkLibraryManager` - Constructor validation
+- `TestFilterScheduledMedia` - 6 subtests for media filtering (types, exclusions, dates, IDs)
+- `TestGenerateSymlinkName` - 2 subtests for safe filename generation
+- `TestCreateSymlinks` - 3 subtests for symlink creation (success, dry-run, missing files)
+- `TestCleanupSymlinks` - 2 subtests for stale symlink removal
+- `TestEnsureVirtualFolder` - 4 subtests for Jellyfin library management
+- `TestSyncLibraries_Integration` - End-to-end integration test
+
+**Bug Fixes Discovered via Testing:**
+- Fixed missing `JellyfinID` validation in `filterScheduledMedia()` (line 112-114)
+- Fixed source file existence check in `createSymlinks()` (line 272-277)
+- Fixed symlink tracking to only include successfully created symlinks (line 322)
+
 **Next Session TODO:**
-- [ ] Add comprehensive unit tests for SymlinkLibraryManager
 - [ ] Manual testing with real Jellyfin instance (requires Docker setup)
-- [ ] Verify symlink creation works correctly
-- [ ] Test Virtual Folder creation/deletion/updates
+- [ ] Verify symlink creation works correctly with real files
+- [ ] Test Virtual Folder creation/deletion/updates with Jellyfin API
 - [ ] Validate path translation in Docker environment
-- [ ] Test edge cases: missing files, permission issues, concurrent syncs
-- [ ] Add error recovery and retry logic if needed
+- [ ] Test edge cases: permission issues, concurrent syncs
+- [ ] Update README/documentation with setup instructions
+- [ ] Consider adding error recovery and retry logic if needed
 
 **Key Lessons:**
 1. **Bold decisions**: Sometimes the "defer to v2.0" choice should be reconsidered
 2. **UX over complexity**: Better user experience justifies implementation complexity
-3. **Code replacement**: Replacing 725 lines of old code with 384 lines of new code (-47% net)
+3. **Code replacement**: Replacing 725 lines of old code with 1,045 lines of new code (384 implementation + 661 tests)
 4. **API design**: Virtual Folder API is simpler than Collection item management
 5. **Thread safety**: Always copy shared state before passing to async operations
+6. **Interface design**: Local interfaces for dependency injection avoid global client changes
+7. **Test-driven bug finding**: Unit tests discovered 3 bugs before manual testing
+8. **Validation importance**: Always check JellyfinID existence and source file availability
 
 ---
 
