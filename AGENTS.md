@@ -43,6 +43,9 @@ This document provides essential context for AI coding agents working on the Pru
 ✅ Toast notifications for user feedback (Sonner)  
 ✅ Auto-sync on retention rule changes (immediate effect)  
 ✅ Scheduled Deletions UI displays correctly in all modes (dry-run and live)  
+✅ Tag display on media cards across all pages  
+✅ Tag filtering in Library page  
+✅ Rule type badges showing which rule matched  
 
 ### What's Pending
 ⏳ User-based cleanup with watch tracking  
@@ -51,83 +54,83 @@ This document provides essential context for AI coding agents working on the Pru
 ⏳ Comprehensive error handling  
 
 ### Testing Status
-- **111 tests passing** (106 test functions total)
-- **Coverage**: Handlers 89.0%, Storage 92.7%, Services 58.3%, Clients 5.8%
+- **380 tests passing** (increased from 111 in Session 15)
+- **Coverage**: Handlers 89.0%, Storage 92.7%, Services 58.3%+, Clients 5.8%
 
 ---
 
-## Recent Work (Last Session - Nov 4, 2025, Session 15)
+## Recent Work (Last Session - Nov 4, 2025, Session 16)
 
-### Tag-Based Retention Rules Implementation - COMPLETED ✅
+### Tag-Based Rules UI Enhancements - COMPLETED ✅
 
 **Work Completed:**
-- ✅ Added Tags field to Media model (stores tag names as string array)
-- ✅ Implemented GetTags() methods in Radarr and Sonarr clients
-- ✅ Integrated tag fetching into sync operations (fetch tags, map IDs to names)
-- ✅ Implemented evaluateTagBasedRules() with case-insensitive tag matching
-- ✅ Added tag rule priority (highest priority after exclusions)
-- ✅ Fixed GenerateDeletionReason() to parse and format tag-based rules
-- ✅ Comprehensive logging for tag rule matches
-- ✅ Live tested with real Radarr instance
+- ✅ Added 17 comprehensive unit tests for tag-based rule evaluation
+- ✅ Fixed 2 build errors (unused variables) and 2 test failures (incorrect expectations)
+- ✅ Displayed tags on media cards across all three pages (Library, Scheduled Deletions, Timeline)
+- ✅ Added tag filter to Library page with multi-select and clear functionality
+- ✅ Added rule type badges showing which rule matched (Tag/User/Standard)
+- ✅ All 380 test runs passing (was 111 test functions)
 
 **Problem Solved:**
-- Tag-based rules were defined in config schema but NOT fully implemented
-- No way to apply different retention policies based on media tags
-- Users couldn't create special rules for demo content, test media, etc.
+- No unit test coverage for tag-based rule logic
+- Tags were stored in backend but not visible in UI
+- No way to filter library by tags
+- Users couldn't see which retention rule caused a deletion
 
 **Solution Implemented:**
-- Added `Tags []string` field to `Media` struct (`internal/models/media.go`)
-- Added tag structs to `internal/clients/types.go` (RadarrTag, SonarrTag)
-- Created `GetTags()` methods in Radarr and Sonarr clients to fetch tags from API
-- Updated `syncRadarr()` and `syncSonarr()` to fetch tags and map IDs to names
-- Created `evaluateTagBasedRules()` in rules engine with case-insensitive matching
-- Updated `GenerateDeletionReason()` to handle tag rule format (lines 414-470)
+- Created comprehensive test suite in `internal/services/rules_test.go` with 17 test cases
+- Fixed test expectations: Tag rules DO override requested status when advanced rules exist
+- Added `tags?: string[]` to TypeScript interfaces (MediaItem, DeletionCandidate)
+- Display tags as secondary badges below title on all media cards
+- Tag filter with active state, sorted alphabetically, OR logic (match ANY selected tag)
+- Created `getRuleType()` helper to parse deletion_reason strings
+- Display rule type badges using shadcn/ui Badge component variants
 
 **Files Modified:**
-- `internal/models/media.go` (+1 line) - Added Tags field
-- `internal/clients/types.go` (+14 lines) - Tag structs
-- `internal/clients/radarr.go` (+31 lines) - GetTags() method
-- `internal/clients/sonarr.go` (+31 lines) - GetTags() method
-- `internal/services/sync.go` (+46 lines) - Tag fetching and population
-- `internal/services/rules.go` (+168 lines) - Tag evaluation + deletion reason fix
+- `internal/services/rules_test.go` (+460 lines) - 17 new test cases
+- `web/src/lib/types.ts` (+2 lines) - Tag fields
+- `web/src/pages/LibraryPage.tsx` (+99 lines) - Tags display + filter + rule badges
+- `web/src/pages/ScheduledDeletionsPage.tsx` (+33 lines) - Tags display + rule badges
+- `web/src/pages/TimelinePage.tsx` (+9 lines) - Tags display
 
 **Commits:**
-- `c66eb99` - feat: implement tag-based retention rules
+1. `02818b2` - test: add comprehensive unit tests for tag-based rule evaluation
+2. `2923395` - feat: display tags on media cards across all pages
+3. `cb2a3f1` - feat: add tag filter to Library page
+4. `33d5997` - feat: display rule type badges on media cards
 
 **Testing Results:**
-- ✅ All 111 backend tests passing
-- ✅ Tags fetched successfully from Radarr API
-- ✅ Tag names populated in media objects: `["1 - admin", "prunarr-test"]`
-- ✅ Tag-based rule matched correctly
-- ✅ Deletion reason properly formatted with tag rule information
-- ✅ Tagged movie "Nobody" appears in Scheduled Deletions UI with tag-based reason
+- ✅ All 380 test runs passing (17 new test cases added)
+- ✅ Services test coverage increased
+- ✅ Frontend built successfully (440.18 kB, gzipped: 130.93 kB)
+- ✅ Tags display correctly on all pages
+- ✅ Tag filter works with multi-select and clear
+- ✅ Rule type badges show correct rule that matched
 
-**Rule Priority Hierarchy:**
-1. Exclusions (always protected)
-2. **Tag-based rules** (highest priority - NEW)
-3. User-based rules
-4. Standard retention rules (movie_retention/tv_retention)
+**Rule Type Detection:**
+- Tag rules: `"tag rule 'NAME' (tag: TAG) retention expired (RETENTION)"`
+- User rules: `"user rule 'NAME' retention expired (RETENTION)"`
+- Standard rules: `"retention period expired (RETENTION)"` or `"within retention"`
 
-**Key Technical Details:**
-- Tag matching is case-insensitive using custom `equalsCaseInsensitive()` function
-- Radarr/Sonarr store tags as integer IDs, converted to string names during sync
-- Media can have multiple tags, rule matches ANY tag in the array
-- Collections only include items with future deletion dates (within `leaving_soon_days`)
-- Overdue items go in `would_delete` array but not collections (correct behavior)
+**UI Features Added:**
+- Tag badges on media cards (secondary variant, flex-wrap gap-1)
+- Tag filter buttons above sort controls (toggleable, multi-select)
+- "Clear filters" button when tags selected
+- Rule type badges next to media type (Tag Rule: default, User Rule: secondary, Standard: outline)
+- Filter resets pagination automatically
 
 **Current State:**
 - Running: Yes (PID: 287868)
-- Tests passing: 111/111 ✅
+- Tests passing: 380/380 ✅
 - Known issues: None
-- Tag-based rules: Fully implemented and tested ✅
+- Tag-based rules: Fully implemented with UI ✅
+- Session 16: COMPLETE ✅
 
 **Next Session TODO:**
-- [ ] Add unit tests for tag-based rule evaluation
-- [ ] Display tags on media cards in UI
-- [ ] Add tag filter to Library page
-- [ ] Show which rule matched in Scheduled Deletions page
-- [ ] User-based cleanup with watch tracking
+- [ ] User-based cleanup with watch tracking integration
 - [ ] Mobile responsiveness improvements
+- [ ] Statistics/charts for disk space trends
+- [ ] Comprehensive error handling
 
 ---
 
@@ -1156,7 +1159,7 @@ When ending a session, update this section with:
 
 ---
 
-## Last Session: Nov 4, 2025 (Session 15 - Tag-Based Retention Rules ✅)
+## Previous Session: Nov 4, 2025 (Session 15 - Tag-Based Retention Rules ✅)
 
 **Work Completed:**
 - ✅ Implemented tag-based retention rules end-to-end
@@ -1191,15 +1194,6 @@ When ending a session, update this section with:
 - Tests passing: 111/111 ✅
 - Known issues: None
 - Tag-based rules: Fully implemented and tested ✅
-
-**Next Session TODO:**
-- [ ] Add unit tests for tag-based rule evaluation (increase services coverage)
-- [ ] Display tags on media cards in UI
-- [ ] Add tag filter to Library page
-- [ ] Show which rule matched in Scheduled Deletions page
-- [ ] User-based cleanup with watch tracking integration
-- [ ] Mobile responsiveness improvements
-- [ ] Statistics/charts for disk space trends
 
 ---
 
