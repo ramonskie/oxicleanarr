@@ -63,14 +63,19 @@ func NewRouter(deps *RouterDependencies) *chi.Mux {
 		r.Group(func(r chi.Router) {
 			r.Use(mw.Auth)
 
-			// Media routes
-			r.Get("/media/movies", mediaHandler.ListMovies)
-			r.Get("/media/shows", mediaHandler.ListShows)
-			r.Get("/media/leaving-soon", mediaHandler.ListLeavingSoon)
-			r.Get("/media/{id}", mediaHandler.GetMediaItem)
-			r.Post("/media/{id}/exclude", mediaHandler.AddExclusion)
-			r.Delete("/media/{id}/exclude", mediaHandler.RemoveExclusion)
-			r.Delete("/media/{id}", mediaHandler.DeleteMedia)
+			// Media routes - specific endpoints before parameterized {id}
+			r.Route("/media", func(r chi.Router) {
+				r.Get("/movies", mediaHandler.ListMovies)
+				r.Get("/shows", mediaHandler.ListShows)
+				r.Get("/leaving-soon", mediaHandler.ListLeavingSoon)
+				r.Get("/unmatched", mediaHandler.ListUnmatched)
+
+				// Parameterized routes must come last
+				r.Get("/{id}", mediaHandler.GetMediaItem)
+				r.Post("/{id}/exclude", mediaHandler.AddExclusion)
+				r.Delete("/{id}/exclude", mediaHandler.RemoveExclusion)
+				r.Delete("/{id}", mediaHandler.DeleteMedia)
+			})
 
 			// Sync routes
 			r.Post("/sync/full", syncHandler.TriggerFullSync)

@@ -44,6 +44,10 @@ type Media struct {
 	SonarrID   int    `json:"sonarr_id,omitempty"`
 	TMDBID     int    `json:"tmdb_id,omitempty"`
 	TVDBID     int    `json:"tvdb_id,omitempty"`
+
+	// Jellyfin matching status
+	JellyfinMatchStatus  string `json:"jellyfin_match_status,omitempty"`  // "matched", "not_found", "metadata_mismatch"
+	JellyfinMismatchInfo string `json:"jellyfin_mismatch_info,omitempty"` // Details about the mismatch
 }
 
 // MediaList represents a list of media items with metadata

@@ -450,6 +450,23 @@ export default function LibraryPage() {
                     </div>
                   )}
 
+                  {/* Jellyfin Match Warning */}
+                  {item.jellyfin_match_status && item.jellyfin_match_status !== 'matched' && (
+                    <div className="mb-2">
+                      <Badge 
+                        variant={item.jellyfin_match_status === 'metadata_mismatch' ? 'destructive' : 'outline'}
+                        className="text-xs"
+                      >
+                        ⚠️ {item.jellyfin_match_status === 'metadata_mismatch' ? 'Jellyfin Metadata Mismatch' : 'Not in Jellyfin'}
+                      </Badge>
+                      {item.jellyfin_mismatch_info && (
+                        <span className="ml-2 text-xs text-gray-600">
+                          {item.jellyfin_mismatch_info}
+                        </span>
+                      )}
+                    </div>
+                  )}
+
                   <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
                     <div>
                       <span className="text-gray-500">Last Watched:</span>

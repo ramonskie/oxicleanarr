@@ -28,6 +28,8 @@ export interface MediaItem {
   requested_by_username?: string;
   requested_by_email?: string;
   tags?: string[];
+  jellyfin_match_status?: string;
+  jellyfin_mismatch_info?: string;
 }
 
 export interface MediaListResponse {
@@ -56,6 +58,8 @@ export interface DeletionCandidate {
   requested_by_username?: string;
   requested_by_email?: string;
   tags?: string[];
+  jellyfin_match_status?: string;
+  jellyfin_mismatch_info?: string;
 }
 
 export interface JobSummary {

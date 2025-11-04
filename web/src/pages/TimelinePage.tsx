@@ -276,6 +276,17 @@ export default function TimelinePage() {
                                       ))}
                                     </div>
                                   )}
+                                  {/* Jellyfin Match Warning */}
+                                  {item.jellyfin_match_status && item.jellyfin_match_status !== 'matched' && (
+                                    <div className="mt-1">
+                                      <Badge 
+                                        variant={item.jellyfin_match_status === 'metadata_mismatch' ? 'destructive' : 'outline'}
+                                        className="text-xs"
+                                      >
+                                        ⚠️ {item.jellyfin_match_status === 'metadata_mismatch' ? 'Metadata Mismatch' : 'Not in Jellyfin'}
+                                      </Badge>
+                                    </div>
+                                  )}
                                   {item.deletion_reason && (
                                     <p className="text-xs text-muted-foreground mt-1 line-clamp-1">
                                       {item.deletion_reason}

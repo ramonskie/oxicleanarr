@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -497,25 +498,66 @@ func (e *SyncEngine) syncJellyfin(ctx context.Context) error {
 	e.mediaLibraryLock.Lock()
 	defer e.mediaLibraryLock.Unlock()
 
-	// Update watch data for movies
-	for _, jm := range jellyfinMovies {
-		// Try to find corresponding media by TMDB ID
-		tmdbID := jm.ProviderIds["Tmdb"]
-		if tmdbID == "" {
+	// Track matching statistics
+	movieMatched := 0
+	movieNotFound := 0
+	movieMismatch := 0
+	showMatched := 0
+	showNotFound := 0
+	showMismatch := 0
+
+	// Build a map of Jellyfin movies by TMDB ID for quick lookup
+	jellyfinMoviesByTMDB := make(map[string]*clients.JellyfinItem)
+	jellyfinMoviesByTitle := make(map[string]*clients.JellyfinItem)
+	for i := range jellyfinMovies {
+		jm := &jellyfinMovies[i]
+		if tmdbID := jm.ProviderIds["Tmdb"]; tmdbID != "" {
+			jellyfinMoviesByTMDB[tmdbID] = jm
+		}
+		// Normalize title for fuzzy matching (lowercase, trim spaces)
+		normalizedTitle := strings.ToLower(strings.TrimSpace(jm.Name))
+		jellyfinMoviesByTitle[normalizedTitle] = jm
+	}
+
+	// Update watch data for movies and track mismatches
+	for id, media := range e.mediaLibrary {
+		if media.Type != models.MediaTypeMovie {
 			continue
 		}
 
-		for id, media := range e.mediaLibrary {
-			if media.Type == models.MediaTypeMovie && strconv.Itoa(media.TMDBID) == tmdbID {
-				media.JellyfinID = jm.ID
-				media.WatchCount = jm.UserData.PlayCount
-				if !jm.UserData.LastPlayedDate.IsZero() {
-					media.LastWatched = jm.UserData.LastPlayedDate
-				}
-				e.mediaLibrary[id] = media
-				break
+		tmdbIDStr := strconv.Itoa(media.TMDBID)
+		if jm, found := jellyfinMoviesByTMDB[tmdbIDStr]; found {
+			// Exact match found
+			media.JellyfinID = jm.ID
+			media.WatchCount = jm.UserData.PlayCount
+			if !jm.UserData.LastPlayedDate.IsZero() {
+				media.LastWatched = jm.UserData.LastPlayedDate
+			}
+			media.JellyfinMatchStatus = "matched"
+			media.JellyfinMismatchInfo = ""
+			movieMatched++
+		} else {
+			// No exact match - check for potential metadata mismatch
+			normalizedTitle := strings.ToLower(strings.TrimSpace(media.Title))
+			if jm, found := jellyfinMoviesByTitle[normalizedTitle]; found {
+				// Same title but different TMDB ID - metadata mismatch
+				jellyfinTMDB := jm.ProviderIds["Tmdb"]
+				media.JellyfinMatchStatus = "metadata_mismatch"
+				media.JellyfinMismatchInfo = fmt.Sprintf("Jellyfin has wrong metadata (TMDB %s instead of %d)", jellyfinTMDB, media.TMDBID)
+				movieMismatch++
+				log.Warn().
+					Str("title", media.Title).
+					Int("radarr_tmdb_id", media.TMDBID).
+					Str("jellyfin_tmdb_id", jellyfinTMDB).
+					Msg("Metadata mismatch detected for movie")
+			} else {
+				// Not found in Jellyfin at all
+				media.JellyfinMatchStatus = "not_found"
+				media.JellyfinMismatchInfo = "Item not found in Jellyfin library"
+				movieNotFound++
 			}
 		}
+		e.mediaLibrary[id] = media
 	}
 
 	// Get TV shows
@@ -524,24 +566,86 @@ func (e *SyncEngine) syncJellyfin(ctx context.Context) error {
 		return fmt.Errorf("fetching TV shows: %w", err)
 	}
 
-	// Update watch data for TV shows
-	for _, js := range jellyfinShows {
-		tvdbID := js.ProviderIds["Tvdb"]
-		if tvdbID == "" {
+	// Build a map of Jellyfin TV shows by TVDB ID for quick lookup
+	jellyfinShowsByTVDB := make(map[string]*clients.JellyfinItem)
+	jellyfinShowsByTitle := make(map[string]*clients.JellyfinItem)
+	for i := range jellyfinShows {
+		js := &jellyfinShows[i]
+		if tvdbID := js.ProviderIds["Tvdb"]; tvdbID != "" {
+			jellyfinShowsByTVDB[tvdbID] = js
+		}
+		// Normalize title for fuzzy matching
+		normalizedTitle := strings.ToLower(strings.TrimSpace(js.Name))
+		jellyfinShowsByTitle[normalizedTitle] = js
+	}
+
+	// Update watch data for TV shows and track mismatches
+	for id, media := range e.mediaLibrary {
+		if media.Type != models.MediaTypeTVShow {
 			continue
 		}
 
-		for id, media := range e.mediaLibrary {
-			if media.Type == models.MediaTypeTVShow && strconv.Itoa(media.TVDBID) == tvdbID {
-				media.JellyfinID = js.ID
-				media.WatchCount = js.UserData.PlayCount
-				if !js.UserData.LastPlayedDate.IsZero() {
-					media.LastWatched = js.UserData.LastPlayedDate
-				}
-				e.mediaLibrary[id] = media
-				break
+		tvdbIDStr := strconv.Itoa(media.TVDBID)
+		if js, found := jellyfinShowsByTVDB[tvdbIDStr]; found {
+			// Exact match found
+			media.JellyfinID = js.ID
+			media.WatchCount = js.UserData.PlayCount
+			if !js.UserData.LastPlayedDate.IsZero() {
+				media.LastWatched = js.UserData.LastPlayedDate
+			}
+			media.JellyfinMatchStatus = "matched"
+			media.JellyfinMismatchInfo = ""
+			showMatched++
+		} else {
+			// No exact match - check for potential metadata mismatch
+			normalizedTitle := strings.ToLower(strings.TrimSpace(media.Title))
+			if js, found := jellyfinShowsByTitle[normalizedTitle]; found {
+				// Same title but different TVDB ID - metadata mismatch
+				jellyfinTVDB := js.ProviderIds["Tvdb"]
+				media.JellyfinMatchStatus = "metadata_mismatch"
+				media.JellyfinMismatchInfo = fmt.Sprintf("Jellyfin has wrong metadata (TVDB %s instead of %d)", jellyfinTVDB, media.TVDBID)
+				showMismatch++
+				log.Warn().
+					Str("title", media.Title).
+					Int("sonarr_tvdb_id", media.TVDBID).
+					Str("jellyfin_tvdb_id", jellyfinTVDB).
+					Msg("Metadata mismatch detected for TV show")
+			} else {
+				// Not found in Jellyfin at all
+				media.JellyfinMatchStatus = "not_found"
+				media.JellyfinMismatchInfo = "Item not found in Jellyfin library"
+				showNotFound++
 			}
 		}
+		e.mediaLibrary[id] = media
+	}
+
+	// Log summary of Jellyfin matching results
+	totalMovies := movieMatched + movieNotFound + movieMismatch
+	totalShows := showMatched + showNotFound + showMismatch
+	log.Info().
+		Int("movie_matched", movieMatched).
+		Int("movie_not_found", movieNotFound).
+		Int("movie_mismatch", movieMismatch).
+		Int("movie_total", totalMovies).
+		Int("show_matched", showMatched).
+		Int("show_not_found", showNotFound).
+		Int("show_mismatch", showMismatch).
+		Int("show_total", totalShows).
+		Msg("Jellyfin sync completed")
+
+	// Log warnings if there are mismatches or missing items
+	if movieMismatch > 0 || showMismatch > 0 {
+		log.Warn().
+			Int("movies", movieMismatch).
+			Int("shows", showMismatch).
+			Msg("Metadata mismatches detected - items exist in Jellyfin but with incorrect TMDB/TVDB IDs")
+	}
+	if movieNotFound > 0 || showNotFound > 0 {
+		log.Warn().
+			Int("movies", movieNotFound).
+			Int("shows", showNotFound).
+			Msg("Items not found in Jellyfin - may not be imported yet or different library paths")
 	}
 
 	return nil

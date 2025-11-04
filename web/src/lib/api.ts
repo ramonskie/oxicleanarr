@@ -132,6 +132,17 @@ class ApiClient {
     };
   }
 
+  async listUnmatched(params?: { limit?: number; offset?: number }): Promise<MediaListResponse> {
+    const query = new URLSearchParams();
+    if (params?.limit) query.set('limit', params.limit.toString());
+    if (params?.offset) query.set('offset', params.offset.toString());
+    const response = await this.request<MediaListResponse>(`/media/unmatched?${query}`);
+    return {
+      items: response.items || [],
+      total: response.total || 0,
+    };
+  }
+
   async getMediaItem(id: string): Promise<MediaItem> {
     return this.request<MediaItem>(`/media/${id}`);
   }

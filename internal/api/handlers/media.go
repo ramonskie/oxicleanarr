@@ -288,3 +288,45 @@ func sortMedia(media []models.Media, sortBy, order string) []models.Media {
 
 	return result
 }
+
+// ListUnmatched handles GET /api/media/unmatched
+func (h *MediaHandler) ListUnmatched(w http.ResponseWriter, r *http.Request) {
+	media := h.syncEngine.GetMediaList()
+
+	// Filter items with Jellyfin matching issues
+	var unmatched []models.Media
+	for _, item := range media {
+		if item.JellyfinMatchStatus == "not_found" || item.JellyfinMatchStatus == "metadata_mismatch" {
+			unmatched = append(unmatched, item)
+		}
+	}
+
+	// Sort by status (mismatches first, then not_found) and then by title
+	for i := 0; i < len(unmatched); i++ {
+		for j := i + 1; j < len(unmatched); j++ {
+			swap := false
+
+			// Prioritize metadata_mismatch over not_found
+			if unmatched[i].JellyfinMatchStatus == "not_found" && unmatched[j].JellyfinMatchStatus == "metadata_mismatch" {
+				swap = true
+			} else if unmatched[i].JellyfinMatchStatus == unmatched[j].JellyfinMatchStatus {
+				// Same status, sort by title
+				swap = unmatched[i].Title > unmatched[j].Title
+			}
+
+			if swap {
+				unmatched[i], unmatched[j] = unmatched[j], unmatched[i]
+			}
+		}
+	}
+
+	log.Debug().
+		Int("total", len(unmatched)).
+		Msg("Listing unmatched media items")
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"items": unmatched,
+		"total": len(unmatched),
+	})
+}

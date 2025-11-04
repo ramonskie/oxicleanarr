@@ -5,7 +5,7 @@ import { useAuthStore } from '@/store/auth';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Film, Tv, Clock, LogOut, Shield, ShieldOff, Info, Settings } from 'lucide-react';
+import { Film, Tv, Clock, LogOut, Shield, ShieldOff, Info, Settings, AlertTriangle } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 
 export default function DashboardPage() {
@@ -32,6 +32,11 @@ export default function DashboardPage() {
   const { data: shows } = useQuery({
     queryKey: ['shows'],
     queryFn: () => apiClient.listShows(),
+  });
+
+  const { data: unmatched } = useQuery({
+    queryKey: ['unmatched'],
+    queryFn: () => apiClient.listUnmatched(),
   });
 
   const { data: syncStatus } = useQuery({
@@ -159,7 +164,7 @@ export default function DashboardPage() {
       <main className="container mx-auto px-4 py-8">
         <div className="grid gap-6">
           {/* Stats Cards */}
-          <div className="grid gap-4 md:grid-cols-3">
+          <div className="grid gap-4 md:grid-cols-4">
             <Card>
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                 <CardTitle className="text-sm font-medium">Movies</CardTitle>
@@ -198,6 +203,22 @@ export default function DashboardPage() {
                 <div className="text-2xl font-bold">{scheduledDeletionsCount}</div>
                 <p className="text-xs text-muted-foreground">
                   Items scheduled for deletion
+                </p>
+              </CardContent>
+            </Card>
+
+            <Card 
+              className="cursor-pointer hover:bg-accent/50 transition-colors"
+              onClick={() => navigate('/library')}
+            >
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium">Unmatched Items</CardTitle>
+                <AlertTriangle className="h-4 w-4 text-yellow-600" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold">{unmatched?.total || 0}</div>
+                <p className="text-xs text-muted-foreground">
+                  Items with Jellyfin mismatches
                 </p>
               </CardContent>
             </Card>
