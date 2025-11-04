@@ -27,6 +27,7 @@ export interface MediaItem {
   requested_by_user_id?: number;
   requested_by_username?: string;
   requested_by_email?: string;
+  tags?: string[];
 }
 
 export interface MediaListResponse {
@@ -54,6 +55,7 @@ export interface DeletionCandidate {
   requested_by_user_id?: number;
   requested_by_username?: string;
   requested_by_email?: string;
+  tags?: string[];
 }
 
 export interface JobSummary {

@@ -266,6 +266,16 @@ export default function TimelinePage() {
                                       </>
                                     )}
                                   </div>
+                                  {/* Tags */}
+                                  {item.tags && item.tags.length > 0 && (
+                                    <div className="flex flex-wrap gap-1 mt-1">
+                                      {item.tags.map((tag) => (
+                                        <Badge key={tag} variant="secondary" className="text-xs">
+                                          {tag}
+                                        </Badge>
+                                      ))}
+                                    </div>
+                                  )}
                                   {item.deletion_reason && (
                                     <p className="text-xs text-muted-foreground mt-1 line-clamp-1">
                                       {item.deletion_reason}
