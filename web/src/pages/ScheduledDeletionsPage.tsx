@@ -211,6 +211,24 @@ export default function ScheduledDeletionsPage() {
     return sortOrder === 'asc' ? '↑' : '↓';
   };
 
+  const getRuleType = (reason?: string): { type: string; label: string; variant: 'default' | 'secondary' | 'destructive' | 'outline' } | null => {
+    if (!reason) return null;
+    
+    if (reason.startsWith('tag rule')) {
+      return { type: 'tag', label: 'Tag Rule', variant: 'default' };
+    } else if (reason.startsWith('user rule')) {
+      return { type: 'user', label: 'User Rule', variant: 'secondary' };
+    } else if (reason.startsWith('retention period expired') || reason.startsWith('within retention')) {
+      return { type: 'standard', label: 'Standard Rule', variant: 'outline' };
+    } else if (reason === 'excluded') {
+      return { type: 'excluded', label: 'Excluded', variant: 'outline' };
+    } else if (reason === 'requested') {
+      return { type: 'requested', label: 'Requested', variant: 'outline' };
+    }
+    
+    return null;
+  };
+
   return (
     <div className="min-h-screen bg-background">
       {/* Header */}
@@ -441,6 +459,11 @@ export default function ScheduledDeletionsPage() {
                         <Badge variant={item.type === 'movie' ? 'movie' : 'show'}>
                           {item.type === 'movie' ? 'Movie' : 'TV Show'}
                         </Badge>
+                        {getRuleType(item.reason) && (
+                          <Badge variant={getRuleType(item.reason)!.variant} className="text-xs">
+                            {getRuleType(item.reason)!.label}
+                          </Badge>
+                        )}
                       </div>
 
                       {/* Tags */}
