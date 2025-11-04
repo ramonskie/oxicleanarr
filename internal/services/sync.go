@@ -69,7 +69,6 @@ func NewSyncEngine(
 			engine.collectionManager = NewJellyfinCollectionManager(
 				engine.jellyfinClient,
 				&cfg.Integrations.Jellyfin.Collections,
-				cfg.App.DryRun,
 			)
 		}
 	}

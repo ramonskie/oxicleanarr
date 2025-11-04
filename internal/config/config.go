@@ -73,6 +73,12 @@ func Get() *Config {
 	return globalConfig
 }
 
+// SetTestConfig sets a test config (for testing only - bypasses validation)
+// This should only be used in test files
+func SetTestConfig(cfg *Config) {
+	globalConfig = cfg
+}
+
 // GetPath returns the current config file path
 func GetPath() string {
 	return configPath

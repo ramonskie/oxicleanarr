@@ -22,15 +22,13 @@ type JellyfinCollectionClient interface {
 type JellyfinCollectionManager struct {
 	client JellyfinCollectionClient
 	config *config.CollectionsConfig
-	dryRun bool
 }
 
 // NewJellyfinCollectionManager creates a new collection manager
-func NewJellyfinCollectionManager(client JellyfinCollectionClient, cfg *config.CollectionsConfig, dryRun bool) *JellyfinCollectionManager {
+func NewJellyfinCollectionManager(client JellyfinCollectionClient, cfg *config.CollectionsConfig) *JellyfinCollectionManager {
 	return &JellyfinCollectionManager{
 		client: client,
 		config: cfg,
-		dryRun: dryRun,
 	}
 }
 
@@ -98,10 +96,17 @@ func (m *JellyfinCollectionManager) SyncCollections(ctx context.Context, mediaLi
 		return err
 	}
 
+	// Get dry-run mode from config (default to true for safety if config not loaded)
+	cfg := config.Get()
+	dryRun := true
+	if cfg != nil {
+		dryRun = cfg.App.DryRun
+	}
+
 	log.Info().
 		Int("movies", len(movieIDs)).
 		Int("tv_shows", len(tvShowIDs)).
-		Bool("dry_run", m.dryRun).
+		Bool("dry_run", dryRun).
 		Msg("Jellyfin collections synced successfully")
 
 	return nil
@@ -109,6 +114,13 @@ func (m *JellyfinCollectionManager) SyncCollections(ctx context.Context, mediaLi
 
 // syncCollection manages a single collection (create/update/delete)
 func (m *JellyfinCollectionManager) syncCollection(ctx context.Context, name string, itemIDs []string, hideWhenEmpty bool) error {
+	// Get dry-run mode from config (default to true for safety if config not loaded)
+	cfg := config.Get()
+	dryRun := true
+	if cfg != nil {
+		dryRun = cfg.App.DryRun
+	}
+
 	// Find existing collection
 	existing, err := m.client.GetCollectionByName(ctx, name)
 	if err != nil {
@@ -118,12 +130,12 @@ func (m *JellyfinCollectionManager) syncCollection(ctx context.Context, name str
 	// If no items and hide_when_empty is enabled, delete the collection
 	if len(itemIDs) == 0 && hideWhenEmpty {
 		if existing != nil {
-			if err := m.client.DeleteCollection(ctx, existing.ID, m.dryRun); err != nil {
+			if err := m.client.DeleteCollection(ctx, existing.ID, dryRun); err != nil {
 				return err
 			}
 			log.Info().
 				Str("collection", name).
-				Bool("dry_run", m.dryRun).
+				Bool("dry_run", dryRun).
 				Msg("Deleted empty collection")
 		}
 		return nil
@@ -137,7 +149,7 @@ func (m *JellyfinCollectionManager) syncCollection(ctx context.Context, name str
 
 	// Create collection if it doesn't exist
 	if existing == nil {
-		collectionID, err := m.client.CreateCollection(ctx, name, itemIDs, m.dryRun)
+		collectionID, err := m.client.CreateCollection(ctx, name, itemIDs, dryRun)
 		if err != nil {
 			return err
 		}
@@ -145,7 +157,7 @@ func (m *JellyfinCollectionManager) syncCollection(ctx context.Context, name str
 			Str("collection", name).
 			Str("collection_id", collectionID).
 			Int("item_count", len(itemIDs)).
-			Bool("dry_run", m.dryRun).
+			Bool("dry_run", dryRun).
 			Msg("Created collection")
 		return nil
 	}
@@ -155,7 +167,7 @@ func (m *JellyfinCollectionManager) syncCollection(ctx context.Context, name str
 
 	// For simplicity, we'll delete and recreate if items changed
 	// In production, you might want to diff and only add/remove changed items
-	if m.dryRun {
+	if dryRun {
 		log.Info().
 			Str("collection", name).
 			Str("collection_id", existing.ID).
@@ -168,7 +180,7 @@ func (m *JellyfinCollectionManager) syncCollection(ctx context.Context, name str
 	// Add items to existing collection
 	// Note: This is additive. Jellyfin doesn't provide a "replace all" operation
 	// We rely on the collection being managed only by Prunarr
-	if err := m.client.AddItemsToCollection(ctx, existing.ID, itemIDs, m.dryRun); err != nil {
+	if err := m.client.AddItemsToCollection(ctx, existing.ID, itemIDs, dryRun); err != nil {
 		return err
 	}
 
