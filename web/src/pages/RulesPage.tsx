@@ -33,6 +33,12 @@ export default function RulesPage() {
     mutationFn: (rule: Omit<AdvancedRule, 'name'> & { name: string }) => apiClient.createRule(rule),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['rules'] });
+      // Invalidate media queries to refresh deletion dates after rule changes
+      queryClient.invalidateQueries({ queryKey: ['movies'] });
+      queryClient.invalidateQueries({ queryKey: ['shows'] });
+      queryClient.invalidateQueries({ queryKey: ['leaving-soon'] });
+      queryClient.invalidateQueries({ queryKey: ['leaving-soon-all'] });
+      queryClient.invalidateQueries({ queryKey: ['jobs'] });
       setIsDialogOpen(false);
       setEditingRule(null);
       toast({
@@ -54,6 +60,12 @@ export default function RulesPage() {
       apiClient.updateRule(name, rule),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['rules'] });
+      // Invalidate media queries to refresh deletion dates after rule changes
+      queryClient.invalidateQueries({ queryKey: ['movies'] });
+      queryClient.invalidateQueries({ queryKey: ['shows'] });
+      queryClient.invalidateQueries({ queryKey: ['leaving-soon'] });
+      queryClient.invalidateQueries({ queryKey: ['leaving-soon-all'] });
+      queryClient.invalidateQueries({ queryKey: ['jobs'] });
       setIsDialogOpen(false);
       setEditingRule(null);
       toast({
@@ -74,6 +86,12 @@ export default function RulesPage() {
     mutationFn: (name: string) => apiClient.deleteRule(name),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['rules'] });
+      // Invalidate media queries to refresh deletion dates after rule changes
+      queryClient.invalidateQueries({ queryKey: ['movies'] });
+      queryClient.invalidateQueries({ queryKey: ['shows'] });
+      queryClient.invalidateQueries({ queryKey: ['leaving-soon'] });
+      queryClient.invalidateQueries({ queryKey: ['leaving-soon-all'] });
+      queryClient.invalidateQueries({ queryKey: ['jobs'] });
       setDeleteConfirmRule(null);
       toast({
         title: 'Success',
@@ -94,6 +112,12 @@ export default function RulesPage() {
       apiClient.toggleRule(name, enabled),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['rules'] });
+      // Invalidate media queries to refresh deletion dates after rule changes
+      queryClient.invalidateQueries({ queryKey: ['movies'] });
+      queryClient.invalidateQueries({ queryKey: ['shows'] });
+      queryClient.invalidateQueries({ queryKey: ['leaving-soon'] });
+      queryClient.invalidateQueries({ queryKey: ['leaving-soon-all'] });
+      queryClient.invalidateQueries({ queryKey: ['jobs'] });
       toast({
         title: 'Success',
         description: 'Rule toggled successfully',

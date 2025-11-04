@@ -36,6 +36,11 @@ export default function ConfigurationPage() {
       queryClient.invalidateQueries({ queryKey: ['config'] });
       queryClient.invalidateQueries({ queryKey: ['sync-status'] });
       queryClient.invalidateQueries({ queryKey: ['jobs'] });
+      // Invalidate media queries to refresh deletion dates after retention rule changes
+      queryClient.invalidateQueries({ queryKey: ['movies'] });
+      queryClient.invalidateQueries({ queryKey: ['shows'] });
+      queryClient.invalidateQueries({ queryKey: ['leaving-soon'] });
+      queryClient.invalidateQueries({ queryKey: ['leaving-soon-all'] });
       toast({
         title: 'Success',
         description: 'Configuration updated successfully. Changes will take effect immediately.',
