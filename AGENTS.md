@@ -27,7 +27,8 @@ This document provides essential context for AI coding agents working on the Pru
 ✅ Complete REST API (auth, sync, media, jobs, exclusions, deletion control)  
 ✅ All service integrations (Jellyfin, Radarr, Sonarr, Jellyseerr, Jellystat)  
 ✅ Sync engine with full/incremental scheduler  
-✅ Rules engine with retention policies  
+✅ Rules engine with retention policies (standard, tag-based, episode-based, user-based)  
+✅ Tag-based retention rules (fetch tags from Radarr/Sonarr, case-insensitive matching)  
 ✅ Deletion executor with dry-run mode  
 ✅ Manual deletion control with UI confirmation  
 ✅ Automatic deletion toggle (`enable_deletion` config)  
@@ -36,7 +37,7 @@ This document provides essential context for AI coding agents working on the Pru
 ✅ React UI with Dashboard, Timeline, Library, Scheduled Deletions, Job History pages  
 ✅ Authentication & authorization (with optional bypass for testing)  
 ✅ Configuration with hot-reload  
-✅ Deletion reason generation  
+✅ Deletion reason generation (including tag-based rules)  
 ✅ Jellyfin collections management ("Leaving Soon" collections)  
 ✅ Configuration & Advanced Rules management UI  
 ✅ Toast notifications for user feedback (Sonner)  
@@ -55,7 +56,82 @@ This document provides essential context for AI coding agents working on the Pru
 
 ---
 
-## Recent Work (Last Session - Nov 4, 2025, Session 14)
+## Recent Work (Last Session - Nov 4, 2025, Session 15)
+
+### Tag-Based Retention Rules Implementation - COMPLETED ✅
+
+**Work Completed:**
+- ✅ Added Tags field to Media model (stores tag names as string array)
+- ✅ Implemented GetTags() methods in Radarr and Sonarr clients
+- ✅ Integrated tag fetching into sync operations (fetch tags, map IDs to names)
+- ✅ Implemented evaluateTagBasedRules() with case-insensitive tag matching
+- ✅ Added tag rule priority (highest priority after exclusions)
+- ✅ Fixed GenerateDeletionReason() to parse and format tag-based rules
+- ✅ Comprehensive logging for tag rule matches
+- ✅ Live tested with real Radarr instance
+
+**Problem Solved:**
+- Tag-based rules were defined in config schema but NOT fully implemented
+- No way to apply different retention policies based on media tags
+- Users couldn't create special rules for demo content, test media, etc.
+
+**Solution Implemented:**
+- Added `Tags []string` field to `Media` struct (`internal/models/media.go`)
+- Added tag structs to `internal/clients/types.go` (RadarrTag, SonarrTag)
+- Created `GetTags()` methods in Radarr and Sonarr clients to fetch tags from API
+- Updated `syncRadarr()` and `syncSonarr()` to fetch tags and map IDs to names
+- Created `evaluateTagBasedRules()` in rules engine with case-insensitive matching
+- Updated `GenerateDeletionReason()` to handle tag rule format (lines 414-470)
+
+**Files Modified:**
+- `internal/models/media.go` (+1 line) - Added Tags field
+- `internal/clients/types.go` (+14 lines) - Tag structs
+- `internal/clients/radarr.go` (+31 lines) - GetTags() method
+- `internal/clients/sonarr.go` (+31 lines) - GetTags() method
+- `internal/services/sync.go` (+46 lines) - Tag fetching and population
+- `internal/services/rules.go` (+168 lines) - Tag evaluation + deletion reason fix
+
+**Commits:**
+- `c66eb99` - feat: implement tag-based retention rules
+
+**Testing Results:**
+- ✅ All 111 backend tests passing
+- ✅ Tags fetched successfully from Radarr API
+- ✅ Tag names populated in media objects: `["1 - admin", "prunarr-test"]`
+- ✅ Tag-based rule matched correctly
+- ✅ Deletion reason properly formatted with tag rule information
+- ✅ Tagged movie "Nobody" appears in Scheduled Deletions UI with tag-based reason
+
+**Rule Priority Hierarchy:**
+1. Exclusions (always protected)
+2. **Tag-based rules** (highest priority - NEW)
+3. User-based rules
+4. Standard retention rules (movie_retention/tv_retention)
+
+**Key Technical Details:**
+- Tag matching is case-insensitive using custom `equalsCaseInsensitive()` function
+- Radarr/Sonarr store tags as integer IDs, converted to string names during sync
+- Media can have multiple tags, rule matches ANY tag in the array
+- Collections only include items with future deletion dates (within `leaving_soon_days`)
+- Overdue items go in `would_delete` array but not collections (correct behavior)
+
+**Current State:**
+- Running: Yes (PID: 287868)
+- Tests passing: 111/111 ✅
+- Known issues: None
+- Tag-based rules: Fully implemented and tested ✅
+
+**Next Session TODO:**
+- [ ] Add unit tests for tag-based rule evaluation
+- [ ] Display tags on media cards in UI
+- [ ] Add tag filter to Library page
+- [ ] Show which rule matched in Scheduled Deletions page
+- [ ] User-based cleanup with watch tracking
+- [ ] Mobile responsiveness improvements
+
+---
+
+## Previous Session: Nov 4, 2025 (Session 14)
 
 ### Scheduled Deletions UI Bug Fix - COMPLETED ✅
 
@@ -1080,38 +1156,52 @@ When ending a session, update this section with:
 
 ---
 
-## Last Session: Nov 4, 2025 (Session 14 - Scheduled Deletions UI Bug Fix ✅)
+## Last Session: Nov 4, 2025 (Session 15 - Tag-Based Retention Rules ✅)
 
 **Work Completed:**
-- ✅ Fixed Scheduled Deletions page showing 0 items with `dry_run: false`
-- ✅ Removed `dry_run` condition from `would_delete` array population
-- ✅ Added clarifying comments for array purpose in both modes
+- ✅ Implemented tag-based retention rules end-to-end
+- ✅ Added Tags field to Media model
+- ✅ Created GetTags() methods for Radarr and Sonarr clients
+- ✅ Integrated tag fetching into sync operations
+- ✅ Implemented evaluateTagBasedRules() with case-insensitive matching
+- ✅ Fixed GenerateDeletionReason() to handle tag-based rules
+- ✅ Live tested with real Radarr instance
 - ✅ All 111 tests passing
 
-**Problem Fixed:**
-- Root cause: `would_delete` array only populated when `dry_run: true`
-- Impact: Frontend ScheduledDeletionsPage showed 0 items in live mode
-- Solution: Always populate array when deletion candidates exist
+**Feature Implemented:**
+- Tag-based rules allow different retention policies based on media tags
+- Highest priority after exclusions (before user-based and standard rules)
+- Case-insensitive tag matching
+- Fetches tags from Radarr/Sonarr APIs and maps IDs to names
+- Deletion reasons properly formatted with tag rule information
 
 **Files Modified & Committed:**
-- `internal/services/sync.go` (lines 295-298) - Removed dry_run condition check (~4 lines changed)
+- `internal/models/media.go` (+1 line) - Added Tags field
+- `internal/clients/types.go` (+14 lines) - Tag structs
+- `internal/clients/radarr.go` (+31 lines) - GetTags() method
+- `internal/clients/sonarr.go` (+31 lines) - GetTags() method
+- `internal/services/sync.go` (+46 lines) - Tag fetching and population
+- `internal/services/rules.go` (+168 lines) - Tag evaluation + deletion reason fix
 
 **Commits:**
-1. `ae06c16` - fix: always populate would_delete in job summary for Scheduled Deletions UI
+1. `c66eb99` - feat: implement tag-based retention rules
 
 **Current State:**
-- Running: No
+- Running: Yes (PID: 287868)
 - Tests passing: 111/111 ✅
 - Known issues: None
-- Scheduled Deletions UI: Fixed ✅
+- Tag-based rules: Fully implemented and tested ✅
 
 **Next Session TODO:**
+- [ ] Add unit tests for tag-based rule evaluation (increase services coverage)
+- [ ] Display tags on media cards in UI
+- [ ] Add tag filter to Library page
+- [ ] Show which rule matched in Scheduled Deletions page
 - [ ] User-based cleanup with watch tracking integration
 - [ ] Mobile responsiveness improvements
 - [ ] Statistics/charts for disk space trends
-- [ ] Comprehensive error handling
 
 ---
 
 **Last Updated**: Nov 4, 2025  
-**Document Version**: 1.3
+**Document Version**: 1.4
