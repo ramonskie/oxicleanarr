@@ -103,21 +103,48 @@ Save and exit (Ctrl+X, Y, Enter)
 
 ### Step 3: Build Prunarr Docker Image
 
-Option A: Build on NAS (if you have the source code)
+Prunarr uses a **multi-stage Dockerfile** that:
+1. Builds the React frontend (web UI)
+2. Builds the Go backend binary
+3. Combines both in a minimal Alpine runtime image
+
+**Option A: Build on NAS (if you have the source code)**
+
 ```bash
 cd /path/to/prunarr/source
 docker build -t prunarr:latest .
+
+# Build will take 5-10 minutes
+# You'll see 3 stages: frontend-builder, backend-builder, runtime
 ```
 
-Option B: Build on dev machine, export, import on NAS
+**Option B: Build on dev machine, export, import on NAS (Recommended)**
+
 ```bash
 # On dev machine:
+cd /path/to/prunarr
 docker build -t prunarr:latest .
 docker save prunarr:latest | gzip > prunarr-latest.tar.gz
-scp prunarr-latest.tar.gz your-nas:/volume3/docker/
 
-# On NAS:
+# Copy to NAS (replace with your NAS IP/hostname)
+scp prunarr-latest.tar.gz admin@your-nas:/volume3/docker/
+
+# On NAS (SSH in):
 docker load < /volume3/docker/prunarr-latest.tar.gz
+
+# Verify image loaded
+docker images | grep prunarr
+# Should show: prunarr  latest  <image-id>  <size>
+```
+
+**Option C: Use docker-compose build (simplest if source is on NAS)**
+
+```bash
+# If you cloned the repo to your NAS:
+cd /volume3/docker/prunarr/source
+docker-compose -f docker-compose.nas.yml build
+
+# This will use the Dockerfile in the repo root
 ```
 
 ### Step 4: Create Docker Compose File for Prunarr

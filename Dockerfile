@@ -42,9 +42,9 @@ RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build \
 FROM alpine:latest
 
 # Install runtime dependencies
-RUN apk add --no-cache ca-certificates tzdata
+RUN apk add --no-cache ca-certificates tzdata su-exec shadow
 
-# Create non-root user
+# Create non-root user (default UID/GID, can be changed at runtime)
 RUN addgroup -g 1000 prunarr && \
     adduser -D -u 1000 -G prunarr prunarr
 
@@ -60,12 +60,16 @@ COPY --from=frontend-builder /app/web/dist /app/web/dist
 # Copy example config (users can override with volume mount)
 COPY config/prunarr.yaml.example /app/config/prunarr.yaml.example
 
+# Copy entrypoint script
+COPY docker-entrypoint.sh /docker-entrypoint.sh
+RUN chmod +x /docker-entrypoint.sh
+
 # Create directories with proper ownership
 RUN mkdir -p /app/data /app/config /app/logs && \
     chown -R prunarr:prunarr /app
 
-# Switch to non-root user
-USER prunarr
+# Note: We do NOT switch to non-root user here
+# The entrypoint script will handle user switching after adjusting PUID/PGID
 
 # Expose HTTP port
 EXPOSE 8080
@@ -82,6 +86,6 @@ ENV LOG_LEVEL=info \
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
     CMD wget --no-verbose --tries=1 --spider http://localhost:8080/health || exit 1
 
-# Run the binary
-ENTRYPOINT ["/app/prunarr"]
-CMD ["--config", "/app/config/prunarr.yaml"]
+# Run via entrypoint script (handles PUID/PGID)
+ENTRYPOINT ["/docker-entrypoint.sh"]
+CMD ["/app/prunarr", "--config", "/app/config/prunarr.yaml"]
