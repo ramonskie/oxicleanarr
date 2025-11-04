@@ -15,25 +15,23 @@ integrations:
     # NOTE: Requires Docker volume mapping for symlink directories
     # symlink_library:
     #   enabled: true
-    #   base_path: /symlinks              # Base directory for symlinks (MUST be writable by Prunarr)
-    #   movies:
-    #     library_name: "Movies - Leaving Soon"
-    #     collection_type: "movies"       # Jellyfin collection type
-    #   tv_shows:
-    #     library_name: "TV Shows - Leaving Soon"
-    #     collection_type: "tvshows"      # Jellyfin collection type
+    #   base_path: /data/media/prunarr-leaving-soon    # Base directory (auto-creates /movies and /tv subdirs)
+    #   
+    #   # Optional: Customize library names (uses sensible defaults if omitted)
+    #   # movies_library_name: "Leaving Soon - Movies"
+    #   # tv_library_name: "Leaving Soon - TV Shows"
     #
     # Docker Volume Mapping Example:
     #   prunarr:
     #     volumes:
-    #       - /path/on/host/symlinks:/symlinks              # Symlink directory (rw)
-    #       - /path/on/host/movies:/movies:ro               # Original movies (read-only)
-    #       - /path/on/host/tv:/tv:ro                       # Original TV shows (read-only)
+    #       - /host/prunarr-leaving-soon:/data/media/prunarr-leaving-soon  # Symlink directory (rw)
+    #       - /host/movies:/data/movies:ro                                  # Original movies (read-only)
+    #       - /host/tv:/data/tv:ro                                          # Original TV shows (read-only)
     #   jellyfin:
     #     volumes:
-    #       - /path/on/host/symlinks:/symlinks:ro           # Symlink directory (read-only)
-    #       - /path/on/host/movies:/movies:ro               # Original movies (read-only)
-    #       - /path/on/host/tv:/tv:ro                       # Original TV shows (read-only)
+    #       - /host/prunarr-leaving-soon:/data/media/prunarr-leaving-soon:ro  # Symlink directory (read-only)
+    #       - /host/movies:/data/movies:ro                                     # Original movies (read-only)
+    #       - /host/tv:/data/tv:ro                                             # Original TV shows (read-only)
     #
     # IMPORTANT: Both containers must see the same paths for media files!
   

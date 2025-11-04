@@ -69,36 +69,13 @@ func Validate(cfg *Config) error {
 
 		// Validate symlink library config
 		if cfg.Integrations.Jellyfin.SymlinkLibrary.Enabled {
-			if cfg.Integrations.Jellyfin.SymlinkLibrary.SymlinkBasePath == "" {
+			if cfg.Integrations.Jellyfin.SymlinkLibrary.BasePath == "" {
 				errors = append(errors, ValidationError{
-					Field:   "integrations.jellyfin.symlink_library.symlink_base_path",
+					Field:   "integrations.jellyfin.symlink_library.base_path",
 					Message: "required when symlink_library.enabled=true",
 				})
 			}
-			if cfg.Integrations.Jellyfin.SymlinkLibrary.Movies.Name == "" {
-				errors = append(errors, ValidationError{
-					Field:   "integrations.jellyfin.symlink_library.movies.name",
-					Message: "required when symlink_library.enabled=true",
-				})
-			}
-			if cfg.Integrations.Jellyfin.SymlinkLibrary.Movies.CollectionType == "" {
-				errors = append(errors, ValidationError{
-					Field:   "integrations.jellyfin.symlink_library.movies.collection_type",
-					Message: "required when symlink_library.enabled=true (use 'movies')",
-				})
-			}
-			if cfg.Integrations.Jellyfin.SymlinkLibrary.TVShows.Name == "" {
-				errors = append(errors, ValidationError{
-					Field:   "integrations.jellyfin.symlink_library.tv_shows.name",
-					Message: "required when symlink_library.enabled=true",
-				})
-			}
-			if cfg.Integrations.Jellyfin.SymlinkLibrary.TVShows.CollectionType == "" {
-				errors = append(errors, ValidationError{
-					Field:   "integrations.jellyfin.symlink_library.tv_shows.collection_type",
-					Message: "required when symlink_library.enabled=true (use 'tvshows')",
-				})
-			}
+			// Library names are optional - defaults will be applied if empty
 		}
 	}
 

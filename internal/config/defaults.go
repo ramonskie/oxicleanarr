@@ -66,4 +66,14 @@ func SetDefaults(cfg *Config) {
 	if cfg.Integrations.Jellyfin.LeavingSoonType == "" {
 		cfg.Integrations.Jellyfin.LeavingSoonType = defaults.Integrations.Jellyfin.LeavingSoonType
 	}
+
+	// Symlink Library defaults (only applied when enabled)
+	if cfg.Integrations.Jellyfin.SymlinkLibrary.Enabled {
+		if cfg.Integrations.Jellyfin.SymlinkLibrary.MoviesLibraryName == "" {
+			cfg.Integrations.Jellyfin.SymlinkLibrary.MoviesLibraryName = "Leaving Soon - Movies"
+		}
+		if cfg.Integrations.Jellyfin.SymlinkLibrary.TVLibraryName == "" {
+			cfg.Integrations.Jellyfin.SymlinkLibrary.TVLibraryName = "Leaving Soon - TV Shows"
+		}
+	}
 }

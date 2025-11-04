@@ -54,9 +54,21 @@ func (m *SymlinkLibraryManager) SyncLibraries(ctx context.Context, mediaLibrary 
 
 	symlinkCfg := cfg.Integrations.Jellyfin.SymlinkLibrary
 
+	// Apply defaults for library names if not specified
+	moviesLibraryName := symlinkCfg.MoviesLibraryName
+	if moviesLibraryName == "" {
+		moviesLibraryName = "Leaving Soon - Movies"
+	}
+	tvLibraryName := symlinkCfg.TVLibraryName
+	if tvLibraryName == "" {
+		tvLibraryName = "Leaving Soon - TV Shows"
+	}
+
 	log.Info().
 		Bool("dry_run", cfg.App.DryRun).
-		Str("base_path", symlinkCfg.SymlinkBasePath).
+		Str("base_path", symlinkCfg.BasePath).
+		Str("movies_library", moviesLibraryName).
+		Str("tv_library", tvLibraryName).
 		Msg("Starting symlink library sync")
 
 	// Separate media into movies and TV shows that are scheduled for deletion
@@ -68,21 +80,17 @@ func (m *SymlinkLibraryManager) SyncLibraries(ctx context.Context, mediaLibrary 
 		Msg("Filtered scheduled media")
 
 	// Sync movie library
-	if symlinkCfg.Movies.Name != "" {
-		moviePath := filepath.Join(symlinkCfg.SymlinkBasePath, "movies")
-		if err := m.syncLibrary(ctx, symlinkCfg.Movies, moviePath, movies, "movies"); err != nil {
-			log.Error().Err(err).Str("type", "movies").Msg("Failed to sync movie library")
-			return err
-		}
+	moviePath := filepath.Join(symlinkCfg.BasePath, "movies")
+	if err := m.syncLibrary(ctx, moviesLibraryName, "movies", moviePath, movies); err != nil {
+		log.Error().Err(err).Str("type", "movies").Msg("Failed to sync movie library")
+		return err
 	}
 
 	// Sync TV show library
-	if symlinkCfg.TVShows.Name != "" {
-		tvPath := filepath.Join(symlinkCfg.SymlinkBasePath, "tv")
-		if err := m.syncLibrary(ctx, symlinkCfg.TVShows, tvPath, tvShows, "tvshows"); err != nil {
-			log.Error().Err(err).Str("type", "tv_shows").Msg("Failed to sync TV show library")
-			return err
-		}
+	tvPath := filepath.Join(symlinkCfg.BasePath, "tv")
+	if err := m.syncLibrary(ctx, tvLibraryName, "tvshows", tvPath, tvShows); err != nil {
+		log.Error().Err(err).Str("type", "tv_shows").Msg("Failed to sync TV show library")
+		return err
 	}
 
 	log.Info().Msg("Symlink library sync completed")
@@ -126,7 +134,7 @@ func (m *SymlinkLibraryManager) filterScheduledMedia(mediaLibrary map[string]mod
 }
 
 // syncLibrary syncs a single symlink library (movies or TV shows)
-func (m *SymlinkLibraryManager) syncLibrary(ctx context.Context, itemCfg config.LibraryItemConfig, symlinkDir string, items []models.Media, collectionType string) error {
+func (m *SymlinkLibraryManager) syncLibrary(ctx context.Context, libraryName, collectionType, symlinkDir string, items []models.Media) error {
 	cfg := config.Get()
 	if cfg == nil {
 		cfg = m.config
@@ -134,14 +142,14 @@ func (m *SymlinkLibraryManager) syncLibrary(ctx context.Context, itemCfg config.
 	dryRun := cfg.App.DryRun
 
 	log.Info().
-		Str("library", itemCfg.Name).
+		Str("library", libraryName).
 		Str("path", symlinkDir).
 		Int("item_count", len(items)).
 		Bool("dry_run", dryRun).
 		Msg("Syncing symlink library")
 
 	// Step 1: Ensure virtual folder exists in Jellyfin
-	if err := m.ensureVirtualFolder(ctx, itemCfg.Name, collectionType, symlinkDir, dryRun); err != nil {
+	if err := m.ensureVirtualFolder(ctx, libraryName, collectionType, symlinkDir, dryRun); err != nil {
 		return fmt.Errorf("failed to ensure virtual folder: %w", err)
 	}
 
@@ -163,12 +171,12 @@ func (m *SymlinkLibraryManager) syncLibrary(ctx context.Context, itemCfg config.
 
 	// Step 5: Trigger Jellyfin library scan (if not dry-run)
 	if !dryRun && len(items) > 0 {
-		log.Info().Str("library", itemCfg.Name).Msg("Library scan would be triggered (not implemented yet)")
+		log.Info().Str("library", libraryName).Msg("Library scan would be triggered (not implemented yet)")
 		// Note: Jellyfin library scan API call can be added here if needed
 	}
 
 	log.Info().
-		Str("library", itemCfg.Name).
+		Str("library", libraryName).
 		Int("symlinks_created", len(currentSymlinks)).
 		Bool("dry_run", dryRun).
 		Msg("Symlink library sync completed")

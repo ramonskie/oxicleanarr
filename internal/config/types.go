@@ -72,16 +72,10 @@ type JellyfinConfig struct {
 
 // SymlinkLibraryConfig holds symlink-based library management settings
 type SymlinkLibraryConfig struct {
-	Enabled         bool              `mapstructure:"enabled" yaml:"enabled" json:"enabled"`
-	SymlinkBasePath string            `mapstructure:"symlink_base_path" yaml:"symlink_base_path" json:"symlink_base_path"` // Base directory for symlinks (e.g., /app/leaving-soon)
-	Movies          LibraryItemConfig `mapstructure:"movies" yaml:"movies" json:"movies"`
-	TVShows         LibraryItemConfig `mapstructure:"tv_shows" yaml:"tv_shows" json:"tv_shows"`
-}
-
-// LibraryItemConfig holds settings for a specific symlink library
-type LibraryItemConfig struct {
-	Name           string `mapstructure:"name" yaml:"name" json:"name"`                                  // Virtual folder name in Jellyfin (e.g., "Leaving Soon - Movies")
-	CollectionType string `mapstructure:"collection_type" yaml:"collection_type" json:"collection_type"` // Jellyfin collection type: "movies" or "tvshows"
+	Enabled           bool   `mapstructure:"enabled" yaml:"enabled" json:"enabled"`
+	BasePath          string `mapstructure:"base_path" yaml:"base_path" json:"base_path"`                                         // Base directory for symlinks (e.g., /data/media/prunarr-leaving-soon)
+	MoviesLibraryName string `mapstructure:"movies_library_name" yaml:"movies_library_name,omitempty" json:"movies_library_name"` // Jellyfin library name for movies (default: "Leaving Soon - Movies")
+	TVLibraryName     string `mapstructure:"tv_library_name" yaml:"tv_library_name,omitempty" json:"tv_library_name"`             // Jellyfin library name for TV shows (default: "Leaving Soon - TV Shows")
 }
 
 // RadarrConfig holds Radarr integration settings

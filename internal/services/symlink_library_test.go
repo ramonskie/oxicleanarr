@@ -105,16 +105,10 @@ func TestNewSymlinkLibraryManager(t *testing.T) {
 		Integrations: config.IntegrationsConfig{
 			Jellyfin: config.JellyfinConfig{
 				SymlinkLibrary: config.SymlinkLibraryConfig{
-					Enabled:         true,
-					SymlinkBasePath: filepath.Join(tmpDir, "symlinks"),
-					Movies: config.LibraryItemConfig{
-						Name:           "Movies - Leaving Soon",
-						CollectionType: "movies",
-					},
-					TVShows: config.LibraryItemConfig{
-						Name:           "TV Shows - Leaving Soon",
-						CollectionType: "tvshows",
-					},
+					Enabled:           true,
+					BasePath:          filepath.Join(tmpDir, "symlinks"),
+					MoviesLibraryName: "Movies - Leaving Soon",
+					TVLibraryName:     "TV Shows - Leaving Soon",
 				},
 			},
 		},
@@ -134,10 +128,10 @@ func TestFilterScheduledMedia(t *testing.T) {
 		Integrations: config.IntegrationsConfig{
 			Jellyfin: config.JellyfinConfig{
 				SymlinkLibrary: config.SymlinkLibraryConfig{
-					Enabled:         true,
-					SymlinkBasePath: tmpDir,
-					Movies:          config.LibraryItemConfig{Name: "Movies", CollectionType: "movies"},
-					TVShows:         config.LibraryItemConfig{Name: "TV Shows", CollectionType: "tvshows"},
+					Enabled:           true,
+					BasePath:          tmpDir,
+					MoviesLibraryName: "Movies",
+					TVLibraryName:     "TV Shows",
 				},
 			},
 		},
@@ -241,14 +235,13 @@ func TestFilterScheduledMedia(t *testing.T) {
 }
 
 func TestGenerateSymlinkName(t *testing.T) {
-	tmpDir := t.TempDir()
 	cfg := &config.Config{
-		App: config.AppConfig{DryRun: true},
+		App: config.AppConfig{DryRun: false},
 		Integrations: config.IntegrationsConfig{
 			Jellyfin: config.JellyfinConfig{
 				SymlinkLibrary: config.SymlinkLibraryConfig{
-					Enabled:         true,
-					SymlinkBasePath: tmpDir,
+					Enabled:  true,
+					BasePath: t.TempDir(),
 				},
 			},
 		},
@@ -307,8 +300,8 @@ func TestCreateSymlinks(t *testing.T) {
 		Integrations: config.IntegrationsConfig{
 			Jellyfin: config.JellyfinConfig{
 				SymlinkLibrary: config.SymlinkLibraryConfig{
-					Enabled:         true,
-					SymlinkBasePath: symlinkDir,
+					Enabled:  true,
+					BasePath: symlinkDir,
 				},
 			},
 		},
@@ -414,8 +407,8 @@ func TestCleanupSymlinks(t *testing.T) {
 		Integrations: config.IntegrationsConfig{
 			Jellyfin: config.JellyfinConfig{
 				SymlinkLibrary: config.SymlinkLibraryConfig{
-					Enabled:         true,
-					SymlinkBasePath: symlinkDir,
+					Enabled:  true,
+					BasePath: symlinkDir,
 				},
 			},
 		},
@@ -463,8 +456,8 @@ func TestEnsureVirtualFolder(t *testing.T) {
 		Integrations: config.IntegrationsConfig{
 			Jellyfin: config.JellyfinConfig{
 				SymlinkLibrary: config.SymlinkLibraryConfig{
-					Enabled:         true,
-					SymlinkBasePath: tmpDir,
+					Enabled:  true,
+					BasePath: tmpDir,
 				},
 			},
 		},
@@ -564,16 +557,10 @@ func TestSyncLibraries_Integration(t *testing.T) {
 		Integrations: config.IntegrationsConfig{
 			Jellyfin: config.JellyfinConfig{
 				SymlinkLibrary: config.SymlinkLibraryConfig{
-					Enabled:         true,
-					SymlinkBasePath: symlinkBase,
-					Movies: config.LibraryItemConfig{
-						Name:           "Movies - Leaving Soon",
-						CollectionType: "movies",
-					},
-					TVShows: config.LibraryItemConfig{
-						Name:           "TV Shows - Leaving Soon",
-						CollectionType: "tvshows",
-					},
+					Enabled:           true,
+					BasePath:          symlinkBase,
+					MoviesLibraryName: "Movies - Leaving Soon",
+					TVLibraryName:     "TV Shows - Leaving Soon",
 				},
 			},
 		},
