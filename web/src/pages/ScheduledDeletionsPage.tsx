@@ -60,7 +60,7 @@ export default function ScheduledDeletionsPage() {
 
   // Sync status
   const { data: syncStatus } = useQuery({
-    queryKey: ['syncStatus'],
+    queryKey: ['sync-status'],
     queryFn: () => apiClient.getSyncStatus(),
     refetchInterval: 5000,
   });

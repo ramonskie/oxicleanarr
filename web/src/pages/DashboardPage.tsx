@@ -40,7 +40,8 @@ export default function DashboardPage() {
     refetchInterval: 5000, // Poll every 5 seconds
   });
 
-  const { data: jobsData } = useQuery({
+  // Keep jobs query active for cache warming (invalidated by config/rule changes)
+  useQuery({
     queryKey: ['jobs'],
     queryFn: () => apiClient.listJobs(),
   });

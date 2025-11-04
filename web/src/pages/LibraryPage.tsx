@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiClient } from '@/lib/api';
 import type { MediaItem } from '@/lib/types';
 import { Card } from '@/components/ui/card';
@@ -9,6 +9,7 @@ import { Input } from '@/components/ui/input';
 import { useAuthStore } from '@/store/auth';
 import { useNavigate } from 'react-router-dom';
 import { Clock, LogOut, Shield, ShieldOff } from 'lucide-react';
+import { useToast } from '@/hooks/use-toast';
 
 type MediaType = 'all' | 'movies' | 'shows';
 type SortField = 'title' | 'year' | 'last_watched' | 'deletion_date';
@@ -19,6 +20,8 @@ const ITEMS_PER_PAGE = 50;
 export default function LibraryPage() {
   const navigate = useNavigate();
   const logout = useAuthStore((state) => state.logout);
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
   
   const [mediaType, setMediaType] = useState<MediaType>('all');
   const [searchQuery, setSearchQuery] = useState('');
@@ -43,7 +46,7 @@ export default function LibraryPage() {
 
   // Sync status
   const { data: syncStatus } = useQuery({
-    queryKey: ['syncStatus'],
+    queryKey: ['sync-status'],
     queryFn: () => apiClient.getSyncStatus(),
     refetchInterval: 5000,
   });
@@ -177,24 +180,54 @@ export default function LibraryPage() {
     setCurrentPage(1);
   };
 
-  const handleExclude = async (id: string) => {
-    try {
-      await apiClient.addExclusion(id);
-      // Refetch to update UI
-      window.location.reload();
-    } catch (error) {
-      console.error('Failed to exclude media:', error);
-    }
+  const excludeMutation = useMutation({
+    mutationFn: (id: string) => apiClient.addExclusion(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['movies'] });
+      queryClient.invalidateQueries({ queryKey: ['shows'] });
+      queryClient.invalidateQueries({ queryKey: ['leaving-soon'] });
+      queryClient.invalidateQueries({ queryKey: ['excluded'] });
+      toast({
+        title: 'Excluded',
+        description: 'Item has been added to the exclusion list',
+      });
+    },
+    onError: () => {
+      toast({
+        title: 'Error',
+        description: 'Failed to exclude media item',
+        variant: 'destructive',
+      });
+    },
+  });
+
+  const unexcludeMutation = useMutation({
+    mutationFn: (id: string) => apiClient.removeExclusion(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['movies'] });
+      queryClient.invalidateQueries({ queryKey: ['shows'] });
+      queryClient.invalidateQueries({ queryKey: ['leaving-soon'] });
+      queryClient.invalidateQueries({ queryKey: ['excluded'] });
+      toast({
+        title: 'Unexcluded',
+        description: 'Item has been removed from the exclusion list',
+      });
+    },
+    onError: () => {
+      toast({
+        title: 'Error',
+        description: 'Failed to unexclude media item',
+        variant: 'destructive',
+      });
+    },
+  });
+
+  const handleExclude = (id: string) => {
+    excludeMutation.mutate(id);
   };
 
-  const handleUnexclude = async (id: string) => {
-    try {
-      await apiClient.removeExclusion(id);
-      // Refetch to update UI
-      window.location.reload();
-    } catch (error) {
-      console.error('Failed to unexclude media:', error);
-    }
+  const handleUnexclude = (id: string) => {
+    unexcludeMutation.mutate(id);
   };
 
   const formatDate = (dateStr?: string, context: 'watched' | 'deletion' = 'watched') => {
