@@ -59,7 +59,66 @@ This document provides essential context for AI coding agents working on the Pru
 
 ---
 
-## Recent Work (Last Session - Nov 4, 2025, Session 16)
+## Recent Work (Last Session - Nov 4, 2025, Session 17)
+
+### Config Auto-Sync Performance Optimization - COMPLETED ✅
+
+**Work Completed:**
+- ✅ Resumed from Session 16 (tag-based rules UI completed)
+- ✅ User identified inefficiency in auto-sync behavior
+- ✅ Optimized config updates to use `ReapplyRetentionRules()` instead of `FullSync()`
+- ✅ Removed unused `context` import from config handler
+- ✅ All 109 test functions passing (380 test runs with subtests)
+
+**Problem Identified:**
+- Session 13 implemented auto-sync on config changes using `FullSync()`
+- `FullSync()` re-fetches ALL data from Radarr/Sonarr/Jellyfin (~12 seconds)
+- When only retention rules change, no external data fetch needed
+- Inefficient: causing unnecessary API calls and slower updates
+
+**Solution Implemented:**
+- Changed config handler to call `ReapplyRetentionRules()` instead of `FullSync()`
+- `ReapplyRetentionRules()` only re-evaluates existing in-memory media (instant)
+- No external API calls needed for rule-only changes
+- Deletion dates update within 1-2 seconds after config save
+- Rules engine already uses global config (hot-reload support from Session 13)
+
+**Files Modified:**
+- `internal/api/handlers/config.go` (-5 lines net) - Use `ReapplyRetentionRules()`, remove unused import
+
+**Commits:**
+1. `f845a21` - perf: optimize config updates to use ReapplyRetentionRules instead of FullSync
+
+**Testing Results:**
+- ✅ All 109 test functions passing
+- ✅ Manual testing: Changed tag rule retention 90d → 1d → 365d via API
+- ✅ Deletion dates updated correctly: May 31, 2025 → May 31, 2025 (overdue) → May 30, 2026
+- ✅ No external API calls observed in logs (verified with Radarr/Sonarr/Jellyfin grep)
+- ✅ Update time: ~1-2 seconds (was ~12 seconds with FullSync)
+- ✅ Log message confirms: "Re-applying retention rules to existing media (no external API calls needed)"
+
+**Performance Impact:**
+- **Before**: Config update → FullSync → Re-fetch all data (~12s)
+- **After**: Config update → ReapplyRetentionRules → Re-evaluate in-memory (~instant)
+- **Improvement**: ~12x faster for rule-only changes
+
+**Current State:**
+- Running: Yes (PID: 360010)
+- Tests passing: 109/109 functions ✅ (380 test runs with subtests)
+- Known issues: None
+- Config auto-sync: Optimized ✅
+- Session 17: COMPLETE ✅
+
+**Next Session TODO:**
+- [ ] Consider reducing duplicate triggers (API handler + file watcher both call ReapplyRetentionRules)
+- [ ] User-based cleanup with watch tracking integration
+- [ ] Mobile responsiveness improvements
+- [ ] Statistics/charts for disk space trends
+- [ ] Comprehensive error handling
+
+---
+
+## Previous Session: Nov 4, 2025 (Session 16)
 
 ### Tag-Based Rules UI Enhancements - COMPLETED ✅
 
