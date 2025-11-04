@@ -1,0 +1,25 @@
+services:
+  prunarr:
+    build: .
+    container_name: prunarr
+    environment:
+      - PUID=1027
+      - PGID=65536
+      - TZ=Europe/Amsterdam
+      - UMASK=022
+    volumes:
+      # Config and data
+      - /volume3/docker/prunarr:/config
+      - /volume3/docker/prunarr/data:/app/data
+      
+      # Symlink directory (read-write for Prunarr to create symlinks)
+      - /volume1/data/media/prunarr-leaving-soon:/data/media/prunarr-leaving-soon
+      
+      # Media paths (read-only) - MUST match Radarr/Sonarr paths
+      - /volume1/data:/data:ro
+    ports:
+      - 8080:8080
+    network_mode: synobridge
+    security_opt:
+      - no-new-privileges:true
+    restart: always
