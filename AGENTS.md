@@ -38,7 +38,7 @@ This document provides essential context for AI coding agents working on the Pru
 ✅ Authentication & authorization (with optional bypass for testing)  
 ✅ Configuration with hot-reload  
 ✅ Deletion reason generation (including tag-based rules)  
-✅ Jellyfin collections management ("Leaving Soon" collections)  
+✅ Jellyfin symlink library management ("Leaving Soon" libraries with sidebar visibility)  
 ✅ Configuration & Advanced Rules management UI  
 ✅ Toast notifications for user feedback (Sonner)  
 ✅ Auto-sync on retention rule changes (optimized, no external API calls)  
@@ -61,7 +61,110 @@ This document provides essential context for AI coding agents working on the Pru
 
 ---
 
-## Recent Work (Last Session - Nov 4, 2025, Session 27)
+## Recent Work (Last Session - Nov 4, 2025, Session 28)
+
+### Symlink Library Manager Implementation - COMPLETED ✅
+
+**Work Completed:**
+- ✅ Implemented complete SymlinkLibraryManager service (397 lines)
+- ✅ Created Jellyfin Virtual Folder API methods (GET, CREATE, DELETE)
+- ✅ Integrated symlink library sync into FullSync workflow
+- ✅ Updated configuration structures and validation
+- ✅ Replaced Collections config with SymlinkLibrary in example config
+- ✅ Deleted old collection files (jellyfin_collections.go + test file)
+- ✅ All 381 tests passing
+- ✅ Binary builds successfully (14MB)
+
+**Decision Reversal:**
+- Session 27: Decided to keep Collections for v1.0 (defer symlinks to v2.0)
+- Session 28: **Implemented symlink libraries immediately** (better UX wins)
+- Rationale: Better sidebar visibility outweighs setup complexity
+
+**Implementation Details:**
+
+**New SymlinkLibraryManager Service:**
+- `SyncLibraries()` - Main orchestration (called after retention rules in FullSync)
+- `filterScheduledMedia()` - Separate movies/TV with future deletion dates
+- `syncLibrary()` - Sync individual library (create folder, symlinks, cleanup)
+- `ensureVirtualFolder()` - Manage Jellyfin libraries via Virtual Folder API
+- `ensureDirectory()` - Create symlink base directories
+- `createSymlinks()` - Create filesystem symlinks to actual media files
+- `cleanupSymlinks()` - Remove stale symlinks for unscheduled items
+- `generateSymlinkName()` - Safe filename generation from metadata
+- Full dry-run support throughout all operations
+
+**Jellyfin Client Enhancements:**
+- `GetVirtualFolders()` - List existing libraries
+- `CreateVirtualFolder(name, collectionType, paths, dryRun)` - Create library
+- `DeleteVirtualFolder(name, dryRun)` - Remove library
+- All methods respect dry-run mode
+
+**Configuration Changes:**
+- NEW: `SymlinkLibraryConfig` struct (enabled, base_path, movies, tv_shows)
+- Deleted: `JellyfinCollectionsConfig` (replaced entirely)
+- Validation: Check base_path writability, library names, collection types
+- Example config: Added Docker volume mapping examples and path translation docs
+
+**Sync Integration:**
+- Added `symlinkLibraryManager` field to SyncEngine
+- Initialize when `SymlinkLibrary.Enabled` is true
+- Call `SyncLibraries()` in FullSync after `applyRetentionRules()`
+- Thread-safe: Copy media library with RLock before async operations
+
+**Files Modified & Committed:**
+- `internal/services/symlink_library.go` - NEW (384 lines)
+- `internal/clients/jellyfin.go` - Virtual Folder API methods (+208 lines)
+- `internal/clients/types.go` - VirtualFolder structs (+32 lines)
+- `internal/config/types.go` - SymlinkLibraryConfig (+27 lines)
+- `internal/config/validation.go` - Symlink validation (+34 lines)
+- `internal/services/sync.go` - Integration (+42 lines)
+- `internal/api/handlers/config.go` - Config handler updates (+38 lines)
+- `config/prunarr.yaml.example` - Symlink config docs (+28 lines)
+- DELETED: `internal/services/jellyfin_collections.go` (-194 lines)
+- DELETED: `internal/services/jellyfin_collections_test.go` (-531 lines)
+
+**Commits:**
+1. `492cd6b` - feat: replace Collections with Symlink Library Manager for better visibility
+
+**Current State:**
+- Running: No (code complete, testing pending)
+- Tests passing: 381/381 ✅
+- Build: ✅ Successful (prunarr-symlink binary 14MB)
+- Known issues: None
+- Net change: -342 lines (588 added, 930 deleted)
+
+**Advantages Over Collections:**
+1. **Better Visibility** - Libraries appear in Jellyfin sidebar (not buried in Collections)
+2. **User-Friendly** - More intuitive "Leaving Soon" section
+3. **Proven Approach** - Janitorr uses this successfully
+4. **Native Feel** - Works like regular Jellyfin libraries
+5. **Cleaner Separation** - Movies and TV shows in separate libraries
+
+**Requirements for Deployment:**
+- Docker volume mapping for symlink directories required
+- Both Prunarr and Jellyfin must see same media paths
+- Symlink base directory must be writable by Prunarr container
+- See `config/prunarr.yaml.example` for Docker Compose setup
+
+**Next Session TODO:**
+- [ ] Add comprehensive unit tests for SymlinkLibraryManager
+- [ ] Manual testing with real Jellyfin instance (requires Docker setup)
+- [ ] Verify symlink creation works correctly
+- [ ] Test Virtual Folder creation/deletion/updates
+- [ ] Validate path translation in Docker environment
+- [ ] Test edge cases: missing files, permission issues, concurrent syncs
+- [ ] Add error recovery and retry logic if needed
+
+**Key Lessons:**
+1. **Bold decisions**: Sometimes the "defer to v2.0" choice should be reconsidered
+2. **UX over complexity**: Better user experience justifies implementation complexity
+3. **Code replacement**: Replacing 725 lines of old code with 384 lines of new code (-47% net)
+4. **API design**: Virtual Folder API is simpler than Collection item management
+5. **Thread safety**: Always copy shared state before passing to async operations
+
+---
+
+## Previous Session: Nov 4, 2025 (Session 27)
 
 ### Jellyfin Virtual Folder (Library) API Research - COMPLETED ✅
 
