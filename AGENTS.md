@@ -41,7 +41,8 @@ This document provides essential context for AI coding agents working on the Pru
 ✅ Jellyfin collections management ("Leaving Soon" collections)  
 ✅ Configuration & Advanced Rules management UI  
 ✅ Toast notifications for user feedback (Sonner)  
-✅ Auto-sync on retention rule changes (immediate effect)  
+✅ Auto-sync on retention rule changes (optimized, no external API calls)  
+✅ Automatic UI refresh after config/rule changes (TanStack Query invalidation)  
 ✅ Scheduled Deletions UI displays correctly in all modes (dry-run and live)  
 ✅ Tag display on media cards across all pages  
 ✅ Tag filtering in Library page  
@@ -61,7 +62,7 @@ This document provides essential context for AI coding agents working on the Pru
 
 ## Recent Work (Last Session - Nov 4, 2025, Session 17)
 
-### Config Auto-Sync Performance Optimization - COMPLETED ✅
+### Part 1: Config Auto-Sync Performance Optimization - COMPLETED ✅
 
 **Work Completed:**
 - ✅ Resumed from Session 16 (tag-based rules UI completed)
@@ -102,11 +103,59 @@ This document provides essential context for AI coding agents working on the Pru
 - **After**: Config update → ReapplyRetentionRules → Re-evaluate in-memory (~instant)
 - **Improvement**: ~12x faster for rule-only changes
 
+### Part 2: Automatic UI Refresh After Config Changes - COMPLETED ✅
+
+**Work Completed:**
+- ✅ Added TanStack Query invalidation for media queries after config/rule updates
+- ✅ ConfigurationPage now auto-refreshes UI after saving changes
+- ✅ RulesPage now auto-refreshes UI after create/update/delete/toggle operations
+- ✅ All tests passing (109 test functions)
+
+**Problem Identified:**
+- Backend re-applied retention rules instantly via `ReapplyRetentionRules()`
+- Config/rules saved successfully with toast notification
+- **Gap**: Frontend didn't know media data changed
+- UI showed stale deletion dates until manual page refresh
+- Poor UX: changes appeared to work but UI didn't reflect them
+
+**Solution Implemented:**
+- Added `queryClient.invalidateQueries()` calls for media-related queries
+- Invalidated query keys: `movies`, `shows`, `leaving-soon`, `leaving-soon-all`, `jobs`
+- ConfigurationPage: Invalidates on successful config update
+- RulesPage: Invalidates on create/update/delete/toggle success
+- TanStack Query automatically refetches invalidated queries that are currently in use
+- Open pages (Library, Timeline, Scheduled Deletions) auto-update within 1-2 seconds
+
+**Files Modified:**
+- `web/src/pages/ConfigurationPage.tsx` (+4 lines) - Added media query invalidations
+- `web/src/pages/RulesPage.tsx` (+20 lines) - Added media query invalidations to all 4 mutations
+
+**Commits:**
+2. `dfd87b4` - feat: add automatic UI refresh after config and rule changes
+
+**Testing Results:**
+- ✅ All 109 test functions passing
+- ✅ Frontend built successfully (441.28 kB, gzipped: 130.98 kB)
+- ✅ Manual API testing: Config update 0d → 365d → 1d
+- ✅ Leaving-soon count updated correctly: 0 → 232 → 1 items
+- ✅ Advanced rule create/delete tested successfully
+- ✅ No external API calls during re-apply (verified in logs)
+
+**How It Works:**
+1. User saves config/rule via UI
+2. Backend receives request → Updates config → Calls `ReapplyRetentionRules()` (~1-2s)
+3. Frontend mutation succeeds → Invalidates media queries
+4. TanStack Query marks queries as stale
+5. All active pages (Library/Timeline/Scheduled Deletions) automatically refetch
+6. UI updates with new deletion dates within 1-2 seconds
+7. User sees changes immediately without manual refresh
+
 **Current State:**
-- Running: Yes (PID: 360010)
+- Running: Yes (PID: 388993)
 - Tests passing: 109/109 functions ✅ (380 test runs with subtests)
 - Known issues: None
 - Config auto-sync: Optimized ✅
+- UI auto-refresh: Implemented ✅
 - Session 17: COMPLETE ✅
 
 **Next Session TODO:**
