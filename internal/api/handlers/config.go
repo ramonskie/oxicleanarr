@@ -1,7 +1,6 @@
 package handlers
 
 import (
-	"context"
 	"encoding/json"
 	"net/http"
 	"os"
@@ -351,7 +350,7 @@ func (h *ConfigHandler) UpdateConfig(w http.ResponseWriter, r *http.Request) {
 
 	log.Info().Msg("Write config completed successfully")
 
-	// Track if retention rules changed (requires full sync to re-evaluate)
+	// Track if retention rules changed (requires re-evaluation)
 	retentionChanged := false
 	if req.Rules != nil {
 		oldCfg := config.Get()
@@ -359,13 +358,13 @@ func (h *ConfigHandler) UpdateConfig(w http.ResponseWriter, r *http.Request) {
 			if req.Rules.MovieRetention != oldCfg.Rules.MovieRetention ||
 				req.Rules.TVRetention != oldCfg.Rules.TVRetention {
 				retentionChanged = true
-				log.Info().Msg("Retention rules changed, will trigger full sync to re-evaluate media")
+				log.Info().Msg("Retention rules changed, will re-evaluate existing media")
 			}
 		}
 	}
 	if req.AdvancedRules != nil {
 		retentionChanged = true
-		log.Info().Msg("Advanced rules changed, will trigger full sync to re-evaluate media")
+		log.Info().Msg("Advanced rules changed, will re-evaluate existing media")
 	}
 
 	// Reload config to apply changes
@@ -377,16 +376,12 @@ func (h *ConfigHandler) UpdateConfig(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Trigger full sync if retention rules changed
+	// Re-apply retention rules if they changed (no need for full sync)
 	if retentionChanged && h.syncEngine != nil {
-		log.Info().Msg("Triggering full sync to re-apply retention rules")
+		log.Info().Msg("Re-applying retention rules to existing media (no external API calls needed)")
 		go func() {
-			ctx := context.Background()
-			if err := h.syncEngine.FullSync(ctx); err != nil {
-				log.Error().Err(err).Msg("Failed to trigger full sync after config update")
-			} else {
-				log.Info().Msg("Full sync completed after config update")
-			}
+			h.syncEngine.ReapplyRetentionRules()
+			log.Info().Msg("Retention rules re-applied successfully")
 		}()
 	}
 
