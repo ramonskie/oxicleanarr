@@ -25,6 +25,7 @@ type Media struct {
 	FilePath       string    `json:"file_path,omitempty"`
 	FileSize       int64     `json:"file_size,omitempty"`
 	QualityTag     string    `json:"quality_tag,omitempty"`
+	Tags           []string  `json:"tags,omitempty"`
 	IsExcluded     bool      `json:"excluded"`
 	IsRequested    bool      `json:"is_requested"`
 	DeleteAfter    time.Time `json:"deletion_date,omitempty"`

@@ -49,7 +49,15 @@ func (e *RulesEngine) EvaluateMedia(media *models.Media) (shouldDelete bool, del
 		return false, time.Time{}, "excluded"
 	}
 
-	// Check user-based rules first (higher priority than standard rules)
+	// Check tag-based rules first (highest priority)
+	if len(media.Tags) > 0 {
+		matched, shouldDel, delAfter, tagReason := e.evaluateTagBasedRules(media)
+		if matched {
+			return shouldDel, delAfter, tagReason
+		}
+	}
+
+	// Check user-based rules (higher priority than standard rules)
 	if media.IsRequested && (media.RequestedByUserID != nil || media.RequestedByUsername != nil || media.RequestedByEmail != nil) {
 		// Try to match user-based rules
 		matched, shouldDel, delAfter, userReason := e.evaluateUserBasedRules(media)
@@ -218,6 +226,93 @@ func (e *RulesEngine) applyUserRule(media *models.Media, userRule *config.UserRu
 	return true, false, deleteAfter, reason
 }
 
+// evaluateTagBasedRules checks if media matches any tag-based advanced rules
+func (e *RulesEngine) evaluateTagBasedRules(media *models.Media) (matched bool, shouldDelete bool, deleteAfter time.Time, reason string) {
+	// Get latest config for hot-reload support
+	cfg := e.getConfig()
+
+	// No advanced rules configured
+	if len(cfg.AdvancedRules) == 0 {
+		return false, false, time.Time{}, ""
+	}
+
+	// Find tag-based rules
+	for _, rule := range cfg.AdvancedRules {
+		if !rule.Enabled || rule.Type != "tag" || rule.Tag == "" {
+			continue
+		}
+
+		// Check if media has this tag (case-insensitive match)
+		hasTag := false
+		for _, mediaTag := range media.Tags {
+			if equalsCaseInsensitive(mediaTag, rule.Tag) {
+				hasTag = true
+				break
+			}
+		}
+
+		if !hasTag {
+			continue
+		}
+
+		// Media matches this tag rule
+		log.Debug().
+			Str("media_id", media.ID).
+			Str("title", media.Title).
+			Str("rule_name", rule.Name).
+			Str("tag", rule.Tag).
+			Msg("Media matched tag-based rule")
+
+		// Parse retention period for this tag
+		retentionDuration, err := parseDuration(rule.Retention)
+		if err != nil {
+			log.Warn().
+				Err(err).
+				Str("media_id", media.ID).
+				Str("rule_name", rule.Name).
+				Str("retention", rule.Retention).
+				Msg("Failed to parse tag rule retention duration")
+			return true, false, time.Time{}, "invalid tag rule retention"
+		}
+
+		// Calculate deletion time based on last watched or added date
+		var baseTime time.Time
+		if !media.LastWatched.IsZero() {
+			baseTime = media.LastWatched
+		} else {
+			baseTime = media.AddedAt
+		}
+
+		deleteAfter = baseTime.Add(retentionDuration)
+
+		// Check if due for deletion
+		if time.Now().After(deleteAfter) {
+			reason = fmt.Sprintf("tag rule '%s' (tag: %s) retention expired (%s)", rule.Name, rule.Tag, rule.Retention)
+			log.Info().
+				Str("media_id", media.ID).
+				Str("title", media.Title).
+				Str("rule_name", rule.Name).
+				Str("tag", rule.Tag).
+				Str("retention", rule.Retention).
+				Time("delete_after", deleteAfter).
+				Msg("Media matched tag-based rule for deletion")
+			return true, true, deleteAfter, reason
+		}
+
+		// Within retention period
+		reason = fmt.Sprintf("tag rule '%s' (tag: %s) within retention (%s)", rule.Name, rule.Tag, rule.Retention)
+		log.Debug().
+			Str("media_id", media.ID).
+			Str("rule_name", rule.Name).
+			Str("tag", rule.Tag).
+			Time("delete_after", deleteAfter).
+			Msg("Media matched tag rule but within retention period")
+		return true, false, deleteAfter, reason
+	}
+
+	return false, false, time.Time{}, ""
+}
+
 // equalsCaseInsensitive compares two strings case-insensitively
 func equalsCaseInsensitive(a, b string) bool {
 	if len(a) != len(b) {
@@ -314,6 +409,78 @@ func (e *RulesEngine) GenerateDeletionReason(media *models.Media, deleteAfter ti
 	mediaType := "movie"
 	if media.Type == models.MediaTypeTVShow {
 		mediaType = "TV show"
+	}
+
+	// Check if this is a tag-based rule (reason contains "tag rule")
+	if len(reason) > 9 && reason[:8] == "tag rule" {
+		// Extract rule name, tag, and retention from reason like:
+		// - "tag rule 'Demo Content' (tag: prunarr-test) retention expired (1d)" -> overdue
+		// - "tag rule 'Demo Content' (tag: prunarr-test) within retention (1d)" -> leaving soon
+
+		// Find the rule name between single quotes
+		start := -1
+		end := -1
+		for i := 9; i < len(reason); i++ {
+			if reason[i] == '\'' {
+				if start == -1 {
+					start = i + 1
+				} else {
+					end = i
+					break
+				}
+			}
+		}
+
+		// Find tag name after "tag: "
+		tagStart := -1
+		tagEnd := -1
+		tagPrefix := "tag: "
+		tagIdx := strings.Index(reason, tagPrefix)
+		if tagIdx != -1 {
+			tagStart = tagIdx + len(tagPrefix)
+			// Find end of tag (before closing parenthesis)
+			for i := tagStart; i < len(reason); i++ {
+				if reason[i] == ')' {
+					tagEnd = i
+					break
+				}
+			}
+		}
+
+		// Find retention period in the last set of parentheses
+		retentionStart := -1
+		retentionEnd := -1
+		for i := len(reason) - 1; i >= 0; i-- {
+			if reason[i] == ')' && retentionEnd == -1 {
+				retentionEnd = i
+			} else if reason[i] == '(' && retentionEnd != -1 {
+				retentionStart = i + 1
+				break
+			}
+		}
+
+		if start != -1 && end != -1 && tagStart != -1 && tagEnd != -1 && retentionStart != -1 && retentionEnd != -1 {
+			ruleName := reason[start:end]
+			tagName := reason[tagStart:tagEnd]
+			retention := reason[retentionStart:retentionEnd]
+
+			// Check if this is an expired rule or within retention
+			isExpired := strings.Contains(reason, "retention expired")
+
+			if isExpired {
+				// Item is overdue for deletion
+				return fmt.Sprintf("This %s was %s %d days ago. It matched the '%s' tag rule (tag: %s) with %s retention and is now scheduled for deletion.",
+					mediaType, baseEvent, daysSinceBase, ruleName, tagName, retention)
+			} else {
+				// Item is leaving soon (within retention but will be deleted)
+				return fmt.Sprintf("This %s was %s %d days ago. It matches the '%s' tag rule (tag: %s) with %s retention, meaning it will be deleted after that period of inactivity.",
+					mediaType, baseEvent, daysSinceBase, ruleName, tagName, retention)
+			}
+		}
+
+		// Fallback if parsing fails
+		return fmt.Sprintf("This %s was %s %d days ago. %s.",
+			mediaType, baseEvent, daysSinceBase, reason)
 	}
 
 	// Check if this is a user-based rule (reason contains "user rule")

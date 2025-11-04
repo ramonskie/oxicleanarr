@@ -152,6 +152,37 @@ func (c *RadarrClient) GetHistory(ctx context.Context, movieID int) ([]RadarrHis
 	return history, nil
 }
 
+// GetTags fetches all tags from Radarr
+func (c *RadarrClient) GetTags(ctx context.Context) ([]RadarrTag, error) {
+	url := fmt.Sprintf("%s/api/v3/tag", c.baseURL)
+
+	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+	if err != nil {
+		return nil, fmt.Errorf("creating request: %w", err)
+	}
+
+	req.Header.Set("X-Api-Key", c.apiKey)
+	req.Header.Set("Accept", "application/json")
+
+	resp, err := c.client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("making request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("unexpected status code: %d", resp.StatusCode)
+	}
+
+	var tags []RadarrTag
+	if err := json.NewDecoder(resp.Body).Decode(&tags); err != nil {
+		return nil, fmt.Errorf("decoding response: %w", err)
+	}
+
+	log.Debug().Int("count", len(tags)).Msg("Fetched tags from Radarr")
+	return tags, nil
+}
+
 // Ping checks if Radarr is reachable
 func (c *RadarrClient) Ping(ctx context.Context) error {
 	url := fmt.Sprintf("%s/api/v3/system/status", c.baseURL)

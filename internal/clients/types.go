@@ -53,7 +53,14 @@ type RadarrMovie struct {
 	HasFile          bool             `json:"hasFile"`
 	QualityProfileId int              `json:"qualityProfileId"`
 	TmdbId           int              `json:"tmdbId"`
+	Tags             []int            `json:"tags"`
 	MovieFile        *RadarrMovieFile `json:"movieFile,omitempty"`
+}
+
+// RadarrTag represents a tag in Radarr
+type RadarrTag struct {
+	ID    int    `json:"id"`
+	Label string `json:"label"`
 }
 
 // RadarrMovieFile represents a movie file in Radarr
@@ -92,7 +99,14 @@ type SonarrSeries struct {
 	Added      time.Time   `json:"added"`
 	Path       string      `json:"path"`
 	Statistics SonarrStats `json:"statistics"`
+	Tags       []int       `json:"tags"`
 	TvdbId     int         `json:"tvdbId"`
+}
+
+// SonarrTag represents a tag in Sonarr
+type SonarrTag struct {
+	ID    int    `json:"id"`
+	Label string `json:"label"`
 }
 
 // SonarrStats represents Sonarr series statistics

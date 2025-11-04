@@ -363,6 +363,19 @@ func (e *SyncEngine) syncRadarr(ctx context.Context) ([]models.Media, error) {
 		return nil, err
 	}
 
+	// Fetch all tags to convert tag IDs to names
+	radarrTags, err := e.radarrClient.GetTags(ctx)
+	if err != nil {
+		log.Warn().Err(err).Msg("Failed to fetch Radarr tags, continuing without tags")
+		radarrTags = []clients.RadarrTag{} // Continue without tags on error
+	}
+
+	// Build tag ID to name map
+	tagMap := make(map[int]string, len(radarrTags))
+	for _, tag := range radarrTags {
+		tagMap[tag.ID] = tag.Label
+	}
+
 	mediaItems := make([]models.Media, 0, len(radarrMovies))
 
 	e.mediaLibraryLock.Lock()
@@ -390,6 +403,16 @@ func (e *SyncEngine) syncRadarr(ctx context.Context) ([]models.Media, error) {
 			media.QualityTag = rm.MovieFile.Quality.Quality.Name
 		}
 
+		// Convert tag IDs to tag names
+		if len(rm.Tags) > 0 {
+			media.Tags = make([]string, 0, len(rm.Tags))
+			for _, tagID := range rm.Tags {
+				if tagName, ok := tagMap[tagID]; ok {
+					media.Tags = append(media.Tags, tagName)
+				}
+			}
+		}
+
 		e.mediaLibrary[mediaID] = media
 		mediaItems = append(mediaItems, media)
 	}
@@ -402,6 +425,19 @@ func (e *SyncEngine) syncSonarr(ctx context.Context) ([]models.Media, error) {
 	sonarrSeries, err := e.sonarrClient.GetSeries(ctx)
 	if err != nil {
 		return nil, err
+	}
+
+	// Fetch all tags to convert tag IDs to names
+	sonarrTags, err := e.sonarrClient.GetTags(ctx)
+	if err != nil {
+		log.Warn().Err(err).Msg("Failed to fetch Sonarr tags, continuing without tags")
+		sonarrTags = []clients.SonarrTag{} // Continue without tags on error
+	}
+
+	// Build tag ID to name map
+	tagMap := make(map[int]string, len(sonarrTags))
+	for _, tag := range sonarrTags {
+		tagMap[tag.ID] = tag.Label
 	}
 
 	mediaItems := make([]models.Media, 0, len(sonarrSeries))
@@ -425,6 +461,16 @@ func (e *SyncEngine) syncSonarr(ctx context.Context) ([]models.Media, error) {
 			FileSize: ss.Statistics.SizeOnDisk,
 			SonarrID: ss.ID,
 			TVDBID:   ss.TvdbId,
+		}
+
+		// Convert tag IDs to tag names
+		if len(ss.Tags) > 0 {
+			media.Tags = make([]string, 0, len(ss.Tags))
+			for _, tagID := range ss.Tags {
+				if tagName, ok := tagMap[tagID]; ok {
+					media.Tags = append(media.Tags, tagName)
+				}
+			}
 		}
 
 		e.mediaLibrary[mediaID] = media
