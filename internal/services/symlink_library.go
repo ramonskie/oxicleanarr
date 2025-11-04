@@ -14,15 +14,23 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
+// JellyfinVirtualFolderClient defines the interface for Virtual Folder operations
+type JellyfinVirtualFolderClient interface {
+	GetVirtualFolders(ctx context.Context) ([]clients.JellyfinVirtualFolder, error)
+	CreateVirtualFolder(ctx context.Context, name, collectionType string, paths []string, dryRun bool) error
+	DeleteVirtualFolder(ctx context.Context, name string, dryRun bool) error
+	AddPathToVirtualFolder(ctx context.Context, name, path string, dryRun bool) error
+}
+
 // SymlinkLibraryManager manages Jellyfin symlink-based libraries for "Leaving Soon" items
 type SymlinkLibraryManager struct {
-	jellyfinClient *clients.JellyfinClient
+	jellyfinClient JellyfinVirtualFolderClient
 	config         *config.Config
 	dryRun         bool
 }
 
 // NewSymlinkLibraryManager creates a new symlink library manager
-func NewSymlinkLibraryManager(jellyfinClient *clients.JellyfinClient, cfg *config.Config) *SymlinkLibraryManager {
+func NewSymlinkLibraryManager(jellyfinClient JellyfinVirtualFolderClient, cfg *config.Config) *SymlinkLibraryManager {
 	return &SymlinkLibraryManager{
 		jellyfinClient: jellyfinClient,
 		config:         cfg,
@@ -95,6 +103,11 @@ func (m *SymlinkLibraryManager) filterScheduledMedia(mediaLibrary map[string]mod
 
 		// Skip items without deletion dates
 		if media.DeleteAfter.IsZero() {
+			continue
+		}
+
+		// Skip items without Jellyfin ID (can't create symlinks without mapping)
+		if media.JellyfinID == "" {
 			continue
 		}
 
@@ -255,10 +268,18 @@ func (m *SymlinkLibraryManager) createSymlinks(symlinkDir string, items []models
 			continue
 		}
 
+		// Check if source file exists (skip if missing)
+		if _, err := os.Stat(media.FilePath); os.IsNotExist(err) {
+			log.Warn().
+				Str("title", media.Title).
+				Str("file_path", media.FilePath).
+				Msg("Source file does not exist, skipping symlink creation")
+			continue
+		}
+
 		// Generate safe symlink name
 		symlinkName := m.generateSymlinkName(media)
 		symlinkPath := filepath.Join(symlinkDir, symlinkName)
-		currentSymlinks[symlinkName] = true
 
 		// Check if symlink already exists and points to correct target
 		if existingTarget, err := os.Readlink(symlinkPath); err == nil {
@@ -267,6 +288,7 @@ func (m *SymlinkLibraryManager) createSymlinks(symlinkDir string, items []models
 					Str("symlink", symlinkName).
 					Str("target", media.FilePath).
 					Msg("Symlink already exists and is correct")
+				currentSymlinks[symlinkName] = true
 				continue
 			} else {
 				// Symlink exists but points to wrong target - remove it
@@ -303,6 +325,9 @@ func (m *SymlinkLibraryManager) createSymlinks(symlinkDir string, items []models
 				continue
 			}
 		}
+
+		// Track successfully created symlink
+		currentSymlinks[symlinkName] = true
 	}
 
 	return currentSymlinks, nil
