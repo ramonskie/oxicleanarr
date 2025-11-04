@@ -206,6 +206,10 @@ func (h *ConfigHandler) UpdateConfig(w http.ResponseWriter, r *http.Request) {
 	// Create a new config with updated values
 	newCfg := *cfg
 
+	// Capture old retention values BEFORE updating (for change detection later)
+	oldMovieRetention := cfg.Rules.MovieRetention
+	oldTVRetention := cfg.Rules.TVRetention
+
 	// Update fields if provided
 	if req.Admin != nil {
 		if req.Admin.Username != nil {
@@ -351,15 +355,18 @@ func (h *ConfigHandler) UpdateConfig(w http.ResponseWriter, r *http.Request) {
 	log.Info().Msg("Write config completed successfully")
 
 	// Track if retention rules changed (requires re-evaluation)
+	// Compare new values against captured old values (before newCfg was updated)
 	retentionChanged := false
 	if req.Rules != nil {
-		oldCfg := config.Get()
-		if oldCfg != nil {
-			if req.Rules.MovieRetention != oldCfg.Rules.MovieRetention ||
-				req.Rules.TVRetention != oldCfg.Rules.TVRetention {
-				retentionChanged = true
-				log.Info().Msg("Retention rules changed, will re-evaluate existing media")
-			}
+		if req.Rules.MovieRetention != oldMovieRetention ||
+			req.Rules.TVRetention != oldTVRetention {
+			retentionChanged = true
+			log.Info().
+				Str("old_movie", oldMovieRetention).
+				Str("new_movie", req.Rules.MovieRetention).
+				Str("old_tv", oldTVRetention).
+				Str("new_tv", req.Rules.TVRetention).
+				Msg("Retention rules changed, will re-evaluate existing media")
 		}
 	}
 	if req.AdvancedRules != nil {

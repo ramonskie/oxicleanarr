@@ -26,12 +26,12 @@ export default function DashboardPage() {
 
   const { data: movies } = useQuery({
     queryKey: ['movies'],
-    queryFn: () => apiClient.listMovies({ limit: 5 }),
+    queryFn: () => apiClient.listMovies(),
   });
 
   const { data: shows } = useQuery({
     queryKey: ['shows'],
-    queryFn: () => apiClient.listShows({ limit: 5 }),
+    queryFn: () => apiClient.listShows(),
   });
 
   const { data: syncStatus } = useQuery({
@@ -45,11 +45,22 @@ export default function DashboardPage() {
     queryFn: () => apiClient.listJobs(),
   });
 
-  // Get scheduled deletions count from latest job
+  // Get scheduled deletions count by counting overdue items from media queries
+  // Overdue = deletion_date < now (ready for deletion)
+  // This ensures the count updates immediately when retention rules change
   const scheduledDeletionsCount = (() => {
-    if (!jobsData?.jobs || jobsData.jobs.length === 0) return 0;
-    const latestJob = jobsData.jobs[0];
-    return latestJob.summary?.would_delete?.length || 0;
+    const now = new Date();
+    const allItems = [
+      ...(movies?.items || []),
+      ...(shows?.items || []),
+    ];
+    
+    return allItems.filter(item => {
+      if (!item.deletion_date || item.deletion_date === '0001-01-01T00:00:00Z') return false;
+      if (item.excluded) return false;
+      const deletionDate = new Date(item.deletion_date);
+      return deletionDate < now; // Overdue items only
+    }).length;
   })();
 
   const excludeMutation = useMutation({

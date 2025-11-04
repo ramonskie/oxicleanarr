@@ -710,6 +710,10 @@ func (e *SyncEngine) applyRetentionRules() {
 
 			// Set deletion reason for all items with deletion dates (both future and overdue)
 			media.DeletionReason = e.rules.GenerateDeletionReason(&media, deleteAfter, reason)
+		} else {
+			// Clear deletion info when no deletion is scheduled
+			media.DaysUntilDue = 0
+			media.DeletionReason = ""
 		}
 
 		e.mediaLibrary[id] = media
