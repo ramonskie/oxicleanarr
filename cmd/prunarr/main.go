@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/ramonskie/prunarr/internal/api"
+	"github.com/ramonskie/prunarr/internal/api/handlers"
 	"github.com/ramonskie/prunarr/internal/cache"
 	"github.com/ramonskie/prunarr/internal/config"
 	"github.com/ramonskie/prunarr/internal/services"
@@ -89,12 +90,19 @@ func main() {
 	}
 	log.Info().Msg("Sync engine started")
 
+	// Initialize SPA handler for serving frontend
+	distPath := getEnv("FRONTEND_DIST_PATH", "./web/dist")
+	spaHandler, err := handlers.NewSPAHandler(distPath)
+	if err != nil {
+		log.Warn().Err(err).Msg("Frontend not available, running in API-only mode")
+	}
+
 	// Create router with dependencies
 	router := api.NewRouter(&api.RouterDependencies{
 		AuthService: authService,
 		SyncEngine:  syncEngine,
 		JobsFile:    jobsFile,
-		SPAHandler:  nil,
+		SPAHandler:  spaHandler,
 	})
 	log.Info().Msg("Router initialized")
 

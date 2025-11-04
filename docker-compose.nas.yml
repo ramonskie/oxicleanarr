@@ -1,25 +1,37 @@
 services:
   prunarr:
-    build: .
+    image: prunarr:latest
     container_name: prunarr
     environment:
-      - PUID=1027
-      - PGID=65536
       - TZ=Europe/Amsterdam
-      - UMASK=022
+      - LOG_LEVEL=info
+      - LOG_FORMAT=json
     volumes:
-      # Config and data
-      - /volume3/docker/prunarr:/config
+      # Config file (single YAML file mount)
+      - /volume3/docker/prunarr/prunarr.yaml:/app/config/prunarr.yaml
+      
+      # Data directory (jobs, exclusions)
       - /volume3/docker/prunarr/data:/app/data
       
-      # Symlink directory (read-write for Prunarr to create symlinks)
-      - /volume1/data/media/prunarr-leaving-soon:/data/media/prunarr-leaving-soon
+      # Logs directory (optional - logs go to docker logs by default)
+      - /volume3/docker/prunarr/logs:/app/logs
       
-      # Media paths (read-only) - MUST match Radarr/Sonarr paths
+      # Symlink directory (read-write for Prunarr to create "Leaving Soon" symlinks)
+      # This path must be accessible by both Prunarr and Jellyfin containers
+      - /volume1/data/media/leaving-soon:/data/media/leaving-soon
+      
+      # Media paths (read-only) - MUST match Radarr/Sonarr/Jellyfin paths exactly
+      # Prunarr needs to read source files to create symlinks
       - /volume1/data:/data:ro
     ports:
       - 8080:8080
-    network_mode: synobridge
+    network_mode: bridge
     security_opt:
       - no-new-privileges:true
-    restart: always
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s

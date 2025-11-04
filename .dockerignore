@@ -1,0 +1,58 @@
+# Git files
+.git
+.gitignore
+.gitattributes
+
+# Documentation
+*.md
+docs/
+
+# Test files
+*_test.go
+test-*.sh
+**/*_test.go
+
+# Build artifacts
+prunarr
+prunarr-*
+*.exe
+*.test
+*.out
+
+# Data and config (runtime only)
+data/
+logs/
+config/prunarr.yaml
+config/prunarr.test.yaml
+config/prunarr.nas.yaml
+
+# Frontend development
+web/node_modules
+web/dist
+web/.vite
+web/.turbo
+
+# IDE files
+.vscode
+.idea
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Docker files (avoid recursion)
+Dockerfile*
+docker-compose*.yml
+.dockerignore
+
+# CI/CD
+.github
+.gitlab-ci.yml
+
+# Misc
+tmp/
+temp/
+*.log
