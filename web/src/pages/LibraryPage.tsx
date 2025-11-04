@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiClient } from '@/lib/api';
 import type { MediaItem } from '@/lib/types';
@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { useAuthStore } from '@/store/auth';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Clock, LogOut, Shield, ShieldOff } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 
@@ -19,6 +19,7 @@ const ITEMS_PER_PAGE = 50;
 
 export default function LibraryPage() {
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const logout = useAuthStore((state) => state.logout);
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -29,6 +30,15 @@ export default function LibraryPage() {
   const [sortOrder, setSortOrder] = useState<SortOrder>('asc');
   const [currentPage, setCurrentPage] = useState(1);
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
+  const [showUnmatchedOnly, setShowUnmatchedOnly] = useState(false);
+
+  // Read URL parameter on mount to determine if we should show unmatched items
+  useEffect(() => {
+    const unmatchedParam = searchParams.get('unmatched');
+    if (unmatchedParam === 'true') {
+      setShowUnmatchedOnly(true);
+    }
+  }, [searchParams]);
 
   // Fetch movies
   const { data: moviesData } = useQuery({
@@ -103,6 +113,14 @@ export default function LibraryPage() {
       });
     }
 
+    // Apply unmatched filter
+    if (showUnmatchedOnly) {
+      items = items.filter(item => 
+        item.jellyfin_match_status === 'metadata_mismatch' || 
+        item.jellyfin_match_status === 'not_found'
+      );
+    }
+
     // Apply sorting
     items.sort((a, b) => {
       let aVal: any;
@@ -168,6 +186,19 @@ export default function LibraryPage() {
   const handleClearTags = () => {
     setSelectedTags([]);
     setCurrentPage(1);
+  };
+
+  const handleToggleUnmatched = () => {
+    const newValue = !showUnmatchedOnly;
+    setShowUnmatchedOnly(newValue);
+    setCurrentPage(1);
+    
+    // Update URL parameter
+    if (newValue) {
+      setSearchParams({ unmatched: 'true' });
+    } else {
+      setSearchParams({});
+    }
   };
 
   const handleSortChange = (field: SortField) => {
@@ -347,6 +378,22 @@ export default function LibraryPage() {
                 onChange={(e) => handleSearchChange(e.target.value)}
               />
             </div>
+          </div>
+
+          {/* Unmatched Filter */}
+          <div className="flex gap-2 items-center">
+            <Button
+              variant={showUnmatchedOnly ? 'default' : 'outline'}
+              size="sm"
+              onClick={handleToggleUnmatched}
+            >
+              {showUnmatchedOnly ? '✓ ' : ''}Show Only Unmatched Items
+            </Button>
+            {showUnmatchedOnly && (
+              <span className="text-sm text-gray-600">
+                Showing items with Jellyfin metadata mismatches or not found in Jellyfin
+              </span>
+            )}
           </div>
 
           {/* Tag Filter */}
