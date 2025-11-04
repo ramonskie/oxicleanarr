@@ -67,18 +67,36 @@ func Validate(cfg *Config) error {
 	if cfg.Integrations.Jellyfin.Enabled {
 		errors = validateIntegration(errors, "integrations.jellyfin", cfg.Integrations.Jellyfin.URL, cfg.Integrations.Jellyfin.APIKey)
 
-		// Validate collections config
-		if cfg.Integrations.Jellyfin.Collections.Enabled {
-			if cfg.Integrations.Jellyfin.Collections.Movies.Name == "" {
+		// Validate symlink library config
+		if cfg.Integrations.Jellyfin.SymlinkLibrary.Enabled {
+			if cfg.Integrations.Jellyfin.SymlinkLibrary.SymlinkBasePath == "" {
 				errors = append(errors, ValidationError{
-					Field:   "integrations.jellyfin.collections.movies.name",
-					Message: "required when collections.enabled=true",
+					Field:   "integrations.jellyfin.symlink_library.symlink_base_path",
+					Message: "required when symlink_library.enabled=true",
 				})
 			}
-			if cfg.Integrations.Jellyfin.Collections.TVShows.Name == "" {
+			if cfg.Integrations.Jellyfin.SymlinkLibrary.Movies.Name == "" {
 				errors = append(errors, ValidationError{
-					Field:   "integrations.jellyfin.collections.tv_shows.name",
-					Message: "required when collections.enabled=true",
+					Field:   "integrations.jellyfin.symlink_library.movies.name",
+					Message: "required when symlink_library.enabled=true",
+				})
+			}
+			if cfg.Integrations.Jellyfin.SymlinkLibrary.Movies.CollectionType == "" {
+				errors = append(errors, ValidationError{
+					Field:   "integrations.jellyfin.symlink_library.movies.collection_type",
+					Message: "required when symlink_library.enabled=true (use 'movies')",
+				})
+			}
+			if cfg.Integrations.Jellyfin.SymlinkLibrary.TVShows.Name == "" {
+				errors = append(errors, ValidationError{
+					Field:   "integrations.jellyfin.symlink_library.tv_shows.name",
+					Message: "required when symlink_library.enabled=true",
+				})
+			}
+			if cfg.Integrations.Jellyfin.SymlinkLibrary.TVShows.CollectionType == "" {
+				errors = append(errors, ValidationError{
+					Field:   "integrations.jellyfin.symlink_library.tv_shows.collection_type",
+					Message: "required when symlink_library.enabled=true (use 'tvshows')",
 				})
 			}
 		}

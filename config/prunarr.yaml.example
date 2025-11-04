@@ -11,15 +11,31 @@ integrations:
     url: http://jellyfin:8096
     api_key: your-jellyfin-api-key-here
     
-    # Collections: Create "Leaving Soon" collections (separate for movies and TV)
-    # collections:
+    # Symlink Libraries: Create separate Jellyfin libraries for "Leaving Soon" items
+    # NOTE: Requires Docker volume mapping for symlink directories
+    # symlink_library:
     #   enabled: true
+    #   base_path: /symlinks              # Base directory for symlinks (MUST be writable by Prunarr)
     #   movies:
-    #     name: "Movies - Leaving Soon"
-    #     hide_when_empty: true    # Delete/hide collection when no items
+    #     library_name: "Movies - Leaving Soon"
+    #     collection_type: "movies"       # Jellyfin collection type
     #   tv_shows:
-    #     name: "TV Shows - Leaving Soon"
-    #     hide_when_empty: true
+    #     library_name: "TV Shows - Leaving Soon"
+    #     collection_type: "tvshows"      # Jellyfin collection type
+    #
+    # Docker Volume Mapping Example:
+    #   prunarr:
+    #     volumes:
+    #       - /path/on/host/symlinks:/symlinks              # Symlink directory (rw)
+    #       - /path/on/host/movies:/movies:ro               # Original movies (read-only)
+    #       - /path/on/host/tv:/tv:ro                       # Original TV shows (read-only)
+    #   jellyfin:
+    #     volumes:
+    #       - /path/on/host/symlinks:/symlinks:ro           # Symlink directory (read-only)
+    #       - /path/on/host/movies:/movies:ro               # Original movies (read-only)
+    #       - /path/on/host/tv:/tv:ro                       # Original TV shows (read-only)
+    #
+    # IMPORTANT: Both containers must see the same paths for media files!
   
   radarr:
     enabled: true

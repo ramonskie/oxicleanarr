@@ -157,12 +157,11 @@ func (c *JellyfinClient) Ping(ctx context.Context) error {
 	return nil
 }
 
-// GetCollectionByName finds a collection by name
-func (c *JellyfinClient) GetCollectionByName(ctx context.Context, name string) (*JellyfinCollection, error) {
-	url := fmt.Sprintf("%s/Items?IncludeItemTypes=BoxSet&Recursive=true&SearchTerm=%s&api_key=%s",
-		c.baseURL, url.QueryEscape(name), c.apiKey)
+// GetVirtualFolders lists all virtual folders (libraries) in Jellyfin
+func (c *JellyfinClient) GetVirtualFolders(ctx context.Context) ([]JellyfinVirtualFolder, error) {
+	reqURL := fmt.Sprintf("%s/Library/VirtualFolders?api_key=%s", c.baseURL, c.apiKey)
 
-	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+	req, err := http.NewRequestWithContext(ctx, "GET", reqURL, nil)
 	if err != nil {
 		return nil, fmt.Errorf("creating request: %w", err)
 	}
@@ -179,115 +178,54 @@ func (c *JellyfinClient) GetCollectionByName(ctx context.Context, name string) (
 		return nil, fmt.Errorf("unexpected status code: %d", resp.StatusCode)
 	}
 
-	var result JellyfinCollectionResponse
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+	var folders []JellyfinVirtualFolder
+	if err := json.NewDecoder(resp.Body).Decode(&folders); err != nil {
 		return nil, fmt.Errorf("decoding response: %w", err)
 	}
 
-	// Find exact match
-	for _, col := range result.Items {
-		if col.Name == name {
-			log.Debug().
-				Str("collection_id", col.ID).
-				Str("collection_name", col.Name).
-				Msg("Found collection in Jellyfin")
-			return &col, nil
-		}
-	}
-
-	return nil, nil // Not found
-}
-
-// CreateCollection creates a new collection (BoxSet)
-func (c *JellyfinClient) CreateCollection(ctx context.Context, name string, itemIDs []string, dryRun bool) (string, error) {
-	if dryRun {
-		log.Info().
-			Str("collection_name", name).
-			Int("item_count", len(itemIDs)).
-			Bool("dry_run", true).
-			Msg("[DRY-RUN] Would create collection in Jellyfin")
-		return "dry-run-collection-id", nil
-	}
-
 	log.Debug().
-		Str("collection_name", name).
-		Int("item_count", len(itemIDs)).
-		Strs("item_ids_sample", func() []string {
-			if len(itemIDs) > 3 {
-				return itemIDs[:3]
-			}
-			return itemIDs
-		}()).
-		Msg("Creating collection in Jellyfin")
+		Int("count", len(folders)).
+		Msg("Fetched virtual folders from Jellyfin")
 
-	url := fmt.Sprintf("%s/Collections?name=%s&api_key=%s", c.baseURL, url.QueryEscape(name), c.apiKey)
-
-	// Add item IDs as query params
-	if len(itemIDs) > 0 {
-		url += "&ids=" + itemIDs[0]
-		for _, id := range itemIDs[1:] {
-			url += "," + id
-		}
-	}
-
-	req, err := http.NewRequestWithContext(ctx, "POST", url, http.NoBody)
-	if err != nil {
-		return "", fmt.Errorf("creating request: %w", err)
-	}
-
-	req.Header.Set("Accept", "application/json")
-
-	resp, err := c.client.Do(req)
-	if err != nil {
-		return "", fmt.Errorf("making request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
-		return "", fmt.Errorf("unexpected status code: %d", resp.StatusCode)
-	}
-
-	var result JellyfinCollection
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return "", fmt.Errorf("decoding response: %w", err)
-	}
-
-	log.Info().
-		Str("collection_id", result.ID).
-		Str("collection_name", name).
-		Int("item_count", len(itemIDs)).
-		Msg("Created collection in Jellyfin")
-
-	return result.ID, nil
+	return folders, nil
 }
 
-// AddItemsToCollection adds items to an existing collection
-func (c *JellyfinClient) AddItemsToCollection(ctx context.Context, collectionID string, itemIDs []string, dryRun bool) error {
+// CreateVirtualFolder creates a new virtual folder (library) in Jellyfin
+func (c *JellyfinClient) CreateVirtualFolder(ctx context.Context, name, collectionType string, paths []string, dryRun bool) error {
 	if dryRun {
 		log.Info().
-			Str("collection_id", collectionID).
-			Int("item_count", len(itemIDs)).
-			Bool("dry_run", true).
-			Msg("[DRY-RUN] Would add items to collection in Jellyfin")
+			Str("library_name", name).
+			Str("collection_type", collectionType).
+			Strs("paths", paths).
+			Msg("[DRY-RUN] Would create virtual folder in Jellyfin")
 		return nil
 	}
 
-	if len(itemIDs) == 0 {
-		return nil
+	// Build query parameters
+	params := url.Values{}
+	params.Set("name", name)
+	params.Set("collectionType", collectionType)
+	params.Set("refreshLibrary", "false") // Don't auto-scan, we'll manage content
+
+	// Add paths to query
+	for _, path := range paths {
+		params.Add("paths", path)
 	}
 
-	url := fmt.Sprintf("%s/Collections/%s/Items?api_key=%s", c.baseURL, collectionID, c.apiKey)
+	reqURL := fmt.Sprintf("%s/Library/VirtualFolders?%s&api_key=%s", c.baseURL, params.Encode(), c.apiKey)
 
-	// Add item IDs as query params
-	url += "&ids=" + itemIDs[0]
-	for _, id := range itemIDs[1:] {
-		url += "," + id
-	}
-
-	req, err := http.NewRequestWithContext(ctx, "POST", url, http.NoBody)
+	req, err := http.NewRequestWithContext(ctx, "POST", reqURL, nil)
 	if err != nil {
 		return fmt.Errorf("creating request: %w", err)
 	}
+
+	req.Header.Set("Content-Type", "application/json")
+
+	log.Info().
+		Str("library_name", name).
+		Str("collection_type", collectionType).
+		Strs("paths", paths).
+		Msg("Creating virtual folder in Jellyfin")
 
 	resp, err := c.client.Do(req)
 	if err != nil {
@@ -300,40 +238,33 @@ func (c *JellyfinClient) AddItemsToCollection(ctx context.Context, collectionID 
 	}
 
 	log.Info().
-		Str("collection_id", collectionID).
-		Int("item_count", len(itemIDs)).
-		Msg("Added items to collection in Jellyfin")
+		Str("library_name", name).
+		Str("collection_type", collectionType).
+		Msg("Created virtual folder in Jellyfin")
 
 	return nil
 }
 
-// RemoveItemsFromCollection removes items from a collection
-func (c *JellyfinClient) RemoveItemsFromCollection(ctx context.Context, collectionID string, itemIDs []string, dryRun bool) error {
+// DeleteVirtualFolder deletes a virtual folder (library) by name
+func (c *JellyfinClient) DeleteVirtualFolder(ctx context.Context, name string, dryRun bool) error {
 	if dryRun {
 		log.Info().
-			Str("collection_id", collectionID).
-			Int("item_count", len(itemIDs)).
-			Bool("dry_run", true).
-			Msg("[DRY-RUN] Would remove items from collection in Jellyfin")
+			Str("library_name", name).
+			Msg("[DRY-RUN] Would delete virtual folder from Jellyfin")
 		return nil
 	}
 
-	if len(itemIDs) == 0 {
-		return nil
-	}
+	reqURL := fmt.Sprintf("%s/Library/VirtualFolders?name=%s&api_key=%s",
+		c.baseURL, url.QueryEscape(name), c.apiKey)
 
-	url := fmt.Sprintf("%s/Collections/%s/Items?api_key=%s", c.baseURL, collectionID, c.apiKey)
-
-	// Add item IDs as query params
-	url += "&ids=" + itemIDs[0]
-	for _, id := range itemIDs[1:] {
-		url += "," + id
-	}
-
-	req, err := http.NewRequestWithContext(ctx, "DELETE", url, nil)
+	req, err := http.NewRequestWithContext(ctx, "DELETE", reqURL, nil)
 	if err != nil {
 		return fmt.Errorf("creating request: %w", err)
 	}
+
+	log.Info().
+		Str("library_name", name).
+		Msg("Deleting virtual folder from Jellyfin")
 
 	resp, err := c.client.Do(req)
 	if err != nil {
@@ -346,29 +277,46 @@ func (c *JellyfinClient) RemoveItemsFromCollection(ctx context.Context, collecti
 	}
 
 	log.Info().
-		Str("collection_id", collectionID).
-		Int("item_count", len(itemIDs)).
-		Msg("Removed items from collection in Jellyfin")
+		Str("library_name", name).
+		Msg("Deleted virtual folder from Jellyfin")
 
 	return nil
 }
 
-// DeleteCollection deletes a collection
-func (c *JellyfinClient) DeleteCollection(ctx context.Context, collectionID string, dryRun bool) error {
+// AddPathToVirtualFolder adds a path to an existing virtual folder
+func (c *JellyfinClient) AddPathToVirtualFolder(ctx context.Context, name, path string, dryRun bool) error {
 	if dryRun {
 		log.Info().
-			Str("collection_id", collectionID).
-			Bool("dry_run", true).
-			Msg("[DRY-RUN] Would delete collection from Jellyfin")
+			Str("library_name", name).
+			Str("path", path).
+			Msg("[DRY-RUN] Would add path to virtual folder in Jellyfin")
 		return nil
 	}
 
-	url := fmt.Sprintf("%s/Items/%s?api_key=%s", c.baseURL, collectionID, c.apiKey)
+	// Build request body
+	type addPathRequest struct {
+		Path string `json:"Path"`
+	}
+	reqBody := addPathRequest{Path: path}
+	bodyBytes, err := json.Marshal(reqBody)
+	if err != nil {
+		return fmt.Errorf("marshaling request: %w", err)
+	}
 
-	req, err := http.NewRequestWithContext(ctx, "DELETE", url, nil)
+	reqURL := fmt.Sprintf("%s/Library/VirtualFolders/Paths?name=%s&api_key=%s",
+		c.baseURL, url.QueryEscape(name), c.apiKey)
+
+	req, err := http.NewRequestWithContext(ctx, "POST", reqURL, nil)
 	if err != nil {
 		return fmt.Errorf("creating request: %w", err)
 	}
+
+	req.Header.Set("Content-Type", "application/json")
+
+	log.Info().
+		Str("library_name", name).
+		Str("path", path).
+		Msg("Adding path to virtual folder in Jellyfin")
 
 	resp, err := c.client.Do(req)
 	if err != nil {
@@ -376,13 +324,17 @@ func (c *JellyfinClient) DeleteCollection(ctx context.Context, collectionID stri
 	}
 	defer resp.Body.Close()
 
+	// Read response body for debugging
+	_ = bodyBytes // Use the variable
+
 	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusNoContent {
 		return fmt.Errorf("unexpected status code: %d", resp.StatusCode)
 	}
 
 	log.Info().
-		Str("collection_id", collectionID).
-		Msg("Deleted collection from Jellyfin")
+		Str("library_name", name).
+		Str("path", path).
+		Msg("Added path to virtual folder in Jellyfin")
 
 	return nil
 }

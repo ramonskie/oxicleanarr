@@ -16,17 +16,27 @@ type JellyfinItem struct {
 	ProviderIds    map[string]string `json:"ProviderIds"`
 }
 
-// JellyfinCollection represents a collection (BoxSet) in Jellyfin
-type JellyfinCollection struct {
-	ID   string `json:"Id"`
-	Name string `json:"Name"`
-	Type string `json:"Type"` // Should be "BoxSet"
+// JellyfinVirtualFolder represents a virtual folder (library) in Jellyfin
+type JellyfinVirtualFolder struct {
+	Name           string                       `json:"Name"`
+	Locations      []string                     `json:"Locations"`
+	CollectionType string                       `json:"CollectionType"` // "movies", "tvshows", etc.
+	LibraryOptions JellyfinVirtualFolderOptions `json:"LibraryOptions,omitempty"`
+	ItemId         string                       `json:"ItemId,omitempty"`
 }
 
-// JellyfinCollectionResponse represents the response when searching for collections
-type JellyfinCollectionResponse struct {
-	Items            []JellyfinCollection `json:"Items"`
-	TotalRecordCount int                  `json:"TotalRecordCount"`
+// JellyfinVirtualFolderOptions represents library options
+type JellyfinVirtualFolderOptions struct {
+	EnablePhotos                          bool               `json:"EnablePhotos,omitempty"`
+	EnableRealtimeMonitor                 bool               `json:"EnableRealtimeMonitor,omitempty"`
+	EnableChapterImageExtraction          bool               `json:"EnableChapterImageExtraction,omitempty"`
+	ExtractChapterImagesDuringLibraryScan bool               `json:"ExtractChapterImagesDuringLibraryScan,omitempty"`
+	PathInfos                             []JellyfinPathInfo `json:"PathInfos,omitempty"`
+}
+
+// JellyfinPathInfo represents path information for a library
+type JellyfinPathInfo struct {
+	Path string `json:"Path"`
 }
 
 // JellyfinUserData represents user-specific data for a Jellyfin item

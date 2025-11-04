@@ -64,23 +64,24 @@ type BaseIntegrationConfig struct {
 // JellyfinConfig holds Jellyfin integration settings
 type JellyfinConfig struct {
 	BaseIntegrationConfig `mapstructure:",squash" yaml:",inline" json:",inline"`
-	Username              string            `mapstructure:"username" yaml:"username" json:"username"`
-	Password              string            `mapstructure:"password" yaml:"password" json:"password"`
-	LeavingSoonType       string            `mapstructure:"leaving_soon_type" yaml:"leaving_soon_type" json:"leaving_soon_type"`
-	Collections           CollectionsConfig `mapstructure:"collections" yaml:"collections" json:"collections"`
+	Username              string               `mapstructure:"username" yaml:"username" json:"username"`
+	Password              string               `mapstructure:"password" yaml:"password" json:"password"`
+	LeavingSoonType       string               `mapstructure:"leaving_soon_type" yaml:"leaving_soon_type" json:"leaving_soon_type"`
+	SymlinkLibrary        SymlinkLibraryConfig `mapstructure:"symlink_library" yaml:"symlink_library" json:"symlink_library"`
 }
 
-// CollectionsConfig holds Jellyfin collection management settings
-type CollectionsConfig struct {
-	Enabled bool                 `mapstructure:"enabled" yaml:"enabled" json:"enabled"`
-	Movies  CollectionItemConfig `mapstructure:"movies" yaml:"movies" json:"movies"`
-	TVShows CollectionItemConfig `mapstructure:"tv_shows" yaml:"tv_shows" json:"tv_shows"`
+// SymlinkLibraryConfig holds symlink-based library management settings
+type SymlinkLibraryConfig struct {
+	Enabled         bool              `mapstructure:"enabled" yaml:"enabled" json:"enabled"`
+	SymlinkBasePath string            `mapstructure:"symlink_base_path" yaml:"symlink_base_path" json:"symlink_base_path"` // Base directory for symlinks (e.g., /app/leaving-soon)
+	Movies          LibraryItemConfig `mapstructure:"movies" yaml:"movies" json:"movies"`
+	TVShows         LibraryItemConfig `mapstructure:"tv_shows" yaml:"tv_shows" json:"tv_shows"`
 }
 
-// CollectionItemConfig holds settings for a specific collection
-type CollectionItemConfig struct {
-	Name          string `mapstructure:"name" yaml:"name" json:"name"`
-	HideWhenEmpty bool   `mapstructure:"hide_when_empty" yaml:"hide_when_empty" json:"hide_when_empty"`
+// LibraryItemConfig holds settings for a specific symlink library
+type LibraryItemConfig struct {
+	Name           string `mapstructure:"name" yaml:"name" json:"name"`                                  // Virtual folder name in Jellyfin (e.g., "Leaving Soon - Movies")
+	CollectionType string `mapstructure:"collection_type" yaml:"collection_type" json:"collection_type"` // Jellyfin collection type: "movies" or "tvshows"
 }
 
 // RadarrConfig holds Radarr integration settings

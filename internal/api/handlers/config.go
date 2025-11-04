@@ -60,14 +60,14 @@ type SanitizedBaseIntegrationConfig struct {
 
 // SanitizedJellyfinConfig holds sanitized Jellyfin config
 type SanitizedJellyfinConfig struct {
-	Enabled         bool                     `json:"enabled"`
-	URL             string                   `json:"url"`
-	HasAPIKey       bool                     `json:"has_api_key"`
-	Timeout         string                   `json:"timeout"`
-	Username        string                   `json:"username"`
-	HasPassword     bool                     `json:"has_password"`
-	LeavingSoonType string                   `json:"leaving_soon_type"`
-	Collections     config.CollectionsConfig `json:"collections"`
+	Enabled         bool                        `json:"enabled"`
+	URL             string                      `json:"url"`
+	HasAPIKey       bool                        `json:"has_api_key"`
+	Timeout         string                      `json:"timeout"`
+	Username        string                      `json:"username"`
+	HasPassword     bool                        `json:"has_password"`
+	LeavingSoonType string                      `json:"leaving_soon_type"`
+	SymlinkLibrary  config.SymlinkLibraryConfig `json:"symlink_library"`
 }
 
 // GetConfig handles GET /api/config
@@ -101,7 +101,7 @@ func (h *ConfigHandler) GetConfig(w http.ResponseWriter, r *http.Request) {
 				Username:        cfg.Integrations.Jellyfin.Username,
 				HasPassword:     cfg.Integrations.Jellyfin.Password != "",
 				LeavingSoonType: cfg.Integrations.Jellyfin.LeavingSoonType,
-				Collections:     cfg.Integrations.Jellyfin.Collections,
+				SymlinkLibrary:  cfg.Integrations.Jellyfin.SymlinkLibrary,
 			},
 			Radarr: SanitizedBaseIntegrationConfig{
 				Enabled:   cfg.Integrations.Radarr.Enabled,
@@ -172,14 +172,14 @@ type UpdateBaseIntegrationConfig struct {
 
 // UpdateJellyfinConfig holds updatable Jellyfin config
 type UpdateJellyfinConfig struct {
-	Enabled         *bool                     `json:"enabled,omitempty"`
-	URL             *string                   `json:"url,omitempty"`
-	APIKey          *string                   `json:"api_key,omitempty"`
-	Timeout         *string                   `json:"timeout,omitempty"`
-	Username        *string                   `json:"username,omitempty"`
-	Password        *string                   `json:"password,omitempty"`
-	LeavingSoonType *string                   `json:"leaving_soon_type,omitempty"`
-	Collections     *config.CollectionsConfig `json:"collections,omitempty"`
+	Enabled         *bool                        `json:"enabled,omitempty"`
+	URL             *string                      `json:"url,omitempty"`
+	APIKey          *string                      `json:"api_key,omitempty"`
+	Timeout         *string                      `json:"timeout,omitempty"`
+	Username        *string                      `json:"username,omitempty"`
+	Password        *string                      `json:"password,omitempty"`
+	LeavingSoonType *string                      `json:"leaving_soon_type,omitempty"`
+	SymlinkLibrary  *config.SymlinkLibraryConfig `json:"symlink_library,omitempty"`
 }
 
 // UpdateConfig handles PUT /api/config
@@ -262,8 +262,8 @@ func (h *ConfigHandler) UpdateConfig(w http.ResponseWriter, r *http.Request) {
 			if req.Integrations.Jellyfin.LeavingSoonType != nil {
 				newCfg.Integrations.Jellyfin.LeavingSoonType = *req.Integrations.Jellyfin.LeavingSoonType
 			}
-			if req.Integrations.Jellyfin.Collections != nil {
-				newCfg.Integrations.Jellyfin.Collections = *req.Integrations.Jellyfin.Collections
+			if req.Integrations.Jellyfin.SymlinkLibrary != nil {
+				newCfg.Integrations.Jellyfin.SymlinkLibrary = *req.Integrations.Jellyfin.SymlinkLibrary
 			}
 		}
 
