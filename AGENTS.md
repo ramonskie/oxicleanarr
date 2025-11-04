@@ -55,7 +55,7 @@ This document provides essential context for AI coding agents working on the Pru
 ⏳ Comprehensive error handling  
 
 ### Testing Status
-- **380 tests passing** (increased from 111 in Session 15)
+- **381 tests passing** (109 test functions with subtests)
 - **Coverage**: Handlers 89.0%, Storage 92.7%, Services 58.3%+, Clients 5.8%
 
 ---
@@ -168,23 +168,77 @@ This document provides essential context for AI coding agents working on the Pru
 - Leaving-soon API: 18 items with "10d" in deletion reasons (correct)
 - Auto-sync triggered within 1 second after config API updates (correct)
 
+### Part 4: Frontend Cache Issue Resolution - COMPLETED ✅
+
+**Work Completed:**
+- ✅ Investigated user report: Frontend showing 359 items despite 0d retention
+- ✅ Identified dual-cause issue: Frontend cache + backend stale in-memory data
+- ✅ Fixed TanStack Query configuration (refetchOnWindowFocus)
+- ✅ Restarted backend with fresh sync after retention changes
+- ✅ All 381 test runs passing
+
+**Problem Identified:**
+- User reported frontend showing **359 scheduled deletions** despite config set to `0d` retention
+- Backend API correctly returned **1-2 items** (tag rule exceptions only)
+- Root causes:
+  1. **Frontend**: `refetchOnWindowFocus: false` prevented automatic cache refresh
+  2. **Backend**: Old process had in-memory data from previous higher retention
+
+**Investigation Process:**
+- Verified backend APIs working correctly (leaving-soon: 1 item, config: 0d retention)
+- Identified TanStack Query cache showing stale data
+- Discovered backend process started before retention changes (still had old in-memory cache)
+- Config hot-reload updates config but doesn't re-evaluate existing media
+
+**Solution Implemented:**
+1. **Frontend Fix** (`web/src/App.tsx`):
+   - Changed `refetchOnWindowFocus: false` → `true`
+   - Added `staleTime: 30000` (30 seconds)
+   - Enables automatic refetch when switching browser tabs
+   - Improves cross-tab synchronization
+
+2. **Backend Fix**:
+   - Stopped old backend process (PID 473594)
+   - Rebuilt binary: `go build -o prunarr-test`
+   - Started fresh backend (PID 491951) with clean sync
+   - Full sync completed: 0 scheduled deletions (correct!)
+
+**Files Modified:**
+- `web/src/App.tsx` (+2 lines, -1 line) - QueryClient refetch configuration
+
+**Commits:**
+4. `25b7711` - fix: enable refetchOnWindowFocus for cross-tab query updates
+
+**Testing Results:**
+- ✅ All 381 test runs passing (109 test functions)
+- ✅ Frontend builds successfully (442.24 kB, gzipped: 131.24 kB)
+- ✅ Backend API: Leaving-soon returns 1 item (tag rule exception)
+- ✅ Backend API: Movies endpoint shows 1 scheduled deletion
+- ✅ Config API: Returns 0d retention correctly
+- ✅ Full sync: 255 movies, 123 TV shows, 0 standard deletions
+
 **Current State:**
-- Running: Yes (backend + frontend dev server)
-- Tests passing: 109/109 functions ✅ (380 test runs with subtests)
+- Running: Yes (backend PID 491951 + frontend dev server)
+- Tests passing: 109/109 functions ✅ (381 test runs with subtests)
 - Known issues: None
 - Session 18: COMPLETE ✅
 
 **Key Lessons:**
-1. **Debug logging value**: Helps verify system behavior during troubleshooting
-2. **File watcher caveat**: `sed -i` creates new files, breaking fsnotify watch
-3. **API-first approach**: Config API endpoint more reliable than direct file edits
-4. **System integrity**: Sessions 13 + 17 features working correctly together
+1. **In-memory state matters**: Config hot-reload updates config but doesn't re-evaluate existing data
+2. **Process restart needed**: When testing retention changes, restart backend for clean slate
+3. **TanStack Query defaults**: `refetchOnWindowFocus: false` is too aggressive for multi-tab apps
+4. **Cross-component invalidation**: Query invalidation only works for active queries or with refetchOnWindowFocus
+5. **Debug logging value**: Helps verify system behavior during troubleshooting
+6. **File watcher caveat**: `sed -i` creates new files, breaking fsnotify watch
+7. **API-first approach**: Config API endpoint more reliable than direct file edits
+8. **System integrity**: Sessions 13 + 17 features working correctly together
 
 **Next Session TODO:**
 - [ ] User-based cleanup with watch tracking integration
 - [ ] Mobile responsiveness improvements
 - [ ] Statistics/charts for disk space trends
 - [ ] Consider file watcher improvements (detect file replacement vs modification)
+- [ ] Consider adding "Refresh Data" button in UI for manual cache clearing
 
 ---
 
