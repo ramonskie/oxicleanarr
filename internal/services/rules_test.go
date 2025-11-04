@@ -1654,3 +1654,463 @@ func TestRulesEngine_GenerateDeletionReason(t *testing.T) {
 		assert.Contains(t, reason, reasonStr)
 	})
 }
+
+func TestRulesEngine_EvaluateTagBasedRules(t *testing.T) {
+	now := time.Now()
+
+	t.Run("no tag rules configured", func(t *testing.T) {
+		cfg := createMockConfig("90d", "120d", 14)
+		exclusions := createMockExclusions()
+		engine := NewRulesEngine(cfg, exclusions)
+
+		media := createMockMedia("movie-1", models.MediaTypeMovie, 30, -1, false, false)
+		media.Tags = []string{"test-tag"}
+
+		shouldDelete, deleteAfter, reason := engine.EvaluateMedia(&media)
+
+		// Should fall through to standard retention rules
+		assert.False(t, shouldDelete)
+		assert.Equal(t, "within retention", reason)
+		assert.False(t, deleteAfter.IsZero())
+	})
+
+	t.Run("tag rule matches - within retention", func(t *testing.T) {
+		cfg := createMockConfig("90d", "120d", 14)
+		cfg.AdvancedRules = []config.AdvancedRule{
+			{
+				Name:      "Demo Content",
+				Type:      "tag",
+				Enabled:   true,
+				Tag:       "demo",
+				Retention: "30d",
+			},
+		}
+		exclusions := createMockExclusions()
+		engine := NewRulesEngine(cfg, exclusions)
+
+		media := createMockMedia("movie-1", models.MediaTypeMovie, 15, -1, false, false)
+		media.Tags = []string{"demo"}
+
+		shouldDelete, deleteAfter, reason := engine.EvaluateMedia(&media)
+
+		assert.False(t, shouldDelete)
+		assert.False(t, deleteAfter.IsZero())
+		assert.Contains(t, reason, "tag rule 'Demo Content'")
+		assert.Contains(t, reason, "within retention")
+		assert.Contains(t, reason, "30d")
+
+		// Verify delete after is calculated correctly (15 days ago + 30 days retention = 15 days from now)
+		expectedDeleteAfter := media.AddedAt.Add(30 * 24 * time.Hour)
+		assert.WithinDuration(t, expectedDeleteAfter, deleteAfter, time.Second)
+	})
+
+	t.Run("tag rule matches - past retention", func(t *testing.T) {
+		cfg := createMockConfig("90d", "120d", 14)
+		cfg.AdvancedRules = []config.AdvancedRule{
+			{
+				Name:      "Demo Content",
+				Type:      "tag",
+				Enabled:   true,
+				Tag:       "demo",
+				Retention: "30d",
+			},
+		}
+		exclusions := createMockExclusions()
+		engine := NewRulesEngine(cfg, exclusions)
+
+		media := createMockMedia("movie-1", models.MediaTypeMovie, 45, -1, false, false)
+		media.Tags = []string{"demo"}
+
+		shouldDelete, deleteAfter, reason := engine.EvaluateMedia(&media)
+
+		assert.True(t, shouldDelete)
+		assert.False(t, deleteAfter.IsZero())
+		assert.Contains(t, reason, "tag rule 'Demo Content'")
+		assert.Contains(t, reason, "retention expired")
+		assert.Contains(t, reason, "30d")
+
+		// Verify delete after is in the past (45 days ago + 30 days retention = 15 days ago)
+		expectedDeleteAfter := media.AddedAt.Add(30 * 24 * time.Hour)
+		assert.WithinDuration(t, expectedDeleteAfter, deleteAfter, time.Second)
+		assert.True(t, now.After(deleteAfter))
+	})
+
+	t.Run("tag rule matches - case insensitive", func(t *testing.T) {
+		cfg := createMockConfig("90d", "120d", 14)
+		cfg.AdvancedRules = []config.AdvancedRule{
+			{
+				Name:      "Test Content",
+				Type:      "tag",
+				Enabled:   true,
+				Tag:       "DEMO",
+				Retention: "30d",
+			},
+		}
+		exclusions := createMockExclusions()
+		engine := NewRulesEngine(cfg, exclusions)
+
+		// Media has lowercase tag, rule has uppercase
+		media := createMockMedia("movie-1", models.MediaTypeMovie, 15, -1, false, false)
+		media.Tags = []string{"demo"}
+
+		shouldDelete, deleteAfter, reason := engine.EvaluateMedia(&media)
+
+		assert.False(t, shouldDelete)
+		assert.Contains(t, reason, "tag rule 'Test Content'")
+		assert.False(t, deleteAfter.IsZero())
+	})
+
+	t.Run("tag rule matches - multiple tags on media", func(t *testing.T) {
+		cfg := createMockConfig("90d", "120d", 14)
+		cfg.AdvancedRules = []config.AdvancedRule{
+			{
+				Name:      "Demo Content",
+				Type:      "tag",
+				Enabled:   true,
+				Tag:       "demo",
+				Retention: "30d",
+			},
+		}
+		exclusions := createMockExclusions()
+		engine := NewRulesEngine(cfg, exclusions)
+
+		media := createMockMedia("movie-1", models.MediaTypeMovie, 15, -1, false, false)
+		media.Tags = []string{"other-tag", "demo", "another-tag"}
+
+		shouldDelete, deleteAfter, reason := engine.EvaluateMedia(&media)
+
+		assert.False(t, shouldDelete)
+		assert.Contains(t, reason, "tag rule 'Demo Content'")
+		assert.False(t, deleteAfter.IsZero())
+	})
+
+	t.Run("tag rule does not match - different tag", func(t *testing.T) {
+		cfg := createMockConfig("90d", "120d", 14)
+		cfg.AdvancedRules = []config.AdvancedRule{
+			{
+				Name:      "Demo Content",
+				Type:      "tag",
+				Enabled:   true,
+				Tag:       "demo",
+				Retention: "30d",
+			},
+		}
+		exclusions := createMockExclusions()
+		engine := NewRulesEngine(cfg, exclusions)
+
+		media := createMockMedia("movie-1", models.MediaTypeMovie, 15, -1, false, false)
+		media.Tags = []string{"other-tag"}
+
+		shouldDelete, deleteAfter, reason := engine.EvaluateMedia(&media)
+
+		// Should fall through to standard retention rules
+		assert.False(t, shouldDelete)
+		assert.Equal(t, "within retention", reason)
+		assert.False(t, deleteAfter.IsZero())
+	})
+
+	t.Run("tag rule disabled", func(t *testing.T) {
+		cfg := createMockConfig("90d", "120d", 14)
+		cfg.AdvancedRules = []config.AdvancedRule{
+			{
+				Name:      "Demo Content",
+				Type:      "tag",
+				Enabled:   false, // Disabled
+				Tag:       "demo",
+				Retention: "30d",
+			},
+		}
+		exclusions := createMockExclusions()
+		engine := NewRulesEngine(cfg, exclusions)
+
+		media := createMockMedia("movie-1", models.MediaTypeMovie, 15, -1, false, false)
+		media.Tags = []string{"demo"}
+
+		shouldDelete, deleteAfter, reason := engine.EvaluateMedia(&media)
+
+		// Should fall through to standard retention rules (rule is disabled)
+		assert.False(t, shouldDelete)
+		assert.Equal(t, "within retention", reason)
+		assert.False(t, deleteAfter.IsZero())
+	})
+
+	t.Run("tag rule uses last watched date when available", func(t *testing.T) {
+		cfg := createMockConfig("90d", "120d", 14)
+		cfg.AdvancedRules = []config.AdvancedRule{
+			{
+				Name:      "Demo Content",
+				Type:      "tag",
+				Enabled:   true,
+				Tag:       "demo",
+				Retention: "30d",
+			},
+		}
+		exclusions := createMockExclusions()
+		engine := NewRulesEngine(cfg, exclusions)
+
+		// Added 100 days ago but watched 10 days ago
+		media := createMockMedia("movie-1", models.MediaTypeMovie, 100, 10, false, false)
+		media.Tags = []string{"demo"}
+
+		shouldDelete, deleteAfter, reason := engine.EvaluateMedia(&media)
+
+		assert.False(t, shouldDelete)
+		assert.Contains(t, reason, "tag rule 'Demo Content'")
+		assert.Contains(t, reason, "within retention")
+
+		// Delete after should be based on last watched (10 days ago + 30 days = 20 days from now)
+		expectedDeleteAfter := media.LastWatched.Add(30 * 24 * time.Hour)
+		assert.WithinDuration(t, expectedDeleteAfter, deleteAfter, time.Second)
+	})
+
+	t.Run("tag rule priority over standard retention", func(t *testing.T) {
+		cfg := createMockConfig("90d", "120d", 14)
+		cfg.AdvancedRules = []config.AdvancedRule{
+			{
+				Name:      "Quick Delete",
+				Type:      "tag",
+				Enabled:   true,
+				Tag:       "quick-delete",
+				Retention: "7d", // Much shorter than standard 90d
+			},
+		}
+		exclusions := createMockExclusions()
+		engine := NewRulesEngine(cfg, exclusions)
+
+		// Media added 30 days ago - within standard 90d retention but past tag rule 7d retention
+		media := createMockMedia("movie-1", models.MediaTypeMovie, 30, -1, false, false)
+		media.Tags = []string{"quick-delete"}
+
+		shouldDelete, deleteAfter, reason := engine.EvaluateMedia(&media)
+
+		// Tag rule should take priority and mark for deletion
+		assert.True(t, shouldDelete)
+		assert.Contains(t, reason, "tag rule 'Quick Delete'")
+		assert.Contains(t, reason, "retention expired")
+		assert.Contains(t, reason, "7d")
+
+		// Would be within retention under standard rules (30 < 90)
+		// But tag rule overrides with 7d retention
+		expectedDeleteAfter := media.AddedAt.Add(7 * 24 * time.Hour)
+		assert.WithinDuration(t, expectedDeleteAfter, deleteAfter, time.Second)
+		assert.True(t, now.After(deleteAfter))
+	})
+
+	t.Run("multiple tag rules - first match wins", func(t *testing.T) {
+		cfg := createMockConfig("90d", "120d", 14)
+		cfg.AdvancedRules = []config.AdvancedRule{
+			{
+				Name:      "Quick Delete",
+				Type:      "tag",
+				Enabled:   true,
+				Tag:       "quick",
+				Retention: "7d",
+			},
+			{
+				Name:      "Slow Delete",
+				Type:      "tag",
+				Enabled:   true,
+				Tag:       "slow",
+				Retention: "365d",
+			},
+		}
+		exclusions := createMockExclusions()
+		engine := NewRulesEngine(cfg, exclusions)
+
+		// Media has both tags - should use first matching rule
+		media := createMockMedia("movie-1", models.MediaTypeMovie, 30, -1, false, false)
+		media.Tags = []string{"quick", "slow"}
+
+		shouldDelete, _, reason := engine.EvaluateMedia(&media)
+
+		assert.True(t, shouldDelete)
+		assert.Contains(t, reason, "Quick Delete") // First rule name
+		assert.Contains(t, reason, "7d")           // First rule retention
+	})
+
+	t.Run("tag rule with TV show media", func(t *testing.T) {
+		cfg := createMockConfig("90d", "120d", 14)
+		cfg.AdvancedRules = []config.AdvancedRule{
+			{
+				Name:      "Test Shows",
+				Type:      "tag",
+				Enabled:   true,
+				Tag:       "test-show",
+				Retention: "14d",
+			},
+		}
+		exclusions := createMockExclusions()
+		engine := NewRulesEngine(cfg, exclusions)
+
+		media := createMockMedia("tv-1", models.MediaTypeTVShow, 20, -1, false, false)
+		media.Tags = []string{"test-show"}
+
+		shouldDelete, deleteAfter, reason := engine.EvaluateMedia(&media)
+
+		assert.True(t, shouldDelete)
+		assert.Contains(t, reason, "tag rule 'Test Shows'")
+		assert.Contains(t, reason, "14d")
+
+		expectedDeleteAfter := media.AddedAt.Add(14 * 24 * time.Hour)
+		assert.WithinDuration(t, expectedDeleteAfter, deleteAfter, time.Second)
+	})
+}
+
+func TestRulesEngine_TagRulePriority(t *testing.T) {
+	t.Run("tag rules override exclusions=false, requested=false", func(t *testing.T) {
+		cfg := createMockConfig("90d", "120d", 14)
+		cfg.AdvancedRules = []config.AdvancedRule{
+			{
+				Name:      "Demo Content",
+				Type:      "tag",
+				Enabled:   true,
+				Tag:       "demo",
+				Retention: "7d",
+			},
+		}
+		exclusions := createMockExclusions()
+		engine := NewRulesEngine(cfg, exclusions)
+
+		// Old media that would normally be deleted, but has tag rule
+		media := createMockMedia("movie-1", models.MediaTypeMovie, 30, -1, false, false)
+		media.Tags = []string{"demo"}
+
+		shouldDelete, _, reason := engine.EvaluateMedia(&media)
+
+		// Tag rule applies (30 > 7 days)
+		assert.True(t, shouldDelete)
+		assert.Contains(t, reason, "tag rule 'Demo Content'")
+	})
+
+	t.Run("exclusions still override tag rules", func(t *testing.T) {
+		cfg := createMockConfig("90d", "120d", 14)
+		cfg.AdvancedRules = []config.AdvancedRule{
+			{
+				Name:      "Demo Content",
+				Type:      "tag",
+				Enabled:   true,
+				Tag:       "demo",
+				Retention: "7d",
+			},
+		}
+		exclusions := createMockExclusions()
+		exclusions.Add(storage.ExclusionItem{
+			ExternalID: "movie-1",
+			Reason:     "user keep",
+		})
+		engine := NewRulesEngine(cfg, exclusions)
+
+		// Old media with tag, but excluded
+		media := createMockMedia("movie-1", models.MediaTypeMovie, 30, -1, false, false)
+		media.Tags = []string{"demo"}
+
+		shouldDelete, deleteAfter, reason := engine.EvaluateMedia(&media)
+
+		// Exclusion takes priority
+		assert.False(t, shouldDelete)
+		assert.True(t, deleteAfter.IsZero())
+		assert.Equal(t, "excluded", reason)
+	})
+
+	t.Run("tag_rules_override_requested_status", func(t *testing.T) {
+		cfg := createMockConfig("90d", "120d", 14)
+		cfg.AdvancedRules = []config.AdvancedRule{
+			{
+				Name:      "Demo Content",
+				Type:      "tag",
+				Enabled:   true,
+				Tag:       "demo",
+				Retention: "7d",
+			},
+		}
+		exclusions := createMockExclusions()
+		engine := NewRulesEngine(cfg, exclusions)
+
+		// Old media with tag, but requested
+		media := createMockMedia("movie-1", models.MediaTypeMovie, 30, -1, true, false)
+		media.Tags = []string{"demo"}
+
+		shouldDelete, _, reason := engine.EvaluateMedia(&media)
+
+		// Tag rule takes priority over requested status (when advanced rules exist)
+		assert.True(t, shouldDelete)
+		assert.Contains(t, reason, "tag rule 'Demo Content'")
+	})
+}
+
+func TestGenerateDeletionReason_TagBasedRules(t *testing.T) {
+	now := time.Now()
+
+	t.Run("tag rule within retention - unwatched movie", func(t *testing.T) {
+		cfg := createMockConfig("90d", "120d", 14)
+		exclusions := createMockExclusions()
+		engine := NewRulesEngine(cfg, exclusions)
+
+		media := models.Media{
+			ID:         "movie-1",
+			Type:       models.MediaTypeMovie,
+			Title:      "Test Movie",
+			AddedAt:    now.AddDate(0, 0, -10),
+			WatchCount: 0,
+			Tags:       []string{"demo"},
+		}
+
+		deleteAfter := now.AddDate(0, 0, 20)
+		reasonStr := "tag rule 'Demo Content' (tag: demo) within retention (30d)"
+		reason := engine.GenerateDeletionReason(&media, deleteAfter, reasonStr)
+
+		assert.Contains(t, reason, "This movie was added 10 days ago")
+		assert.Contains(t, reason, "It matches the 'Demo Content' tag rule (tag: demo)")
+		assert.Contains(t, reason, "with 30d retention")
+		assert.Contains(t, reason, "meaning it will be deleted after that period of inactivity")
+	})
+
+	t.Run("tag rule retention expired - watched movie", func(t *testing.T) {
+		cfg := createMockConfig("90d", "120d", 14)
+		exclusions := createMockExclusions()
+		engine := NewRulesEngine(cfg, exclusions)
+
+		media := models.Media{
+			ID:          "movie-1",
+			Type:        models.MediaTypeMovie,
+			Title:       "Test Movie",
+			AddedAt:     now.AddDate(0, 0, -50),
+			LastWatched: now.AddDate(0, 0, -20),
+			WatchCount:  3,
+			Tags:        []string{"quick-delete"},
+		}
+
+		deleteAfter := now.AddDate(0, 0, -5)
+		reasonStr := "tag rule 'Quick Delete' (tag: quick-delete) retention expired (14d)"
+		reason := engine.GenerateDeletionReason(&media, deleteAfter, reasonStr)
+
+		assert.Contains(t, reason, "This movie was last watched 20 days ago")
+		assert.Contains(t, reason, "It matched the 'Quick Delete' tag rule (tag: quick-delete)")
+		assert.Contains(t, reason, "with 14d retention")
+		assert.Contains(t, reason, "is now scheduled for deletion")
+	})
+
+	t.Run("tag rule with TV show", func(t *testing.T) {
+		cfg := createMockConfig("90d", "120d", 14)
+		exclusions := createMockExclusions()
+		engine := NewRulesEngine(cfg, exclusions)
+
+		media := models.Media{
+			ID:         "tv-1",
+			Type:       models.MediaTypeTVShow,
+			Title:      "Test Show",
+			AddedAt:    now.AddDate(0, 0, -30),
+			WatchCount: 0,
+			Tags:       []string{"test-show"},
+		}
+
+		deleteAfter := now.AddDate(0, 0, -9)
+		reasonStr := "tag rule 'Test Shows' (tag: test-show) retention expired (21d)"
+		reason := engine.GenerateDeletionReason(&media, deleteAfter, reasonStr)
+
+		assert.Contains(t, reason, "This TV show was added 30 days ago")
+		assert.Contains(t, reason, "It matched the 'Test Shows' tag rule (tag: test-show)")
+		assert.Contains(t, reason, "with 21d retention")
+		assert.Contains(t, reason, "is now scheduled for deletion")
+	})
+}
