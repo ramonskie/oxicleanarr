@@ -47,6 +47,7 @@ This document provides essential context for AI coding agents working on the Pru
 ✅ Tag display on media cards across all pages  
 ✅ Tag filtering in Library page  
 ✅ Rule type badges showing which rule matched  
+✅ Dashboard navigation consistency (Leaving Soon → Timeline, Scheduled → Scheduled Deletions)  
 
 ### What's Pending
 ⏳ User-based cleanup with watch tracking  
@@ -221,7 +222,70 @@ This document provides essential context for AI coding agents working on the Pru
 - Running: Yes (backend PID 491951 + frontend dev server)
 - Tests passing: 109/109 functions ✅ (381 test runs with subtests)
 - Known issues: None
-- Session 18: COMPLETE ✅
+
+### Part 5: Dashboard "Leaving Soon" Navigation Fix - COMPLETED ✅
+
+**Work Completed:**
+- ✅ Fixed Dashboard "Leaving Soon" section "View All" button navigation
+- ✅ Changed navigation from `/scheduled-deletions` to `/timeline` (correct page)
+- ✅ Changed button condition from `scheduledDeletionsCount` to `leavingSoon.total`
+- ✅ All tests still passing (381 test runs)
+
+**Problem Identified:**
+- Dashboard "Leaving Soon" section shows future deletions (8 items)
+- "View All" button incorrectly navigated to `/scheduled-deletions` (overdue items)
+- Button condition used wrong count: `scheduledDeletionsCount` (368) instead of `leavingSoon.total` (8)
+- Semantic mismatch: leaving-soon section should link to Timeline page
+
+**Root Cause:**
+- Code location: `web/src/pages/DashboardPage.tsx` lines 216-223
+- Button used `scheduledDeletionsCount > 10` check (wrong metric)
+- Button navigated to wrong page for the data being displayed
+- Dashboard has two distinct sections:
+  - **Scheduled Deletions Card**: Overdue items → `/scheduled-deletions` ✅
+  - **Leaving Soon Section**: Future items → `/timeline` ✅ (NOW FIXED)
+
+**Solution Implemented:**
+```typescript
+// OLD: Wrong navigation and count
+{scheduledDeletionsCount > 10 && (
+  <Button onClick={() => navigate('/scheduled-deletions')}>
+    View All {scheduledDeletionsCount} Items
+  </Button>
+)}
+
+// NEW: Correct navigation to Timeline
+{leavingSoon.total > 10 && (
+  <Button onClick={() => navigate('/timeline')}>
+    View All {leavingSoon.total} Items
+  </Button>
+)}
+```
+
+**Files Modified:**
+- `web/src/pages/DashboardPage.tsx` (3 lines changed) - Fixed button navigation and count
+
+**Commits:**
+5. `a2d378c` - fix: correct Dashboard 'Leaving Soon' button to navigate to Timeline page
+
+**Testing Results:**
+- ✅ All tests passing (cached)
+- ✅ Frontend hot-reloaded successfully
+- ✅ Button now shows correct count (8 items)
+- ✅ Button navigates to correct page (Timeline)
+- ✅ Button condition uses correct metric (leavingSoon.total)
+
+**Page Navigation Map (Corrected):**
+| Dashboard Section | Data Type | Count | Navigates To |
+|-------------------|-----------|-------|--------------|
+| Scheduled Deletions Card | Overdue (`deletion_date < now`) | 368 | `/scheduled-deletions` ✅ |
+| Leaving Soon Section | Future (`deletion_date > now`) | 8 | `/timeline` ✅ (FIXED) |
+
+**Current State:**
+- Running: Yes (backend PID 528481 + frontend dev server)
+- Tests passing: 109/109 functions ✅ (381 test runs with subtests)
+- Known issues: None
+- Session 18: COMPLETE ✅ (Parts 1-5)
 
 **Key Lessons:**
 1. **In-memory state matters**: Config hot-reload updates config but doesn't re-evaluate existing data
@@ -232,6 +296,8 @@ This document provides essential context for AI coding agents working on the Pru
 6. **File watcher caveat**: `sed -i` creates new files, breaking fsnotify watch
 7. **API-first approach**: Config API endpoint more reliable than direct file edits
 8. **System integrity**: Sessions 13 + 17 features working correctly together
+9. **Navigation consistency**: Each dashboard section should link to the page showing the same data type
+10. **Button conditions**: UI controls should use the metric from the section they're in, not unrelated counts
 
 **Next Session TODO:**
 - [ ] User-based cleanup with watch tracking integration
