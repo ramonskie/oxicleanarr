@@ -61,7 +61,67 @@ This document provides essential context for AI coding agents working on the Pru
 
 ---
 
-## Recent Work (Last Session - Nov 4, 2025, Session 20)
+## Recent Work (Last Session - Nov 4, 2025, Session 27)
+
+### Jellyfin Virtual Folder (Library) API Research - COMPLETED ✅
+
+**Work Completed:**
+- ✅ Researched Jellyfin Virtual Folder API from official source code
+- ✅ Documented all 6 API endpoints for library management
+- ✅ Analyzed Janitorr's symlink library implementation approach
+- ✅ Compared Collections (current) vs Virtual Folders (alternative)
+- ✅ Evaluated implementation complexity and user setup requirements
+- ✅ Created comprehensive research document (SESSION_27_JELLYFIN_LIBRARY_API.md)
+- ✅ Made architectural decision: Keep collections for v1.0
+
+**Research Findings:**
+
+**Virtual Folder API Endpoints Discovered:**
+1. `GET /Library/VirtualFolders` - List all libraries
+2. `POST /Library/VirtualFolders` - Create library (with collectionType: movies/tvshows/music/etc.)
+3. `DELETE /Library/VirtualFolders` - Delete library
+4. `POST /Library/VirtualFolders/Name` - Rename library
+5. `POST /Library/VirtualFolders/Paths` - Add path to library
+6. `DELETE /Library/VirtualFolders/Paths` - Remove path from library
+
+**Key Insights:**
+- Virtual Folders (Libraries) appear in sidebar (better visibility than Collections)
+- Janitorr uses symlinks to create "Leaving Soon" as a library (not collection)
+- Requires filesystem access and complex Docker volume mapping
+- Path translation needed between Prunarr/Jellyfin/Radarr/Sonarr containers
+- Collections API already working perfectly (Sessions 7, 20)
+
+**Decision Made:**
+- **v1.0**: Keep current Collections approach (production-ready, simple setup)
+- **v2.0**: Consider symlink libraries as optional enhancement
+- **Rationale**: Avoid filesystem complexity, easier user setup, proven stable
+
+**Files Created:**
+- `SESSION_27_JELLYFIN_LIBRARY_API.md` - Complete research documentation with implementation plan
+
+**Current State:**
+- Running: Yes (backend + frontend)
+- Tests passing: 381/381 ✅
+- Known issues: None
+- Collections feature: ✅ Working and stable
+- Symlink libraries: 🔬 Researched, deferred to v2.0
+
+**Next Session TODO:**
+- [ ] Move to next priority feature: user-based cleanup or mobile responsiveness
+- [ ] Consider user feedback on Collections visibility before v2.0 planning
+- [ ] Statistics/charts for disk space trends
+- [ ] Comprehensive error handling
+
+**Key Lessons:**
+1. **Research before coding**: Investigated API fully before implementation decision
+2. **Simplicity wins**: Current Collections approach is simpler and production-ready
+3. **Defer complexity**: Symlink libraries add filesystem/path mapping complexity
+4. **User setup burden**: Virtual folders require complex Docker volume configuration
+5. **Feature completeness**: Collections provide 100% functionality with better maintainability
+
+---
+
+## Previous Session: Nov 4, 2025 (Session 20)
 
 ### Jellyfin Collections Dry-Run Bug Fix - COMPLETED ✅
 
