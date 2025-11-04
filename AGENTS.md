@@ -61,7 +61,99 @@ This document provides essential context for AI coding agents working on the Pru
 
 ---
 
-## Recent Work (Last Session - Nov 4, 2025, Session 29)
+## Recent Work (Last Session - Nov 4, 2025, Session 30)
+
+### Docker Container v1.1.0 Published - COMPLETED ✅
+
+**Work Completed:**
+- ✅ Built new Docker image with PUID/PGID support (v1.1.0)
+- ✅ Published to Docker Hub: ramonskie/prunarr:latest and ramonskie/prunarr:v1.1.0
+- ✅ Created git tag v1.1.0 with release message
+- ✅ Tested published image with custom and default PUID/PGID values
+- ✅ Verified entrypoint script works correctly in published image
+- ✅ All 394 tests still passing
+
+**Problem Solved:**
+- Need to publish PUID/PGID support to Docker Hub for production use
+- Users deploying on NAS systems need the new v1.1.0 image
+- Version tagging ensures users can pin to stable releases
+
+**Solution Implemented:**
+- Multi-stage Docker build completed successfully
+- Published two tags: `latest` (rolling) and `v1.1.0` (pinned version)
+- Image digest: sha256:02095854512dfc7c58b67c864f9ea923e1e9a6756530864dde47a557e6506cfa
+- Image size: 31.6 MB (2.5 MB increase from v1.0.0 due to shadow package)
+- Git tag created locally: v1.1.0
+
+**Docker Hub Publication:**
+- Repository: ramonskie/prunarr
+- Tags published:
+  - `latest` - Updated to v1.1.0 (rolling release)
+  - `v1.1.0` - New versioned tag (stable release)
+- Both tags point to same image: 11f0df2138a5
+
+**Testing Results:**
+- ✅ Custom PUID=1500/PGID=1500: Works correctly, shows "Setting ownership to 1500:1500..."
+- ✅ Default PUID=1000/PGID=1000: Works correctly, shows "usermod: no changes" (efficient)
+- ✅ Container runs as non-root after entrypoint initialization
+- ✅ Entrypoint verified: `/docker-entrypoint.sh`
+
+**Version Comparison:**
+- v1.0.0: 29.1 MB (base production image)
+- v1.1.0: 31.6 MB (+2.5 MB for shadow package, PUID/PGID support)
+
+**Files Modified & Committed:**
+- None (building and publishing existing code from Session 29)
+
+**Commits:**
+- Git tag `v1.1.0` created on commit `8ef2d43`
+- Tag message: "Release v1.1.0: Docker PUID/PGID support for NAS compatibility"
+- Note: No remote configured, tag exists locally only
+
+**Current State:**
+- Running: No (Docker testing complete)
+- Tests passing: 394/394 ✅
+- Docker Hub: Published ✅
+- Git tag: Created locally ✅
+- Production ready: Yes ✅
+
+**Usage Example:**
+```yaml
+services:
+  prunarr:
+    image: ramonskie/prunarr:latest  # or v1.1.0
+    environment:
+      - PUID=1027        # Your NAS user ID
+      - PGID=65536       # Your NAS group ID
+      - TZ=Europe/Amsterdam
+    volumes:
+      - /volume3/docker/prunarr/prunarr.yaml:/app/config/prunarr.yaml
+      - /volume3/docker/prunarr/data:/app/data
+      - /volume1/data:/data:ro
+    ports:
+      - 8080:8080
+```
+
+**Next Session TODO:**
+- [ ] Test deployment on actual NAS system (Synology/QNAP)
+- [ ] Verify symlink library feature works with custom PUID/PGID
+- [ ] Validate Jellyfin integration with symlinked libraries
+- [ ] Update main README.md with Docker quick start guide
+- [ ] Consider GitHub release notes (if remote repo exists)
+- [ ] User-based cleanup with watch tracking
+- [ ] Mobile responsiveness improvements
+
+**Key Lessons:**
+1. **Docker layer caching**: All layers cached from Session 29 build = fast rebuilds
+2. **Image size trade-off**: +2.5 MB for NAS compatibility is acceptable
+3. **Version tagging**: Use semantic versioning (v1.1.0 = minor feature addition)
+4. **Tag strategy**: Both `latest` (rolling) and `vX.Y.Z` (pinned) for flexibility
+5. **Testing published images**: Always verify published image works before announcing
+6. **Production readiness**: PUID/PGID support makes Prunarr NAS-ready
+
+---
+
+## Previous Session: Nov 4, 2025 (Session 29)
 
 ### Docker PUID/PGID Support - COMPLETED ✅
 
