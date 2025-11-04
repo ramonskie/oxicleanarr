@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiClient } from '@/lib/api';
 import { useAuthStore } from '@/store/auth';
-import type { DeletionCandidate } from '@/lib/types';
+import type { DeletionCandidate, MediaItem } from '@/lib/types';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -38,10 +38,24 @@ export default function ScheduledDeletionsPage() {
   const [currentPage, setCurrentPage] = useState(1);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
 
-  // Fetch latest job to get scheduled deletions
-  const { data: jobsData, isLoading } = useQuery({
-    queryKey: ['jobs'],
-    queryFn: () => apiClient.listJobs(),
+  // Fetch movies
+  const { data: moviesData, isLoading: moviesLoading } = useQuery({
+    queryKey: ['movies'],
+    queryFn: () => apiClient.listMovies(),
+    enabled: mediaType === 'all' || mediaType === 'movies',
+  });
+
+  // Fetch shows
+  const { data: showsData, isLoading: showsLoading } = useQuery({
+    queryKey: ['shows'],
+    queryFn: () => apiClient.listShows(),
+    enabled: mediaType === 'all' || mediaType === 'shows',
+  });
+
+  // Fetch config
+  const { data: configData } = useQuery({
+    queryKey: ['config'],
+    queryFn: () => apiClient.getConfig(),
   });
 
   // Sync status
@@ -50,6 +64,8 @@ export default function ScheduledDeletionsPage() {
     queryFn: () => apiClient.getSyncStatus(),
     refetchInterval: 5000,
   });
+
+  const isLoading = moviesLoading || showsLoading;
 
   // Execute deletions mutation
   const executeDeletionsMutation = useMutation({
@@ -60,8 +76,9 @@ export default function ScheduledDeletionsPage() {
         description: `Successfully deleted ${data.deleted_count} items. ${data.failed_count || 0} failed.`,
         variant: data.failed_count && data.failed_count > 0 ? 'destructive' : 'default',
       });
-      // Refetch jobs to update the list
-      queryClient.invalidateQueries({ queryKey: ['jobs'] });
+      // Refetch media to update the list
+      queryClient.invalidateQueries({ queryKey: ['movies'] });
+      queryClient.invalidateQueries({ queryKey: ['shows'] });
       setShowDeleteDialog(false);
     },
     onError: (error: Error) => {
@@ -83,19 +100,55 @@ export default function ScheduledDeletionsPage() {
     executeDeletionsMutation.mutate();
   };
 
-  // Get scheduled deletions from latest job
+  // Get scheduled deletions from media items (overdue items)
   const scheduledDeletions: DeletionCandidate[] = (() => {
-    if (!jobsData?.jobs || jobsData.jobs.length === 0) return [];
-    const latestJob = jobsData.jobs[0];
-    return latestJob.summary?.would_delete || [];
+    const now = new Date();
+    let items: MediaItem[] = [];
+    
+    if (mediaType === 'all') {
+      items = [
+        ...(moviesData?.items || []),
+        ...(showsData?.items || []),
+      ];
+    } else if (mediaType === 'movies') {
+      items = moviesData?.items || [];
+    } else {
+      items = showsData?.items || [];
+    }
+
+    // Filter for non-excluded items with deletion dates in the past (overdue)
+    return items
+      .filter(item => {
+        if (!item.deletion_date || item.deletion_date === '0001-01-01T00:00:00Z') return false;
+        if (item.excluded) return false;
+        const deletionDate = new Date(item.deletion_date!);
+        return deletionDate < now;
+      })
+      .map(item => {
+        const deletionDate = new Date(item.deletion_date!);
+        const daysOverdue = Math.floor((now.getTime() - deletionDate.getTime()) / (1000 * 60 * 60 * 24));
+        
+        return {
+          id: item.id,
+          title: item.title,
+          year: item.year,
+          type: item.type,
+          file_size: item.file_size,
+          delete_after: item.deletion_date,
+          days_overdue: daysOverdue,
+          reason: item.deletion_reason || 'No reason specified',
+          last_watched: item.last_watched,
+          is_requested: item.is_requested,
+          requested_by_user_id: item.requested_by_user_id,
+          requested_by_username: item.requested_by_username,
+          requested_by_email: item.requested_by_email,
+          tags: item.tags,
+        } as DeletionCandidate;
+      });
   })();
 
-  // Check if app is in dry-run mode
-  const isDryRunMode = (() => {
-    if (!jobsData?.jobs || jobsData.jobs.length === 0) return true; // Default to safe mode
-    const latestJob = jobsData.jobs[0];
-    return latestJob.summary?.dry_run === true;
-  })();
+  // Check if app is in dry-run mode (default to true for safety)
+  const isDryRunMode = configData?.app?.dry_run ?? true;
 
   // Combine and filter deletion candidates
   const allItems: DeletionCandidate[] = (() => {
