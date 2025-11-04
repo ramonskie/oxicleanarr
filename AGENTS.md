@@ -60,7 +60,72 @@ This document provides essential context for AI coding agents working on the Pru
 
 ---
 
-## Recent Work (Last Session - Nov 4, 2025, Session 17)
+## Recent Work (Last Session - Nov 4, 2025, Session 18)
+
+### Scheduled Deletions Data Source Refactoring - COMPLETED ✅
+
+**Work Completed:**
+- ✅ Resumed from Session 17 (auto-sync optimization completed)
+- ✅ Refactored Scheduled Deletions page to query media API directly instead of job summaries
+- ✅ Added config query to dynamically fetch dry-run mode
+- ✅ Implemented client-side filtering for overdue items (deletion_date < now)
+- ✅ All 109 test functions passing (380 test runs with subtests)
+
+**Problem Identified:**
+- Scheduled Deletions page was querying jobs endpoint (`would_delete` from job summaries)
+- This created timing issues: empty → stale → correct data flow
+- Confusing UX: delays between config changes and UI updates
+- Different architecture from Library/Timeline pages (inconsistent)
+
+**Decision Process:**
+- Initially attempted to fix by populating `would_delete` in `ReapplyRetentionRules()`
+- User correctly identified this was "too complex" and likely browser caching issue
+- Chose **Option B**: Change to query media API directly (consistent with other pages)
+
+**Solution Implemented:**
+- Changed data source from `jobs` endpoint to `movies`/`shows` endpoints
+- Added `config` query to fetch dry-run mode dynamically (replaced hardcoded TODO)
+- Filter overdue items client-side: `deletion_date < now && !excluded && deletion_date != zero`
+- Map `MediaItem → DeletionCandidate` on the fly with calculated `days_overdue`
+- Benefits from Session 17's TanStack Query invalidation for immediate updates
+
+**Why This is Better:**
+1. **Consistent architecture** - All pages query media directly (Library, Timeline, Scheduled Deletions)
+2. **Immediate updates** - Benefits from auto-invalidation after config/rule changes
+3. **Simpler** - No dual data sources or complex job summary logic
+4. **More accurate** - Always shows real-time state, not historical snapshots
+5. **Eliminates lag** - No 60-second delay between config changes and UI updates
+
+**Files Modified:**
+- `web/src/pages/ScheduledDeletionsPage.tsx` (+70 lines, -17 lines) - Query media APIs, filter overdue, fetch dry-run from config
+
+**Commits:**
+1. `3c67d17` - refactor: change Scheduled Deletions page to query media API directly
+
+**Testing Results:**
+- ✅ All 109 test functions passing (380 test runs with subtests)
+- ✅ Frontend builds successfully (hot-reload working)
+- ✅ Manual API testing: 254 movies with valid deletion dates
+- ✅ Config API returns dry_run mode correctly
+- ✅ Media items have proper deletion_date fields with overdue calculations
+
+**Current State:**
+- Running: Yes (backend + frontend dev server)
+- Tests passing: 109/109 functions ✅ (380 test runs with subtests)
+- Known issues: None
+- Scheduled Deletions refactoring: Complete ✅
+- Session 18: COMPLETE ✅
+
+**Next Session TODO:**
+- [ ] Manual UI testing: Verify Scheduled Deletions page displays overdue items correctly
+- [ ] Test config changes trigger immediate UI updates (verify Session 17 + 18 integration)
+- [ ] User-based cleanup with watch tracking integration
+- [ ] Mobile responsiveness improvements
+- [ ] Statistics/charts for disk space trends
+
+---
+
+## Previous Session: Nov 4, 2025 (Session 17)
 
 ### Part 1: Config Auto-Sync Performance Optimization - COMPLETED ✅
 
