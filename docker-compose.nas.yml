@@ -1,6 +1,6 @@
 services:
   prunarr:
-    image: prunarr:latest
+    image: ramonskie/prunarr:latest
     container_name: prunarr
     environment:
       - TZ=Europe/Amsterdam
