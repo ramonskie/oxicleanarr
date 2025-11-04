@@ -113,6 +113,45 @@ func TestSyncEngine_StartStop(t *testing.T) {
 		err := engine.Start()
 		require.NoError(t, err)
 		assert.True(t, engine.running)
+
+		// Tickers should be nil when AutoStart is false
+		assert.Nil(t, engine.fullSyncTicker)
+		assert.Nil(t, engine.incrSyncTicker)
+
+		engine.Stop()
+		assert.False(t, engine.running)
+	})
+
+	t.Run("starts with tickers when auto_start enabled", func(t *testing.T) {
+		tmpDir := t.TempDir()
+
+		cfg := &config.Config{
+			Sync: config.SyncConfig{
+				FullInterval:        3600,
+				IncrementalInterval: 300,
+				AutoStart:           true, // Enable auto-start
+			},
+			Rules: config.RulesConfig{
+				MovieRetention: "90d",
+				TVRetention:    "120d",
+			},
+		}
+
+		cacheInstance := cache.New()
+		jobs, err := storage.NewJobsFile(tmpDir, 50)
+		require.NoError(t, err)
+
+		exclusions, err := storage.NewExclusionsFile(tmpDir)
+		require.NoError(t, err)
+
+		rules := NewRulesEngine(cfg, exclusions)
+		engine := NewSyncEngine(cfg, cacheInstance, jobs, exclusions, rules)
+
+		err = engine.Start()
+		require.NoError(t, err)
+		assert.True(t, engine.running)
+
+		// Tickers should be initialized when AutoStart is true
 		assert.NotNil(t, engine.fullSyncTicker)
 		assert.NotNil(t, engine.incrSyncTicker)
 

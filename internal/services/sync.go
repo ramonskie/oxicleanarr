@@ -100,32 +100,39 @@ func (e *SyncEngine) Start() error {
 
 	e.running = true
 
-	// Start full sync ticker
 	fullInterval := time.Duration(e.config.Sync.FullInterval) * time.Second
-	e.fullSyncTicker = time.NewTicker(fullInterval)
-
-	// Start incremental sync ticker
 	incrInterval := time.Duration(e.config.Sync.IncrementalInterval) * time.Second
-	e.incrSyncTicker = time.NewTicker(incrInterval)
 
-	// Run initial full sync if auto-start enabled
+	// Only start sync scheduler if auto-start is enabled
 	if e.config.Sync.AutoStart {
+		// Start full sync ticker
+		e.fullSyncTicker = time.NewTicker(fullInterval)
+
+		// Start incremental sync ticker
+		e.incrSyncTicker = time.NewTicker(incrInterval)
+
+		// Run initial full sync immediately
 		go func() {
 			ctx := context.Background()
 			if err := e.FullSync(ctx); err != nil {
 				log.Error().Err(err).Msg("Initial full sync failed")
 			}
 		}()
+
+		// Start ticker goroutines
+		go e.runFullSyncLoop()
+		go e.runIncrementalSyncLoop()
+
+		log.Info().
+			Dur("full_interval", fullInterval).
+			Dur("incr_interval", incrInterval).
+			Bool("auto_start", true).
+			Msg("Sync engine started with automatic scheduling")
+	} else {
+		log.Info().
+			Bool("auto_start", false).
+			Msg("Sync engine started in manual mode (no automatic scheduling)")
 	}
-
-	// Start ticker goroutines
-	go e.runFullSyncLoop()
-	go e.runIncrementalSyncLoop()
-
-	log.Info().
-		Dur("full_interval", fullInterval).
-		Dur("incr_interval", incrInterval).
-		Msg("Sync engine started")
 
 	return nil
 }
