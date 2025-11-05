@@ -17,7 +17,9 @@ docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
 
 ## Path Mapping Explained
 
-**Your Setup:**
+**The Key Principle:** Mount only what you need. More restrictive mounts = better security.
+
+**Example Setup (adjust paths to match YOUR system):**
 - **Radarr/Sonarr** see movies at: `/data/media/movies/Movie Name (2020)/movie.mkv`
 - **Jellyfin** sees same file at: `/data/media/movies/Movie Name (2020)/movie.mkv`
 - **Prunarr** will see it at: `/data/media/movies/Movie Name (2020)/movie.mkv`
@@ -27,6 +29,17 @@ docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
 - **Prunarr container sees**: `/app/leaving-soon/movies/Movie Name (2020).mkv`
 - **Jellyfin container should see**: `/app/leaving-soon/movies/Movie Name (2020).mkv` (mount same host dir)
 - **Symlink target**: → `/data/media/movies/Movie Name (2020)/movie.mkv`
+
+**Common Media Path Patterns:**
+
+| Your Host Structure | Recommended Mount | Container Sees | Notes |
+|---------------------|-------------------|----------------|-------|
+| `/volume1/data/media/movies/` | `/volume1/data/media:/data/media:ro` | `/data/media/movies/` | ✅ Most restrictive |
+| `/volume1/media/movies/` | `/volume1/media:/media:ro` | `/media/movies/` | ✅ Simple structure |
+| `/mnt/storage/media/` | `/mnt/storage/media:/media:ro` | `/media/movies/` | ✅ Custom mount point |
+| `/volume1/data/` | `/volume1/data:/data:ro` | `/data/media/movies/` | ⚠️ Exposes ALL of /data |
+
+**Rule:** Mount the most specific parent directory that contains your media files.
 
 ## Step-by-Step Deployment
 
@@ -179,7 +192,14 @@ services:
       - /volume3/docker/prunarr/data:/app/data:z
       - /volume3/docker/prunarr/logs:/app/logs:z
       - /volume3/docker/prunarr/leaving-soon:/app/leaving-soon:z
-      - /volume1/data:/data:ro
+      
+      # Media paths - MUST match your Radarr/Sonarr/Jellyfin configuration
+      # Mount ONLY the media directory (more restrictive = more secure)
+      # Adjust these paths to match YOUR system structure:
+      - /volume1/data/media:/data/media:ro  # Recommended: Only expose media files
+      # Alternative patterns:
+      # - /volume1/media:/media:ro          # If media is at /volume1/media/
+      # - /mnt/storage/media:/media:ro      # Custom storage location
     ports:
       - 8080:8080
     network_mode: synobridge
@@ -195,8 +215,8 @@ Add symlink directory to Jellyfin (edit your jellyfin docker-compose.yml):
 ```yaml
 volumes:
   - /volume3/docker/jellyfin:/config
-  - /volume1/data/media:/data/media
-  - /volume3/docker/prunarr/leaving-soon:/app/leaving-soon:ro  # ADD THIS LINE
+  - /volume1/data/media:/data/media  # Your existing media mount (must match Prunarr)
+  - /volume3/docker/prunarr/leaving-soon:/app/leaving-soon:ro  # ADD THIS LINE for symlinks
 ```
 
 Recreate Jellyfin container:

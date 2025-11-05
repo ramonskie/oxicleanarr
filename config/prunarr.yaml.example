@@ -18,19 +18,23 @@ integrations:
     #   movies_library_name: "Leaving Soon - Movies"      # Optional: default is "Leaving Soon - Movies"
     #   tv_library_name: "Leaving Soon - TV Shows"        # Optional: default is "Leaving Soon - TV Shows"
     #
-    # Docker Volume Mapping Example:
+    # Docker Volume Mapping Example (adjust paths to match YOUR system):
     #   prunarr:
     #     volumes:
     #       - /volume3/docker/prunarr/leaving-soon:/app/leaving-soon
-    #       - /volume1/data/movies:/data/movies:ro
-    #       - /volume1/data/tv:/data/tv:ro
+    #       # Recommended: Mount only media directory (most restrictive/secure)
+    #       - /volume1/data/media:/data/media:ro
+    #       # Alternative patterns:
+    #       # - /volume1/media:/media:ro           # If media at /volume1/media/
+    #       # - /mnt/storage/media:/media:ro       # Custom storage location
+    #
     #   jellyfin:
     #     volumes:
     #       - /volume3/docker/prunarr/leaving-soon:/app/leaving-soon:ro
-    #       - /volume1/data/movies:/data/movies:ro
-    #       - /volume1/data/tv:/data/tv:ro
+    #       - /volume1/data/media:/data/media:ro  # MUST match Prunarr exactly
     #
-    # IMPORTANT: Both containers must see the same paths for media files!
+    # IMPORTANT: Both containers MUST see the same paths for media files!
+    # Symlinks created by Prunarr will point to /data/media/movies/... (or whatever path you use)
   
   radarr:
     enabled: true

@@ -28,8 +28,14 @@ services:
       - /volume3/docker/prunarr/leaving-soon:/app/leaving-soon
       
       # Media paths (read-only) - MUST match Radarr/Sonarr/Jellyfin paths exactly
-      # Prunarr needs to read source files to create symlinks
-      - /volume1/data:/data:ro
+      # Mount ONLY the media directory for better security (not all of /volume1/data)
+      # Adjust to match YOUR system structure:
+      - /volume1/data/media:/data/media:ro  # Recommended: Most restrictive
+      
+      # Alternative path patterns (uncomment/modify based on your setup):
+      # - /volume1/media:/media:ro           # If your media is at /volume1/media/
+      # - /mnt/storage/media:/media:ro       # Custom storage location
+      # - /volume1/data:/data:ro             # If you need more than just media (less secure)
     ports:
       - 8080:8080
     network_mode: bridge
