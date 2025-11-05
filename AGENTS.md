@@ -61,7 +61,99 @@ This document provides essential context for AI coding agents working on the Pru
 
 ---
 
-## Recent Work (Last Session - Nov 5, 2025, Session 32)
+## Recent Work (Last Session - Nov 5, 2025, Session 33)
+
+### Symlink Mount Simplification - COMPLETED ✅
+
+**Work Completed:**
+- ✅ Simplified symlink library setup by reusing existing `/data/media` mount
+- ✅ Updated documentation to recommend single-mount approach as primary option
+- ✅ Clarified why both approaches work and when to use each
+- ✅ All 394 tests still passing
+
+**Problem Identified:**
+- User asked: "Why can't we reuse Jellyfin's existing `/data/media` mount instead of adding `/app/leaving-soon`?"
+- Documentation (Session 32) showed separate mount as only approach
+- User correctly identified this added unnecessary complexity
+
+**Root Cause:**
+- Documentation assumed separate directory was required
+- Didn't consider that symlinks and targets in same filesystem is simpler
+- Jellyfin already has `/data/media` mount that could include symlink subdirectory
+
+**Solution Implemented:**
+1. **Changed recommended approach** to `base_path: /data/media/leaving-soon`
+2. **Updated all documentation** to show recommended + alternative approaches
+3. **Simplified Jellyfin setup** - no extra mount needed!
+4. **Benefits explained** - fewer mounts, simpler config, easier troubleshooting
+
+**Recommended Config Structure** (simplified):
+```yaml
+integrations:
+  jellyfin:
+    enabled: true
+    url: http://jellyfin:8096
+    api_key: your-key
+    symlink_library:
+      enabled: true
+      base_path: /data/media/leaving-soon  # Inside existing media mount!
+```
+
+**Docker Setup** (simplified):
+```yaml
+prunarr:
+  volumes:
+    - /volume1/data/media:/data/media  # Creates symlinks at /data/media/leaving-soon/
+
+jellyfin:
+  volumes:
+    - /volume1/data/media:/data/media:ro  # Already has access to symlinks! ✅
+```
+
+**Why This Is Better:**
+- ✅ **Simpler**: One mount instead of two for Jellyfin
+- ✅ **No extra config**: Jellyfin already has access
+- ✅ **More reliable**: Symlinks and targets in same filesystem
+- ✅ **Standard pattern**: Similar to how Radarr/Sonarr organize media
+- ✅ **Easier debugging**: One mount to check, not two
+
+**Alternative Approach** (still documented):
+- `base_path: /app/leaving-soon` for clean separation
+- Requires extra Jellyfin mount: `/volume3/docker/prunarr/leaving-soon:/app/leaving-soon:ro`
+- Use case: Want clear isolation of Prunarr-managed content
+
+**Files Modified & Committed:**
+- `config/prunarr.yaml.example` (+12 lines, -13 lines) - Show recommended approach first
+- `NAS_DEPLOYMENT.md` (+48 lines, -41 lines) - Rewrite Step 5 to verify existing mount
+- `docker-compose.nas.yml` (+10 lines, -6 lines) - Remove separate leaving-soon mount
+
+**Commits:**
+1. `876a27d` - docs: recommend reusing media mount for symlinks (simpler setup)
+
+**Current State:**
+- Running: No (documentation changes only)
+- Tests passing: 394/394 ✅
+- Known issues: None
+- Documentation: Simplified and improved ✅
+- Session 33: COMPLETE ✅
+
+**User's Next Steps:**
+- [ ] Deploy Prunarr with `base_path: /data/media/leaving-soon` config
+- [ ] Verify Jellyfin can see symlinks with existing `/data/media` mount
+- [ ] Test "Leaving Soon" libraries appear in Jellyfin sidebar
+- [ ] Confirm files playable (symlinks work end-to-end)
+
+**Key Lessons:**
+1. **Question assumptions**: User correctly challenged "why do we need this?"
+2. **Simpler is better**: Reusing existing mounts reduces complexity
+3. **Same filesystem**: Symlinks work best when source/target in same mount
+4. **Document alternatives**: Show recommended approach + advanced options
+5. **Listen to users**: They often spot unnecessary complexity we missed
+6. **Credit where due**: User identified the optimization opportunity
+
+---
+
+## Previous Session: Nov 5, 2025 (Session 32)
 
 ### Documentation Fixes for Symlink Library & Docker Mounts - COMPLETED ✅
 
