@@ -61,7 +61,87 @@ This document provides essential context for AI coding agents working on the Pru
 
 ---
 
-## Recent Work (Last Session - Nov 5, 2025, Session 37)
+## Recent Work (Last Session - Nov 5, 2025, Session 38)
+
+### Config Validation Bug Fix - COMPLETED ✅
+
+**Work Completed:**
+- ✅ Fixed validation to skip admin credentials when `disable_auth: true`
+- ✅ Added 7 comprehensive test cases for auth validation combinations
+- ✅ Added debug logging for admin config lifecycle troubleshooting
+- ✅ Added debug logging for empty symlink library deletion
+- ✅ All tests passing (394 test runs with subtests)
+- ✅ 3 commits created (validation fix, debug logging x2)
+
+**Problem Identified:**
+- User reported validation errors when updating advanced rules via UI:
+  ```
+  Failed to reload configuration | error=Configuration validation failed:
+    - admin.username: required
+    - admin.password: required
+    - integrations: at least one integration must be enabled
+  ```
+- Root cause: `internal/config/validation.go` lines 38-50 **always validated admin credentials**
+- Impact: Users with `disable_auth: true` couldn't update config via UI
+- Bug only affected auth-disabled mode (not caught during normal testing)
+
+**Solution Implemented:**
+1. **Validation Fix** (`validation.go` lines 38-51):
+   - Wrapped admin credential checks in `!cfg.Admin.DisableAuth` condition
+   - Empty username/password now allowed when `disable_auth: true`
+   - Normal validation enforced when `disable_auth: false`
+   
+2. **Comprehensive Tests** (`validation_test.go` +72 lines):
+   - 7 test cases covering all combinations:
+     - `disable_auth=true` + empty credentials → PASS ✅
+     - `disable_auth=true` + username only → PASS ✅
+     - `disable_auth=true` + password only → PASS ✅
+     - `disable_auth=true` + both credentials → PASS ✅
+     - `disable_auth=false` + empty username → FAIL ✅
+     - `disable_auth=false` + empty password → FAIL ✅
+     - `disable_auth=false` + both credentials → PASS ✅
+
+3. **Debug Logging Added** (Session 37 carryover):
+   - Admin config logging in `config.Load()` (after unmarshal, after defaults)
+   - Admin config logging in config handler (before marshal, YAML preview)
+   - Empty library deletion detailed logging in `symlink_library.go`
+   - Helps troubleshoot validation and library sync issues
+
+**Files Modified & Committed:**
+- `internal/config/validation.go` (+3 lines) - Skip validation when disable_auth
+- `internal/config/validation_test.go` (+72 lines) - 7 auth validation test cases
+- `internal/config/config.go` (+14 lines) - Admin config debug logging
+- `internal/api/handlers/config.go` (+14 lines) - Marshal debug logging
+- `internal/services/symlink_library.go` (+18 lines) - Empty library deletion logging
+
+**Commits:**
+1. `f943849` - fix: skip admin credential validation when disable_auth is true
+2. `2839c18` - debug: add admin config logging for troubleshooting validation issues
+3. `8fbf0a1` - debug: add detailed logging for empty library deletion
+
+**Current State:**
+- Running: No (implementation complete)
+- Tests passing: 394/394 ✅ (292 subtests across 5 packages)
+- Known issues: None
+- Build: Successful (./prunarr binary ready)
+- Ready for user testing with `disable_auth: true` config
+
+**Key Benefits:**
+- **Auth-disabled mode works**: Users can now update config/rules via UI without authentication
+- **Better validation logic**: Respects authentication mode setting
+- **Test coverage**: All validation scenarios covered
+- **Debug tooling**: Comprehensive logging for future troubleshooting
+
+**Next Session TODO:**
+- [ ] User verification: Test advanced rule updates with `disable_auth: true`
+- [ ] Consider Docker release (v1.3.1 or v1.4.0) if user confirms fix works
+- [ ] Live environment testing with user's Jellyfin instance
+- [ ] User-based cleanup with watch tracking integration
+- [ ] Mobile responsiveness improvements
+
+---
+
+## Previous Session: Nov 5, 2025 (Session 37)
 
 ### `hide_when_empty` Feature for Symlink Libraries - COMPLETED ✅
 
