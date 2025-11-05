@@ -168,9 +168,11 @@ services:
       - TZ=Europe/Amsterdam
       - UMASK=022
     volumes:
-      - /volume3/docker/prunarr/prunarr.yaml:/app/config/prunarr.yaml
-      - /volume3/docker/prunarr/data:/app/data
-      - /volume1/data/media/prunarr-leaving-soon:/data/media/prunarr-leaving-soon
+      # NOTE: Use :z flag on SELinux systems (Fedora, RHEL, CentOS)
+      # Synology/QNAP typically don't need :z flag
+      - /volume3/docker/prunarr/prunarr.yaml:/app/config/prunarr.yaml:z
+      - /volume3/docker/prunarr/data:/app/data:z
+      - /volume1/data/media/prunarr-leaving-soon:/data/media/prunarr-leaving-soon:z
       - /volume1/data:/data:ro
     ports:
       - 8080:8080
@@ -267,6 +269,28 @@ Look for:
 - `"Symlink library sync completed"`
 
 ## Troubleshooting
+
+### Problem: Permission denied errors (SELinux systems)
+
+If you're running on **Fedora, RHEL, CentOS, or other SELinux-enabled systems**, you may see permission errors:
+
+```bash
+# Check SELinux status
+getenforce
+# If it shows "Enforcing", you need to add :z flags to volume mounts
+```
+
+**Solution:** Add `:z` flag to all read-write volume mounts in your `docker-compose.yml`:
+
+```yaml
+volumes:
+  - /volume3/docker/prunarr/prunarr.yaml:/app/config/prunarr.yaml:z
+  - /volume3/docker/prunarr/data:/app/data:z
+  - /volume1/data/media/prunarr-leaving-soon:/data/media/prunarr-leaving-soon:z
+  - /volume1/data:/data:ro  # Read-only mounts don't need :z
+```
+
+**Note:** Synology and QNAP NAS systems typically don't use SELinux, so the `:z` flag is optional but harmless.
 
 ### Problem: No symlinks created
 

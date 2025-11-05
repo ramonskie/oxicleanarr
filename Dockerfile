@@ -41,12 +41,8 @@ RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build \
 # Stage 3: Runtime Image
 FROM alpine:latest
 
-# Install runtime dependencies
-RUN apk add --no-cache ca-certificates tzdata su-exec shadow
-
-# Create non-root user (default UID/GID, can be changed at runtime)
-RUN addgroup -g 1000 prunarr && \
-    adduser -D -u 1000 -G prunarr prunarr
+# Install runtime dependencies (removed shadow since we don't need usermod/groupmod)
+RUN apk add --no-cache ca-certificates tzdata su-exec
 
 # Set working directory
 WORKDIR /app
@@ -64,12 +60,10 @@ COPY config/prunarr.yaml.example /app/config/prunarr.yaml.example
 COPY docker-entrypoint.sh /docker-entrypoint.sh
 RUN chmod +x /docker-entrypoint.sh
 
-# Create directories with proper ownership
-RUN mkdir -p /app/data /app/config /app/logs && \
-    chown -R prunarr:prunarr /app
+# Create directories (no ownership needed - handled by PUID/PGID at runtime)
+RUN mkdir -p /app/data /app/config /app/logs
 
-# Note: We do NOT switch to non-root user here
-# The entrypoint script will handle user switching after adjusting PUID/PGID
+# Note: Container starts as root, entrypoint drops to PUID:PGID
 
 # Expose HTTP port
 EXPOSE 8080

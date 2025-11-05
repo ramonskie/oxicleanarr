@@ -3,11 +3,18 @@ services:
     image: ramonskie/prunarr:latest
     container_name: prunarr
     environment:
+      # User/Group IDs - Match your NAS user (check with `id` command)
+      # Synology default: 1026 or 1027, QNAP: varies
+      - PUID=1027
+      - PGID=65536
+      
       - TZ=Europe/Amsterdam
       - LOG_LEVEL=info
       - LOG_FORMAT=json
     volumes:
       # Config file (single YAML file mount)
+      # NOTE: Add :z flag if using SELinux systems (Fedora, RHEL, CentOS)
+      # Synology/QNAP users: :z flag is optional but harmless
       - /volume3/docker/prunarr/prunarr.yaml:/app/config/prunarr.yaml
       
       # Data directory (jobs, exclusions)

@@ -4,15 +4,17 @@ set -e
 PUID=${PUID:-1000}
 PGID=${PGID:-1000}
 
-# Change user/group IDs if they differ from defaults
-groupmod -o -g "$PGID" prunarr
-usermod -o -u "$PUID" prunarr
+echo "Starting Prunarr as UID:GID = $PUID:$PGID"
 
-# Fix ownership if IDs were changed
-if [ "$PUID" != "1000" ] || [ "$PGID" != "1000" ]; then
-    echo "Setting ownership to $PUID:$PGID..."
-    chown -R prunarr:prunarr /app
-fi
+# Fix ownership on data directories to match PUID:PGID
+# This ensures bind-mounted volumes are writable by the container user
+# Only changes ownership if directories exist and current ownership differs
+for dir in /app/config /app/data /app/logs; do
+    if [ -d "$dir" ] && [ "$(stat -c '%u:%g' "$dir")" != "$PUID:$PGID" ]; then
+        echo "Fixing ownership on $dir"
+        chown -R "$PUID:$PGID" "$dir" 2>/dev/null || true
+    fi
+done
 
-# Execute command as prunarr user
-exec su-exec prunarr "$@"
+# Execute command as the specified UID:GID
+exec su-exec "$PUID:$PGID" "$@"
