@@ -61,7 +61,89 @@ This document provides essential context for AI coding agents working on the Pru
 
 ---
 
-## Recent Work (Last Session - Nov 5, 2025, Session 38)
+## Recent Work (Last Session - Nov 5, 2025, Session 39)
+
+### Jellyfin Symlink Library Cleanup Fix - COMPLETED ✅
+
+**Work Completed:**
+- ✅ Fixed symlink cleanup when libraries become empty
+- ✅ Fixed Jellyfin dashboard refresh after library deletion
+- ✅ Added 4-step cleanup process for empty libraries
+- ✅ All tests passing (394 test runs with subtests)
+- ✅ 1 commit created
+
+**Problem Identified:**
+- User reported two issues when disabling retention rules:
+  1. Empty "Leaving Soon - Movies" library still visible in Jellyfin dashboard after deletion
+     - Library correctly removed from Admin > Libraries settings
+     - Dashboard only updated after Jellyfin restart
+  2. Symlink files not cleaned up when library becomes empty
+     - Example: `/data/media/leaving-soon/movies/Red Dawn (2012)` symlink remained
+     - Logs showed `item_count=0` and library deleted from Jellyfin
+
+**Root Cause:**
+- In `internal/services/symlink_library.go` lines 152-210:
+  - When `len(items) == 0` and `hide_when_empty: true`:
+    - ✅ Code deleted Jellyfin virtual folder (line 190)
+    - ✅ Returned early at line 201
+    - ❌ **Never reached `cleanupSymlinks()` call** (line 229)
+    - ❌ **Never triggered `RefreshLibrary()` call** (line 240)
+- Early return prevented both filesystem cleanup AND Jellyfin UI refresh
+
+**Solution Implemented:**
+1. **Step 1: Clean up symlinks BEFORE deletion** (lines 159-172):
+   - Call `cleanupSymlinks()` with empty map (removes all symlinks)
+   - Graceful error handling (warnings, no sync failure)
+   
+2. **Step 2: Check and delete virtual folder** (lines 174-196):
+   - Existing logic preserved, improved logging
+   
+3. **Step 3: Track deletion status** (lines 198-220):
+   - Use `libraryDeleted` boolean instead of early return
+   - Allows subsequent cleanup steps to execute
+   
+4. **Step 4: Trigger Jellyfin refresh** (lines 222-233):
+   - Call `RefreshLibrary()` after successful deletion
+   - Updates dashboard without Jellyfin restart
+   - Graceful error handling for refresh failures
+
+**Files Modified & Committed:**
+- `internal/services/symlink_library.go` (+27 lines, -18 lines) - Complete cleanup fix
+
+**Commits:**
+1. `3b870e9` - fix: cleanup symlinks and refresh Jellyfin when empty library is removed
+
+**Current State:**
+- Running: No (implementation complete)
+- Tests passing: 394/394 ✅ (all 5 packages)
+- Known issues: None
+- Build: Successful (./prunarr binary ready)
+- Ready for user testing ✅
+
+**Expected Behavior After Fix:**
+When retention rules disabled → sync completes:
+1. ✅ Symlinks removed from `/data/media/leaving-soon/movies/`
+2. ✅ Virtual folder deleted from Jellyfin
+3. ✅ `POST /Library/Refresh` triggered
+4. ✅ **Dashboard updates immediately** (no restart needed)
+
+**Key Benefits:**
+- **Filesystem hygiene**: Orphaned symlinks no longer accumulate
+- **UI consistency**: Dashboard reflects library state without restart
+- **Graceful degradation**: Warnings for errors, sync continues
+- **Improved logging**: Clear 4-step process for troubleshooting
+
+**Next Session TODO:**
+- [ ] User verification: Test with live Jellyfin instance
+- [ ] Verify symlinks cleaned up when library empty
+- [ ] Verify dashboard updates without Jellyfin restart
+- [ ] Consider Docker release (v1.4.0) if user confirms fix works
+- [ ] User-based cleanup with watch tracking integration
+- [ ] Mobile responsiveness improvements
+
+---
+
+## Previous Session: Nov 5, 2025 (Session 38)
 
 ### Config Validation Bug Fix - COMPLETED ✅
 
