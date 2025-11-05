@@ -23,14 +23,18 @@ services:
       # Logs directory (optional - logs go to docker logs by default)
       - /volume3/docker/prunarr/logs:/app/logs
       
-      # Symlink directory (read-write for Prunarr to create "Leaving Soon" symlinks)
-      # This path must be accessible by both Prunarr and Jellyfin containers
-      - /volume3/docker/prunarr/leaving-soon:/app/leaving-soon
-      
-      # Media paths (read-only) - MUST match Radarr/Sonarr/Jellyfin paths exactly
+      # Media paths (read-write so Prunarr can create symlinks)
+      # MUST match Radarr/Sonarr/Jellyfin paths exactly
       # Mount ONLY the media directory for better security (not all of /volume1/data)
       # Adjust to match YOUR system structure:
-      - /volume1/data/media:/data/media:ro  # Recommended: Most restrictive
+      - /volume1/data/media:/data/media  # Prunarr creates symlinks at /data/media/leaving-soon/
+      
+      # RECOMMENDED CONFIG: Use base_path: /data/media/leaving-soon in prunarr.yaml
+      # This way Jellyfin doesn't need an extra mount - it already has /data/media!
+      
+      # Alternative: Separate symlink directory (requires extra Jellyfin mount)
+      # - /volume3/docker/prunarr/leaving-soon:/app/leaving-soon
+      # Then use base_path: /app/leaving-soon in prunarr.yaml
       
       # Alternative path patterns (uncomment/modify based on your setup):
       # - /volume1/media:/media:ro           # If your media is at /volume1/media/

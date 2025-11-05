@@ -14,24 +14,29 @@ integrations:
     # Symlink Libraries (optional) - Create "Leaving Soon" libraries in Jellyfin sidebar
     # symlink_library:
     #   enabled: true
-    #   base_path: /app/leaving-soon                       # Base directory for symlinks (container path)
+    #   base_path: /data/media/leaving-soon                # RECOMMENDED: Inside existing media mount (simplest!)
     #   movies_library_name: "Leaving Soon - Movies"      # Optional: default is "Leaving Soon - Movies"
     #   tv_library_name: "Leaving Soon - TV Shows"        # Optional: default is "Leaving Soon - TV Shows"
     #
-    # Docker Volume Mapping Example (adjust paths to match YOUR system):
+    # Docker Volume Mapping - RECOMMENDED APPROACH (reuse existing media mount):
     #   prunarr:
     #     volumes:
-    #       - /volume3/docker/prunarr/leaving-soon:/app/leaving-soon
-    #       # Recommended: Mount only media directory (most restrictive/secure)
-    #       - /volume1/data/media:/data/media:ro
-    #       # Alternative patterns:
-    #       # - /volume1/media:/media:ro           # If media at /volume1/media/
-    #       # - /mnt/storage/media:/media:ro       # Custom storage location
+    #       - /volume3/docker/prunarr/config:/app/config
+    #       - /volume3/docker/prunarr/data:/app/data
+    #       - /volume1/data/media:/data/media         # Prunarr creates symlinks at /data/media/leaving-soon/
     #
     #   jellyfin:
     #     volumes:
-    #       - /volume3/docker/prunarr/leaving-soon:/app/leaving-soon:ro  # See symlinks
-    #       - /volume1/data/media:/data/media:ro                          # Access actual files
+    #       - /volume1/data/media:/data/media:ro      # Already has access to symlinks! No extra mount needed ✅
+    #
+    # Alternative: Separate directory (more complex, requires extra Jellyfin mount):
+    #   base_path: /app/leaving-soon
+    #   prunarr volumes:
+    #     - /volume3/docker/prunarr/leaving-soon:/app/leaving-soon
+    #     - /volume1/data/media:/data/media:ro
+    #   jellyfin volumes:
+    #     - /volume3/docker/prunarr/leaving-soon:/app/leaving-soon:ro  # Extra mount required
+    #     - /volume1/data/media:/data/media:ro
     #
     # IMPORTANT: Jellyfin needs BOTH mounts for symlinks to work:
     #   1. /app/leaving-soon mount - To see the symlink files Prunarr creates

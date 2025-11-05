@@ -111,7 +111,7 @@ server:
 
 symlink_library:
   enabled: true
-  base_path: /app/leaving-soon
+  base_path: /data/media/leaving-soon  # RECOMMENDED: Inside existing media mount
   movies_library_name: "Leaving Soon - Movies"
   tv_library_name: "Leaving Soon - TV Shows"
 ```
@@ -208,29 +208,35 @@ services:
     restart: always
 ```
 
-### Step 5: Update Jellyfin Docker Compose
+### Step 5: Verify Jellyfin Can Access Symlinks
 
-**IMPORTANT:** Jellyfin needs **BOTH** volume mounts to work with symlink libraries:
+**RECOMMENDED APPROACH:** If you configured `base_path: /data/media/leaving-soon`, **no changes needed!**
 
-1. **Media mount** (`/data/media`) - To access the actual video files
-2. **Leaving-soon mount** (`/app/leaving-soon`) - To see the symlinks Prunarr creates
+Jellyfin already has the `/data/media` mount, which includes the `leaving-soon` subdirectory where Prunarr creates symlinks.
 
 **How it works:**
-- Prunarr creates: `/app/leaving-soon/movies/Red Dawn (2012).mkv` → `/data/media/movies/Red Dawn (2012)/file.mkv`
-- Jellyfin Virtual Folder points to: `/app/leaving-soon/movies/`
-- When Jellyfin reads the symlink, it follows it to the real file at `/data/media/movies/...`
-- **Without BOTH mounts, Jellyfin can't access the files**
+- Prunarr creates: `/data/media/leaving-soon/movies/Red Dawn (2012).mkv` → `/data/media/movies/Red Dawn (2012)/file.mkv`
+- Jellyfin Virtual Folder points to: `/data/media/leaving-soon/movies/`
+- Jellyfin can read both the symlink AND follow it to the real file (same mount!)
 
-Add symlink directory to Jellyfin (edit your jellyfin docker-compose.yml):
+**Verify Jellyfin has the media mount** (edit your jellyfin docker-compose.yml if needed):
 
 ```yaml
 volumes:
   - /volume3/docker/jellyfin:/config
-  - /volume1/data/media:/data/media  # REQUIRED: Access actual media files (must match Prunarr)
-  - /volume3/docker/prunarr/leaving-soon:/app/leaving-soon:ro  # REQUIRED: Access symlinks
+  - /volume1/data/media:/data/media:ro  # This gives access to both media files AND symlinks
 ```
 
-Recreate Jellyfin container:
+**Alternative approach** (if you used `base_path: /app/leaving-soon` instead):
+
+```yaml
+volumes:
+  - /volume3/docker/jellyfin:/config
+  - /volume1/data/media:/data/media:ro                          # Access actual files
+  - /volume3/docker/prunarr/leaving-soon:/app/leaving-soon:ro  # Access symlinks (extra mount)
+```
+
+If you changed anything, recreate Jellyfin container:
 ```bash
 cd /path/to/jellyfin/compose
 docker-compose up -d
@@ -268,8 +274,10 @@ docker logs -f prunarr
 ### Step 9: Verify Symlinks Created
 
 ```bash
-# Check symlink directories exist
-ls -la /volume3/docker/prunarr/leaving-soon/
+# Check symlink directories exist (adjust path based on your config)
+ls -la /volume1/data/media/leaving-soon/   # If using recommended base_path
+# OR
+ls -la /volume3/docker/prunarr/leaving-soon/  # If using separate directory
 
 # Should see:
 # drwxr-xr-x movies/
@@ -367,12 +375,18 @@ docker-compose up -d --force-recreate
 ### Problem: No symlinks created
 
 ```bash
-# Check directory permissions
-ls -la /volume3/docker/prunarr/
+# Check if symlink directory exists and has correct permissions
+# (Adjust path based on your base_path config)
 
-# Should be owned by 1027:65536
+# If using base_path: /data/media/leaving-soon (recommended)
+ls -la /volume1/data/media/leaving-soon/
+
+# If using base_path: /app/leaving-soon (separate directory)
+ls -la /volume3/docker/prunarr/leaving-soon/
+
+# Should be owned by your PUID:PGID (default 1027:65536)
 # If not, fix it:
-sudo chown -R 1027:65536 /volume3/docker/prunarr/leaving-soon
+sudo chown -R 1027:65536 /volume1/data/media/leaving-soon
 ```
 
 ### Problem: Jellyfin libraries not created
@@ -388,19 +402,41 @@ docker exec prunarr curl -s http://jellyfin:8096/System/Info/Public | jq
 - "Leaving Soon - Movies" library exists but shows 0 items
 - Jellyfin can't see the symlinks Prunarr created
 
-**Root Cause:** Jellyfin is missing the `/app/leaving-soon` volume mount.
+**Root Cause:** Jellyfin doesn't have access to the symlink directory.
 
-**Solution:** Verify Jellyfin has **BOTH** required mounts:
+**Solution depends on your `base_path` setting:**
 
+**If using `base_path: /data/media/leaving-soon` (recommended):**
 ```yaml
-# Jellyfin docker-compose.yml
+# Jellyfin docker-compose.yml - Only needs ONE mount!
 volumes:
   - /volume3/docker/jellyfin:/config
-  - /volume1/data/media:/data/media               # REQUIRED: Actual media files
-  - /volume3/docker/prunarr/leaving-soon:/app/leaving-soon:ro  # REQUIRED: Symlinks
+  - /volume1/data/media:/data/media:ro  # Already includes /data/media/leaving-soon/ ✅
+```
+
+**If using `base_path: /app/leaving-soon` (separate directory):**
+```yaml
+# Jellyfin docker-compose.yml - Needs TWO mounts
+volumes:
+  - /volume3/docker/jellyfin:/config
+  - /volume1/data/media:/data/media:ro                          # Actual media files
+  - /volume3/docker/prunarr/leaving-soon:/app/leaving-soon:ro  # Symlinks (extra mount)
 ```
 
 **Verify mounts are working:**
+
+**If using `base_path: /data/media/leaving-soon` (recommended):**
+```bash
+# From host: Check symlinks exist
+ls -la /volume1/data/media/leaving-soon/movies/
+
+# From Jellyfin container: Check if it can see symlinks
+docker exec jellyfin ls -la /data/media/leaving-soon/movies/
+
+# Should show the same files! Both containers share the same mount.
+```
+
+**If using `base_path: /app/leaving-soon` (separate directory):**
 ```bash
 # From host: Check symlinks exist
 ls -la /volume3/docker/prunarr/leaving-soon/movies/
@@ -413,10 +449,10 @@ docker-compose restart jellyfin
 ```
 
 **How symlinks work:**
-1. Prunarr creates: `/app/leaving-soon/movies/Movie.mkv` → `/data/media/movies/Movie/file.mkv`
-2. Jellyfin Virtual Folder points to: `/app/leaving-soon/movies/`
-3. Jellyfin reads symlink and follows to real file
-4. **Both paths must be accessible** for this to work
+1. Prunarr creates symlink: `/data/media/leaving-soon/movies/Movie.mkv` → `/data/media/movies/Movie/file.mkv`
+2. Jellyfin Virtual Folder points to: `/data/media/leaving-soon/movies/`
+3. Jellyfin reads the symlink file and follows it to the real file
+4. **Jellyfin only needs one mount** (the `/data/media` mount) to access both!
 
 ### Problem: Path mismatch errors
 
