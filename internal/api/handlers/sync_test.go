@@ -31,6 +31,9 @@ func newTestSyncEngineForAPI(t *testing.T) *services.SyncEngine {
 		},
 	}
 
+	// Set global config for tests that use config.Get()
+	config.SetTestConfig(cfg)
+
 	cacheInstance := cache.New()
 	jobs, err := storage.NewJobsFile(tmpDir, 50)
 	require.NoError(t, err)

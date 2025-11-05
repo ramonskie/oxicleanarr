@@ -210,6 +210,10 @@ func (h *ConfigHandler) UpdateConfig(w http.ResponseWriter, r *http.Request) {
 	oldMovieRetention := cfg.Rules.MovieRetention
 	oldTVRetention := cfg.Rules.TVRetention
 
+	// Capture old sync interval values for scheduler restart detection
+	oldFullInterval := cfg.Sync.FullInterval
+	oldIncrInterval := cfg.Sync.IncrementalInterval
+
 	// Update fields if provided
 	if req.Admin != nil {
 		if req.Admin.Username != nil {
@@ -390,6 +394,23 @@ func (h *ConfigHandler) UpdateConfig(w http.ResponseWriter, r *http.Request) {
 			h.syncEngine.ReapplyRetentionRules()
 			log.Info().Msg("Retention rules re-applied successfully")
 		}()
+	}
+
+	// Restart sync scheduler if intervals changed
+	if h.syncEngine != nil && req.Sync != nil {
+		if req.Sync.FullInterval != oldFullInterval || req.Sync.IncrementalInterval != oldIncrInterval {
+			log.Info().
+				Int("old_full_interval", oldFullInterval).
+				Int("new_full_interval", req.Sync.FullInterval).
+				Int("old_incr_interval", oldIncrInterval).
+				Int("new_incr_interval", req.Sync.IncrementalInterval).
+				Msg("Sync intervals changed, restarting scheduler")
+			go func() {
+				if err := h.syncEngine.RestartScheduler(); err != nil {
+					log.Error().Err(err).Msg("Failed to restart sync scheduler")
+				}
+			}()
+		}
 	}
 
 	log.Info().Msg("Configuration updated successfully")

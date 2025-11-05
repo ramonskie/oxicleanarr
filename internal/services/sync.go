@@ -97,11 +97,13 @@ func (e *SyncEngine) Start() error {
 
 	e.running = true
 
-	fullInterval := time.Duration(e.config.Sync.FullInterval) * time.Second
-	incrInterval := time.Duration(e.config.Sync.IncrementalInterval) * time.Second
+	// Always read current config values (supports hot-reload)
+	cfg := config.Get()
+	fullInterval := time.Duration(cfg.Sync.FullInterval) * time.Second
+	incrInterval := time.Duration(cfg.Sync.IncrementalInterval) * time.Second
 
 	// Only start sync scheduler if auto-start is enabled
-	if e.config.Sync.AutoStart {
+	if cfg.Sync.AutoStart {
 		// Start full sync ticker
 		e.fullSyncTicker = time.NewTicker(fullInterval)
 
@@ -154,6 +156,45 @@ func (e *SyncEngine) Stop() {
 	}
 
 	log.Info().Msg("Sync engine stopped")
+}
+
+// RestartScheduler restarts the sync scheduler with updated intervals from config
+// This is useful when config changes require updating the sync intervals without restarting the application
+func (e *SyncEngine) RestartScheduler() error {
+	log.Info().Msg("Restarting sync scheduler with updated intervals")
+
+	e.runningLock.Lock()
+	wasRunning := e.running
+	e.runningLock.Unlock()
+
+	// Only restart if it was running
+	if !wasRunning {
+		log.Info().Msg("Scheduler was not running, skipping restart")
+		return nil
+	}
+
+	// Stop the scheduler
+	e.Stop()
+
+	// Wait briefly for goroutines to exit cleanly
+	time.Sleep(100 * time.Millisecond)
+
+	// Recreate the stop channel (since Stop() closed it)
+	e.stopChan = make(chan struct{})
+
+	// Restart with new config values
+	if err := e.Start(); err != nil {
+		return fmt.Errorf("failed to restart scheduler: %w", err)
+	}
+
+	// Log new intervals from current config
+	cfg := config.Get()
+	log.Info().
+		Int("full_interval", cfg.Sync.FullInterval).
+		Int("incr_interval", cfg.Sync.IncrementalInterval).
+		Msg("Sync scheduler restarted successfully")
+
+	return nil
 }
 
 // runFullSyncLoop runs full sync on schedule

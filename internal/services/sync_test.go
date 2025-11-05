@@ -31,6 +31,9 @@ func newTestSyncEngine(t *testing.T) (*SyncEngine, *storage.JobsFile, *storage.E
 		},
 	}
 
+	// Set global config for tests that use config.Get()
+	config.SetTestConfig(cfg)
+
 	cacheInstance := cache.New()
 	jobs, err := storage.NewJobsFile(tmpDir, 50)
 	require.NoError(t, err)
@@ -136,6 +139,9 @@ func TestSyncEngine_StartStop(t *testing.T) {
 				TVRetention:    "120d",
 			},
 		}
+
+		// Set global config for tests that use config.Get()
+		config.SetTestConfig(cfg)
 
 		cacheInstance := cache.New()
 		jobs, err := storage.NewJobsFile(tmpDir, 50)
