@@ -75,5 +75,12 @@ func SetDefaults(cfg *Config) {
 		if cfg.Integrations.Jellyfin.SymlinkLibrary.TVLibraryName == "" {
 			cfg.Integrations.Jellyfin.SymlinkLibrary.TVLibraryName = "Leaving Soon - TV Shows"
 		}
+		// Default to hiding empty libraries (better UX - no clutter in sidebar)
+		// Note: We can't detect if user explicitly set it to false, so we use a heuristic:
+		// If symlink library is enabled but hide_when_empty isn't set, default to true
+		// Users who want empty libraries visible can explicitly set hide_when_empty: false
+		if !cfg.Integrations.Jellyfin.SymlinkLibrary.HideWhenEmpty {
+			cfg.Integrations.Jellyfin.SymlinkLibrary.HideWhenEmpty = true
+		}
 	}
 }

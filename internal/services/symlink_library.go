@@ -149,6 +149,48 @@ func (m *SymlinkLibraryManager) syncLibrary(ctx context.Context, libraryName, co
 		Bool("dry_run", dryRun).
 		Msg("Syncing symlink library")
 
+	// Check if library should be hidden when empty
+	if len(items) == 0 && cfg.Integrations.Jellyfin.SymlinkLibrary.HideWhenEmpty {
+		log.Info().
+			Str("library", libraryName).
+			Bool("dry_run", dryRun).
+			Msg("Library is empty and hide_when_empty is true, removing library from Jellyfin")
+
+		// Check if virtual folder exists before attempting deletion
+		folders, err := m.jellyfinClient.GetVirtualFolders(ctx)
+		if err != nil {
+			log.Warn().
+				Err(err).
+				Str("library", libraryName).
+				Msg("Failed to check for existing virtual folder, skipping deletion")
+			return nil // Don't fail entire sync
+		}
+
+		// Delete the virtual folder if it exists
+		for _, folder := range folders {
+			if folder.Name == libraryName {
+				if err := m.jellyfinClient.DeleteVirtualFolder(ctx, libraryName, dryRun); err != nil {
+					log.Warn().
+						Err(err).
+						Str("library", libraryName).
+						Msg("Failed to delete empty virtual folder")
+					return nil // Don't fail entire sync
+				}
+				log.Info().
+					Str("library", libraryName).
+					Bool("dry_run", dryRun).
+					Msg("Empty library removed from Jellyfin")
+				return nil
+			}
+		}
+
+		// Library doesn't exist, nothing to do
+		log.Debug().
+			Str("library", libraryName).
+			Msg("Library doesn't exist in Jellyfin, nothing to delete")
+		return nil
+	}
+
 	// Step 1: Ensure virtual folder exists in Jellyfin
 	if err := m.ensureVirtualFolder(ctx, libraryName, collectionType, symlinkDir, dryRun); err != nil {
 		return fmt.Errorf("failed to ensure virtual folder: %w", err)

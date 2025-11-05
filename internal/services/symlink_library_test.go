@@ -618,3 +618,227 @@ func TestSyncLibraries_Integration(t *testing.T) {
 	assert.Equal(t, 2, mockClient.createCalled)
 	assert.Len(t, mockClient.virtualFolders, 2)
 }
+
+func TestSyncLibrary_HideWhenEmpty_True(t *testing.T) {
+	tmpDir := t.TempDir()
+	symlinkBase := filepath.Join(tmpDir, "symlinks")
+
+	cfg := &config.Config{
+		App: config.AppConfig{DryRun: false},
+		Integrations: config.IntegrationsConfig{
+			Jellyfin: config.JellyfinConfig{
+				SymlinkLibrary: config.SymlinkLibraryConfig{
+					Enabled:           true,
+					BasePath:          symlinkBase,
+					MoviesLibraryName: "Movies - Leaving Soon",
+					HideWhenEmpty:     true, // Enable hide when empty
+				},
+			},
+		},
+	}
+
+	// Create mock client with existing virtual folder
+	mockClient := &mockJellyfinClientForSymlink{
+		virtualFolders: []clients.JellyfinVirtualFolder{
+			{
+				Name:           "Movies - Leaving Soon",
+				CollectionType: "movies",
+				Locations:      []string{filepath.Join(symlinkBase, "movies")},
+			},
+		},
+	}
+	manager := NewSymlinkLibraryManager(mockClient, cfg)
+
+	// Call syncLibrary with empty items list
+	emptyItems := []models.Media{}
+	err := manager.syncLibrary(context.Background(), "Movies - Leaving Soon", "movies", filepath.Join(symlinkBase, "movies"), emptyItems)
+
+	require.NoError(t, err)
+
+	// Verify DeleteVirtualFolder was called
+	assert.Equal(t, 1, mockClient.deleteCalled, "DeleteVirtualFolder should be called once")
+
+	// Verify virtual folder was actually removed
+	assert.Len(t, mockClient.virtualFolders, 0, "Virtual folder should be removed")
+}
+
+func TestSyncLibrary_HideWhenEmpty_False(t *testing.T) {
+	tmpDir := t.TempDir()
+	symlinkBase := filepath.Join(tmpDir, "symlinks")
+
+	// Create symlink directory
+	require.NoError(t, os.MkdirAll(filepath.Join(symlinkBase, "movies"), 0755))
+
+	cfg := &config.Config{
+		App: config.AppConfig{DryRun: false},
+		Integrations: config.IntegrationsConfig{
+			Jellyfin: config.JellyfinConfig{
+				SymlinkLibrary: config.SymlinkLibraryConfig{
+					Enabled:           true,
+					BasePath:          symlinkBase,
+					MoviesLibraryName: "Movies - Leaving Soon",
+					HideWhenEmpty:     false, // Disable hide when empty
+				},
+			},
+		},
+	}
+
+	mockClient := &mockJellyfinClientForSymlink{
+		virtualFolders: []clients.JellyfinVirtualFolder{},
+	}
+	manager := NewSymlinkLibraryManager(mockClient, cfg)
+
+	// Call syncLibrary with empty items list
+	emptyItems := []models.Media{}
+	err := manager.syncLibrary(context.Background(), "Movies - Leaving Soon", "movies", filepath.Join(symlinkBase, "movies"), emptyItems)
+
+	require.NoError(t, err)
+
+	// Verify DeleteVirtualFolder was NOT called
+	assert.Equal(t, 0, mockClient.deleteCalled, "DeleteVirtualFolder should not be called")
+
+	// Verify CreateVirtualFolder WAS called (to ensure empty library exists)
+	assert.Equal(t, 1, mockClient.createCalled, "CreateVirtualFolder should be called once")
+	assert.Len(t, mockClient.virtualFolders, 1, "Virtual folder should exist even when empty")
+}
+
+func TestSyncLibrary_HideWhenEmpty_Transition(t *testing.T) {
+	tmpDir := t.TempDir()
+	symlinkBase := filepath.Join(tmpDir, "symlinks")
+	mediaDir := filepath.Join(tmpDir, "media")
+
+	// Create real media file
+	require.NoError(t, os.MkdirAll(mediaDir, 0755))
+	moviePath := filepath.Join(mediaDir, "movie.mkv")
+	require.NoError(t, os.WriteFile(moviePath, []byte("movie"), 0644))
+
+	cfg := &config.Config{
+		App: config.AppConfig{DryRun: false},
+		Integrations: config.IntegrationsConfig{
+			Jellyfin: config.JellyfinConfig{
+				SymlinkLibrary: config.SymlinkLibraryConfig{
+					Enabled:           true,
+					BasePath:          symlinkBase,
+					MoviesLibraryName: "Movies - Leaving Soon",
+					HideWhenEmpty:     true,
+				},
+			},
+		},
+	}
+
+	mockClient := &mockJellyfinClientForSymlink{
+		virtualFolders: []clients.JellyfinVirtualFolder{},
+	}
+	manager := NewSymlinkLibraryManager(mockClient, cfg)
+
+	// Phase 1: Sync with items (should create library)
+	futureDate := time.Now().Add(7 * 24 * time.Hour)
+	itemsWithMedia := []models.Media{
+		{
+			ID:          "m1",
+			Title:       "Test Movie",
+			Year:        2023,
+			Type:        models.MediaTypeMovie,
+			FilePath:    moviePath,
+			JellyfinID:  "jf-m1",
+			DeleteAfter: futureDate,
+			IsExcluded:  false,
+		},
+	}
+
+	err := manager.syncLibrary(context.Background(), "Movies - Leaving Soon", "movies", filepath.Join(symlinkBase, "movies"), itemsWithMedia)
+	require.NoError(t, err)
+
+	// Verify library was created
+	assert.Equal(t, 1, mockClient.createCalled, "CreateVirtualFolder should be called")
+	assert.Len(t, mockClient.virtualFolders, 1, "Virtual folder should exist")
+
+	// Phase 2: Sync with empty items (should delete library)
+	emptyItems := []models.Media{}
+	err = manager.syncLibrary(context.Background(), "Movies - Leaving Soon", "movies", filepath.Join(symlinkBase, "movies"), emptyItems)
+	require.NoError(t, err)
+
+	// Verify library was deleted
+	assert.Equal(t, 1, mockClient.deleteCalled, "DeleteVirtualFolder should be called")
+	assert.Len(t, mockClient.virtualFolders, 0, "Virtual folder should be removed")
+}
+
+func TestSyncLibrary_HideWhenEmpty_DryRun(t *testing.T) {
+	tmpDir := t.TempDir()
+	symlinkBase := filepath.Join(tmpDir, "symlinks")
+
+	cfg := &config.Config{
+		App: config.AppConfig{DryRun: true}, // Dry-run mode
+		Integrations: config.IntegrationsConfig{
+			Jellyfin: config.JellyfinConfig{
+				SymlinkLibrary: config.SymlinkLibraryConfig{
+					Enabled:           true,
+					BasePath:          symlinkBase,
+					MoviesLibraryName: "Movies - Leaving Soon",
+					HideWhenEmpty:     true,
+				},
+			},
+		},
+	}
+
+	// Create mock client with existing virtual folder
+	mockClient := &mockJellyfinClientForSymlink{
+		virtualFolders: []clients.JellyfinVirtualFolder{
+			{
+				Name:           "Movies - Leaving Soon",
+				CollectionType: "movies",
+				Locations:      []string{filepath.Join(symlinkBase, "movies")},
+			},
+		},
+	}
+	manager := NewSymlinkLibraryManager(mockClient, cfg)
+
+	// Call syncLibrary with empty items list in dry-run mode
+	emptyItems := []models.Media{}
+	err := manager.syncLibrary(context.Background(), "Movies - Leaving Soon", "movies", filepath.Join(symlinkBase, "movies"), emptyItems)
+
+	require.NoError(t, err)
+
+	// Verify DeleteVirtualFolder was called (with dryRun=true)
+	assert.Equal(t, 1, mockClient.deleteCalled, "DeleteVirtualFolder should be called in dry-run")
+
+	// Verify virtual folder was NOT actually removed (dry-run protection)
+	assert.Len(t, mockClient.virtualFolders, 1, "Virtual folder should still exist (dry-run mode)")
+}
+
+func TestSyncLibrary_HideWhenEmpty_NoExistingLibrary(t *testing.T) {
+	tmpDir := t.TempDir()
+	symlinkBase := filepath.Join(tmpDir, "symlinks")
+
+	cfg := &config.Config{
+		App: config.AppConfig{DryRun: false},
+		Integrations: config.IntegrationsConfig{
+			Jellyfin: config.JellyfinConfig{
+				SymlinkLibrary: config.SymlinkLibraryConfig{
+					Enabled:           true,
+					BasePath:          symlinkBase,
+					MoviesLibraryName: "Movies - Leaving Soon",
+					HideWhenEmpty:     true,
+				},
+			},
+		},
+	}
+
+	// Create mock client with NO existing virtual folders
+	mockClient := &mockJellyfinClientForSymlink{
+		virtualFolders: []clients.JellyfinVirtualFolder{},
+	}
+	manager := NewSymlinkLibraryManager(mockClient, cfg)
+
+	// Call syncLibrary with empty items list
+	emptyItems := []models.Media{}
+	err := manager.syncLibrary(context.Background(), "Movies - Leaving Soon", "movies", filepath.Join(symlinkBase, "movies"), emptyItems)
+
+	require.NoError(t, err)
+
+	// Verify DeleteVirtualFolder was NOT called (nothing to delete)
+	assert.Equal(t, 0, mockClient.deleteCalled, "DeleteVirtualFolder should not be called when library doesn't exist")
+
+	// Verify CreateVirtualFolder was NOT called (no items to show)
+	assert.Equal(t, 0, mockClient.createCalled, "CreateVirtualFolder should not be called for empty library")
+}

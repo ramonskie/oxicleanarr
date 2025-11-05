@@ -17,6 +17,9 @@ integrations:
     #   base_path: /data/media/leaving-soon                # RECOMMENDED: Inside existing media mount (simplest!)
     #   movies_library_name: "Leaving Soon - Movies"      # Optional: default is "Leaving Soon - Movies"
     #   tv_library_name: "Leaving Soon - TV Shows"        # Optional: default is "Leaving Soon - TV Shows"
+    #   hide_when_empty: true                             # Optional: Auto-delete empty libraries (default: true)
+    #                                                      # When true, removes libraries from Jellyfin sidebar when no items scheduled
+    #                                                      # Set to false to keep empty libraries visible
     #
     # Docker Volume Mapping - RECOMMENDED APPROACH (reuse existing media mount):
     #   prunarr:

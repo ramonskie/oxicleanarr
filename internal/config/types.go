@@ -76,6 +76,7 @@ type SymlinkLibraryConfig struct {
 	BasePath          string `mapstructure:"base_path" yaml:"base_path" json:"base_path"`                                         // Base directory for symlinks (e.g., /data/media/prunarr-leaving-soon)
 	MoviesLibraryName string `mapstructure:"movies_library_name" yaml:"movies_library_name,omitempty" json:"movies_library_name"` // Jellyfin library name for movies (default: "Leaving Soon - Movies")
 	TVLibraryName     string `mapstructure:"tv_library_name" yaml:"tv_library_name,omitempty" json:"tv_library_name"`             // Jellyfin library name for TV shows (default: "Leaving Soon - TV Shows")
+	HideWhenEmpty     bool   `mapstructure:"hide_when_empty" yaml:"hide_when_empty" json:"hide_when_empty"`                       // Automatically delete libraries when no items are scheduled (prevents empty libraries in sidebar)
 }
 
 // RadarrConfig holds Radarr integration settings
