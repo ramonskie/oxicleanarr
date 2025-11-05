@@ -51,8 +51,22 @@ func Load(path string) (*Config, error) {
 		return nil, fmt.Errorf("failed to unmarshal config: %w", err)
 	}
 
+	// Debug: Log admin config after unmarshaling
+	log.Debug().
+		Str("username", cfg.Admin.Username).
+		Bool("has_password", cfg.Admin.Password != "").
+		Bool("disable_auth", cfg.Admin.DisableAuth).
+		Msg("Admin config after unmarshaling from YAML")
+
 	// Apply defaults for any missing values
 	SetDefaults(cfg)
+
+	// Debug: Log admin config after applying defaults
+	log.Debug().
+		Str("username", cfg.Admin.Username).
+		Bool("has_password", cfg.Admin.Password != "").
+		Bool("disable_auth", cfg.Admin.DisableAuth).
+		Msg("Admin config after applying defaults")
 
 	// Validate configuration
 	if err := Validate(cfg); err != nil {
