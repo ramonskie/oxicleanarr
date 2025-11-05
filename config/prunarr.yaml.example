@@ -10,6 +10,27 @@ integrations:
     enabled: true
     url: http://jellyfin:8096
     api_key: your-jellyfin-api-key-here
+    
+    # Symlink Libraries (optional) - Create "Leaving Soon" libraries in Jellyfin sidebar
+    # symlink_library:
+    #   enabled: true
+    #   base_path: /app/leaving-soon                       # Base directory for symlinks (container path)
+    #   movies_library_name: "Leaving Soon - Movies"      # Optional: default is "Leaving Soon - Movies"
+    #   tv_library_name: "Leaving Soon - TV Shows"        # Optional: default is "Leaving Soon - TV Shows"
+    #
+    # Docker Volume Mapping Example:
+    #   prunarr:
+    #     volumes:
+    #       - /volume3/docker/prunarr/leaving-soon:/app/leaving-soon
+    #       - /volume1/data/movies:/data/movies:ro
+    #       - /volume1/data/tv:/data/tv:ro
+    #   jellyfin:
+    #     volumes:
+    #       - /volume3/docker/prunarr/leaving-soon:/app/leaving-soon:ro
+    #       - /volume1/data/movies:/data/movies:ro
+    #       - /volume1/data/tv:/data/tv:ro
+    #
+    # IMPORTANT: Both containers must see the same paths for media files!
   
   radarr:
     enabled: true
@@ -53,27 +74,6 @@ integrations:
 # server:
 #   host: 0.0.0.0
 #   port: 8080
-
-# Symlink Libraries (optional) - Create "Leaving Soon" libraries in Jellyfin sidebar
-# symlink_library:
-#   enabled: true
-#   base_path: /data/media/prunarr-leaving-soon     # Base directory for symlinks
-#   movies_library_name: "Leaving Soon - Movies"    # Optional: default is "Leaving Soon - Movies"
-#   tv_library_name: "Leaving Soon - TV Shows"      # Optional: default is "Leaving Soon - TV Shows"
-#
-# Docker Volume Mapping Example:
-#   prunarr:
-#     volumes:
-#       - /host/prunarr-leaving-soon:/data/media/prunarr-leaving-soon
-#       - /host/movies:/data/movies:ro
-#       - /host/tv:/data/tv:ro
-#   jellyfin:
-#     volumes:
-#       - /host/prunarr-leaving-soon:/data/media/prunarr-leaving-soon:ro
-#       - /host/movies:/data/movies:ro
-#       - /host/tv:/data/tv:ro
-#
-# IMPORTANT: Both containers must see the same paths for media files!
 
 # Advanced Rules (optional) - Tag-based, episode limits, or user-based cleanup
 # advanced_rules:

@@ -32,18 +32,20 @@ docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
 
 ```bash
 # SSH into your NAS, then:
-sudo mkdir -p /volume3/docker/prunarr
+sudo mkdir -p /volume3/docker/prunarr/config
 sudo mkdir -p /volume3/docker/prunarr/data
-sudo mkdir -p /volume1/data/media/prunarr-leaving-soon
+sudo mkdir -p /volume3/docker/prunarr/logs
+sudo mkdir -p /volume3/docker/prunarr/leaving-soon
 sudo chown -R 1027:65536 /volume3/docker/prunarr
-sudo chown -R 1027:65536 /volume1/data/media/prunarr-leaving-soon
 ```
+
+**IMPORTANT**: Note we create a `config` **directory** (not just placing the file directly). This is critical for Docker ownership changes to work correctly.
 
 ### Step 2: Create Prunarr Config File
 
 ```bash
-# Create config file
-sudo nano /volume3/docker/prunarr/prunarr.yaml
+# Create config file INSIDE the config directory
+sudo nano /volume3/docker/prunarr/config/prunarr.yaml
 ```
 
 Paste this content (replace API keys):
@@ -170,9 +172,11 @@ services:
     volumes:
       # NOTE: Use :z flag on SELinux systems (Fedora, RHEL, CentOS)
       # Synology/QNAP typically don't need :z flag
-      - /volume3/docker/prunarr/prunarr.yaml:/app/config/prunarr.yaml:z
+      # IMPORTANT: Mount directories, not individual files!
+      - /volume3/docker/prunarr/config:/app/config:z
       - /volume3/docker/prunarr/data:/app/data:z
-      - /volume1/data/media/prunarr-leaving-soon:/data/media/prunarr-leaving-soon:z
+      - /volume3/docker/prunarr/logs:/app/logs:z
+      - /volume3/docker/prunarr/leaving-soon:/app/leaving-soon:z
       - /volume1/data:/data:ro
     ports:
       - 8080:8080
@@ -291,6 +295,40 @@ volumes:
 ```
 
 **Note:** Synology and QNAP NAS systems typically don't use SELinux, so the `:z` flag is optional but harmless.
+
+### Problem: "Permission denied" on config/data files
+
+If you see errors like:
+```
+chmod: /app/config/prunarr.yaml: Operation not permitted
+open /app/data/jobs.json: permission denied
+```
+
+**Root Cause:** Mounting individual **files** (instead of directories) prevents Docker from changing ownership.
+
+**Solution:** Always mount **directories**, not individual files:
+
+```yaml
+# ❌ WRONG - File mount (causes permission errors)
+volumes:
+  - /volume3/docker/prunarr/prunarr.yaml:/app/config/prunarr.yaml
+
+# ✅ CORRECT - Directory mount (allows ownership changes)
+volumes:
+  - /volume3/docker/prunarr/config:/app/config
+```
+
+**Fix existing deployment:**
+```bash
+# Move config file into config directory
+mkdir -p /volume3/docker/prunarr/config
+mv /volume3/docker/prunarr/prunarr.yaml /volume3/docker/prunarr/config/
+sudo chown -R 1027:65536 /volume3/docker/prunarr
+
+# Update docker-compose.yml to use directory mount
+# Then recreate container:
+docker-compose up -d --force-recreate
+```
 
 ### Problem: No symlinks created
 
