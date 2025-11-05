@@ -157,6 +157,7 @@ func (m *SymlinkLibraryManager) syncLibrary(ctx context.Context, libraryName, co
 			Msg("Library is empty and hide_when_empty is true, removing library from Jellyfin")
 
 		// Check if virtual folder exists before attempting deletion
+		log.Info().Str("library", libraryName).Msg("Fetching virtual folders from Jellyfin")
 		folders, err := m.jellyfinClient.GetVirtualFolders(ctx)
 		if err != nil {
 			log.Warn().
@@ -166,9 +167,26 @@ func (m *SymlinkLibraryManager) syncLibrary(ctx context.Context, libraryName, co
 			return nil // Don't fail entire sync
 		}
 
+		log.Info().
+			Str("library", libraryName).
+			Int("folder_count", len(folders)).
+			Msg("Retrieved virtual folders from Jellyfin")
+
+		// Log all folder names for debugging
+		for _, f := range folders {
+			log.Info().
+				Str("folder_name", f.Name).
+				Str("searching_for", libraryName).
+				Bool("matches", f.Name == libraryName).
+				Msg("Checking virtual folder")
+		}
+
 		// Delete the virtual folder if it exists
 		for _, folder := range folders {
 			if folder.Name == libraryName {
+				log.Info().
+					Str("library", libraryName).
+					Msg("Found matching virtual folder, proceeding with deletion")
 				if err := m.jellyfinClient.DeleteVirtualFolder(ctx, libraryName, dryRun); err != nil {
 					log.Warn().
 						Err(err).
