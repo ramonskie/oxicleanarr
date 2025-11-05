@@ -130,6 +130,14 @@ This document provides essential context for AI coding agents working on the Pru
 5. **Test requirement**: Tests using global config must call `config.SetTestConfig()` first
 6. **Async restart**: Run scheduler restart in goroutine to avoid blocking HTTP response
 
+**Docker Hub Publication:**
+- ✅ Published v1.3.0 to Docker Hub: ramonskie/prunarr:v1.3.0 and :latest
+- Image digest: sha256:43f8dcffceac3e1ff4ec09c1db9e3c9f95c56b43d2302c13e119621d191c70f7
+- Image size: 19.2 MB (same as v1.2.0)
+- Git tag created: v1.3.0
+- Commit: 59a8414 (docs: add Session 36 summary)
+- Image ID: b9dba909a45a
+
 **Next Session TODO:**
 - [ ] User-based cleanup with watch tracking integration
 - [ ] Mobile responsiveness improvements
