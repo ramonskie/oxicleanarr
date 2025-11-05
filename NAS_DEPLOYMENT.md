@@ -210,13 +210,24 @@ services:
 
 ### Step 5: Update Jellyfin Docker Compose
 
+**IMPORTANT:** Jellyfin needs **BOTH** volume mounts to work with symlink libraries:
+
+1. **Media mount** (`/data/media`) - To access the actual video files
+2. **Leaving-soon mount** (`/app/leaving-soon`) - To see the symlinks Prunarr creates
+
+**How it works:**
+- Prunarr creates: `/app/leaving-soon/movies/Red Dawn (2012).mkv` → `/data/media/movies/Red Dawn (2012)/file.mkv`
+- Jellyfin Virtual Folder points to: `/app/leaving-soon/movies/`
+- When Jellyfin reads the symlink, it follows it to the real file at `/data/media/movies/...`
+- **Without BOTH mounts, Jellyfin can't access the files**
+
 Add symlink directory to Jellyfin (edit your jellyfin docker-compose.yml):
 
 ```yaml
 volumes:
   - /volume3/docker/jellyfin:/config
-  - /volume1/data/media:/data/media  # Your existing media mount (must match Prunarr)
-  - /volume3/docker/prunarr/leaving-soon:/app/leaving-soon:ro  # ADD THIS LINE for symlinks
+  - /volume1/data/media:/data/media  # REQUIRED: Access actual media files (must match Prunarr)
+  - /volume3/docker/prunarr/leaving-soon:/app/leaving-soon:ro  # REQUIRED: Access symlinks
 ```
 
 Recreate Jellyfin container:
@@ -370,6 +381,42 @@ sudo chown -R 1027:65536 /volume3/docker/prunarr/leaving-soon
 # Check if Prunarr can reach Jellyfin API
 docker exec prunarr curl -s http://jellyfin:8096/System/Info/Public | jq
 ```
+
+### Problem: Jellyfin libraries empty or not showing items
+
+**Symptoms:**
+- "Leaving Soon - Movies" library exists but shows 0 items
+- Jellyfin can't see the symlinks Prunarr created
+
+**Root Cause:** Jellyfin is missing the `/app/leaving-soon` volume mount.
+
+**Solution:** Verify Jellyfin has **BOTH** required mounts:
+
+```yaml
+# Jellyfin docker-compose.yml
+volumes:
+  - /volume3/docker/jellyfin:/config
+  - /volume1/data/media:/data/media               # REQUIRED: Actual media files
+  - /volume3/docker/prunarr/leaving-soon:/app/leaving-soon:ro  # REQUIRED: Symlinks
+```
+
+**Verify mounts are working:**
+```bash
+# From host: Check symlinks exist
+ls -la /volume3/docker/prunarr/leaving-soon/movies/
+
+# From Jellyfin container: Check if it can see symlinks
+docker exec jellyfin ls -la /app/leaving-soon/movies/
+
+# If second command shows "No such file or directory", add the mount and restart Jellyfin
+docker-compose restart jellyfin
+```
+
+**How symlinks work:**
+1. Prunarr creates: `/app/leaving-soon/movies/Movie.mkv` → `/data/media/movies/Movie/file.mkv`
+2. Jellyfin Virtual Folder points to: `/app/leaving-soon/movies/`
+3. Jellyfin reads symlink and follows to real file
+4. **Both paths must be accessible** for this to work
 
 ### Problem: Path mismatch errors
 

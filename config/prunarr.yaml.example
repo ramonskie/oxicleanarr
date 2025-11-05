@@ -30,11 +30,18 @@ integrations:
     #
     #   jellyfin:
     #     volumes:
-    #       - /volume3/docker/prunarr/leaving-soon:/app/leaving-soon:ro
-    #       - /volume1/data/media:/data/media:ro  # MUST match Prunarr exactly
+    #       - /volume3/docker/prunarr/leaving-soon:/app/leaving-soon:ro  # See symlinks
+    #       - /volume1/data/media:/data/media:ro                          # Access actual files
     #
-    # IMPORTANT: Both containers MUST see the same paths for media files!
-    # Symlinks created by Prunarr will point to /data/media/movies/... (or whatever path you use)
+    # IMPORTANT: Jellyfin needs BOTH mounts for symlinks to work:
+    #   1. /app/leaving-soon mount - To see the symlink files Prunarr creates
+    #   2. /data/media mount - To follow symlinks and access the actual video files
+    # 
+    # How it works:
+    #   - Prunarr creates: /app/leaving-soon/movies/Movie.mkv → /data/media/movies/Movie/file.mkv
+    #   - Jellyfin Virtual Folder points to: /app/leaving-soon/movies/
+    #   - Jellyfin reads symlink and follows it to the real file at /data/media/...
+    #   - Without both mounts, Jellyfin can't access the files!
   
   radarr:
     enabled: true
