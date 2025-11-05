@@ -35,18 +35,20 @@ func (v ValidationErrors) Error() string {
 func Validate(cfg *Config) error {
 	var errors ValidationErrors
 
-	// Validate admin credentials
-	if cfg.Admin.Username == "" {
-		errors = append(errors, ValidationError{
-			Field:   "admin.username",
-			Message: "required",
-		})
-	}
-	if cfg.Admin.Password == "" {
-		errors = append(errors, ValidationError{
-			Field:   "admin.password",
-			Message: "required",
-		})
+	// Validate admin credentials (skip if authentication is disabled)
+	if !cfg.Admin.DisableAuth {
+		if cfg.Admin.Username == "" {
+			errors = append(errors, ValidationError{
+				Field:   "admin.username",
+				Message: "required",
+			})
+		}
+		if cfg.Admin.Password == "" {
+			errors = append(errors, ValidationError{
+				Field:   "admin.password",
+				Message: "required",
+			})
+		}
 	}
 
 	// Validate at least one integration enabled

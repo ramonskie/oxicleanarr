@@ -321,6 +321,103 @@ func TestValidate_DisabledRetention_MovieAndTV(t *testing.T) {
 	}
 }
 
+func TestValidate_DisableAuth_SkipsAdminValidation(t *testing.T) {
+	tests := []struct {
+		name        string
+		username    string
+		password    string
+		disableAuth bool
+		shouldError bool
+	}{
+		{
+			name:        "disable_auth=true with empty credentials - should pass",
+			username:    "",
+			password:    "",
+			disableAuth: true,
+			shouldError: false,
+		},
+		{
+			name:        "disable_auth=true with username only - should pass",
+			username:    "admin",
+			password:    "",
+			disableAuth: true,
+			shouldError: false,
+		},
+		{
+			name:        "disable_auth=true with password only - should pass",
+			username:    "",
+			password:    "pass",
+			disableAuth: true,
+			shouldError: false,
+		},
+		{
+			name:        "disable_auth=true with both credentials - should pass",
+			username:    "admin",
+			password:    "pass",
+			disableAuth: true,
+			shouldError: false,
+		},
+		{
+			name:        "disable_auth=false with empty username - should fail",
+			username:    "",
+			password:    "pass",
+			disableAuth: false,
+			shouldError: true,
+		},
+		{
+			name:        "disable_auth=false with empty password - should fail",
+			username:    "admin",
+			password:    "",
+			disableAuth: false,
+			shouldError: true,
+		},
+		{
+			name:        "disable_auth=false with both credentials - should pass",
+			username:    "admin",
+			password:    "pass",
+			disableAuth: false,
+			shouldError: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := &Config{
+				Admin: AdminConfig{
+					Username:    tt.username,
+					Password:    tt.password,
+					DisableAuth: tt.disableAuth,
+				},
+				Rules: RulesConfig{
+					MovieRetention: "90d",
+					TVRetention:    "120d",
+				},
+				Server: ServerConfig{
+					Host: "0.0.0.0",
+					Port: 8080,
+				},
+				Integrations: IntegrationsConfig{
+					Jellyfin: JellyfinConfig{
+						BaseIntegrationConfig: BaseIntegrationConfig{
+							Enabled: true,
+							URL:     "http://jellyfin:8096",
+							APIKey:  "test-key",
+						},
+					},
+				},
+			}
+
+			err := Validate(cfg)
+			if tt.shouldError && err == nil {
+				t.Errorf("expected validation error but got none")
+			}
+			if !tt.shouldError && err != nil {
+				t.Errorf("unexpected validation error: %v", err)
+			}
+		})
+	}
+}
+
 func TestValidate_DisabledRetention_AdvancedRules(t *testing.T) {
 	userID := 123
 
