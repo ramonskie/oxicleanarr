@@ -21,6 +21,7 @@ type mockJellyfinClientForSymlink struct {
 	createCalled      int
 	deleteCalled      int
 	addPathCalled     int
+	refreshCalled     int
 	lastCreatedFolder *clients.JellyfinVirtualFolder
 }
 
@@ -64,6 +65,11 @@ func (m *mockJellyfinClientForSymlink) AddPathToVirtualFolder(ctx context.Contex
 			}
 		}
 	}
+	return nil
+}
+
+func (m *mockJellyfinClientForSymlink) RefreshLibrary(ctx context.Context, dryRun bool) error {
+	m.refreshCalled++
 	return nil
 }
 

@@ -338,3 +338,36 @@ func (c *JellyfinClient) AddPathToVirtualFolder(ctx context.Context, name, path 
 
 	return nil
 }
+
+// RefreshLibrary triggers a library scan in Jellyfin to discover new content
+// This should be called after creating symlinks to make content visible
+func (c *JellyfinClient) RefreshLibrary(ctx context.Context, dryRun bool) error {
+	if dryRun {
+		log.Info().
+			Msg("[DRY-RUN] Would trigger library refresh in Jellyfin")
+		return nil
+	}
+
+	reqURL := fmt.Sprintf("%s/Library/Refresh?api_key=%s", c.baseURL, c.apiKey)
+
+	req, err := http.NewRequestWithContext(ctx, "POST", reqURL, nil)
+	if err != nil {
+		return fmt.Errorf("creating request: %w", err)
+	}
+
+	log.Info().Msg("Triggering library refresh in Jellyfin")
+
+	resp, err := c.client.Do(req)
+	if err != nil {
+		return fmt.Errorf("making request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusNoContent {
+		return fmt.Errorf("unexpected status code: %d", resp.StatusCode)
+	}
+
+	log.Info().Msg("Library refresh triggered successfully in Jellyfin")
+
+	return nil
+}

@@ -20,6 +20,7 @@ type JellyfinVirtualFolderClient interface {
 	CreateVirtualFolder(ctx context.Context, name, collectionType string, paths []string, dryRun bool) error
 	DeleteVirtualFolder(ctx context.Context, name string, dryRun bool) error
 	AddPathToVirtualFolder(ctx context.Context, name, path string, dryRun bool) error
+	RefreshLibrary(ctx context.Context, dryRun bool) error
 }
 
 // SymlinkLibraryManager manages Jellyfin symlink-based libraries for "Leaving Soon" items
@@ -169,10 +170,20 @@ func (m *SymlinkLibraryManager) syncLibrary(ctx context.Context, libraryName, co
 		return fmt.Errorf("failed to cleanup symlinks: %w", err)
 	}
 
-	// Step 5: Trigger Jellyfin library scan (if not dry-run)
-	if !dryRun && len(items) > 0 {
-		log.Info().Str("library", libraryName).Msg("Library scan would be triggered (not implemented yet)")
-		// Note: Jellyfin library scan API call can be added here if needed
+	// Step 5: Trigger Jellyfin library scan to discover new content
+	if len(items) > 0 || len(currentSymlinks) > 0 {
+		log.Info().
+			Str("library", libraryName).
+			Int("symlinks", len(currentSymlinks)).
+			Msg("Triggering Jellyfin library refresh to scan new content")
+
+		if err := m.jellyfinClient.RefreshLibrary(ctx, dryRun); err != nil {
+			// Log warning but don't fail entire sync - library will scan eventually
+			log.Warn().
+				Err(err).
+				Str("library", libraryName).
+				Msg("Failed to trigger library refresh, content may not appear immediately")
+		}
 	}
 
 	log.Info().
