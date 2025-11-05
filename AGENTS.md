@@ -36,7 +36,7 @@ This document provides essential context for AI coding agents working on the Pru
 ✅ Job history tracking  
 ✅ React UI with Dashboard, Timeline, Library, Scheduled Deletions, Job History pages  
 ✅ Authentication & authorization (with optional bypass for testing)  
-✅ Configuration with hot-reload  
+✅ Configuration with hot-reload (including sync scheduler intervals)  
 ✅ Deletion reason generation (including tag-based rules)  
 ✅ Jellyfin symlink library management ("Leaving Soon" libraries with sidebar visibility)  
 ✅ Configuration & Advanced Rules management UI  
@@ -61,7 +61,84 @@ This document provides essential context for AI coding agents working on the Pru
 
 ---
 
-## Recent Work (Last Session - Nov 5, 2025, Session 33)
+## Recent Work (Last Session - Nov 5, 2025, Session 36)
+
+### Sync Scheduler Hot-Reload - COMPLETED ✅
+
+**Work Completed:**
+- ✅ Added `RestartScheduler()` method to dynamically recreate tickers with new intervals
+- ✅ Fixed config reading to use `config.Get()` instead of stale struct pointers
+- ✅ Implemented interval change detection in config handler
+- ✅ Fixed test failures by adding `config.SetTestConfig()` calls
+- ✅ All 394 tests passing
+
+**Problem Identified:**
+- Sync scheduler only read intervals once at startup via `time.NewTicker()`
+- Config hot-reload updated in-memory values but didn't recreate tickers
+- **Root cause**: `config.Reload()` creates NEW config struct, but `SyncEngine` held pointer to OLD struct
+- Changing intervals required full application restart (poor UX)
+
+**Root Cause:**
+- `Start()` method used `e.config` (stale pointer) instead of `config.Get()` (fresh values)
+- Go's `time.Ticker` cannot be updated dynamically - must Stop() and recreate
+- No mechanism to detect interval changes and restart scheduler
+
+**Solution Implemented:**
+1. **Added `RestartScheduler()` method** (`sync.go` lines 159-194):
+   - Stops existing scheduler safely
+   - Waits 100ms for cleanup
+   - Recreates `stopChan` (closed by Stop())
+   - Calls `Start()` with new config values
+   
+2. **Fixed config reading** in `Start()` and `RestartScheduler()`:
+   - Changed `e.config` → `config.Get()` to always read fresh values
+   - Ensures new intervals used after hot-reload
+   
+3. **Added interval change detection** (`handlers/config.go` lines 399-414):
+   - Captures old `full_interval` and `incremental_interval` before update
+   - Compares with new values after config reload
+   - Triggers async `RestartScheduler()` if changed
+   - Skips restart when `auto_start: false` (manual mode)
+
+**Files Modified & Committed:**
+- `internal/services/sync.go` (+44 lines, -3 lines) - Added RestartScheduler(), fixed config.Get() usage
+- `internal/api/handlers/config.go` (+15 lines) - Interval change detection and restart trigger
+- `internal/services/sync_test.go` (+3 lines) - Fixed test to set global config
+- `internal/api/handlers/sync_test.go` (+3 lines) - Fixed test helper to set global config
+
+**Commits:**
+1. `0151ba5` - feat: add hot-reload support for sync scheduler intervals
+
+**Current State:**
+- Running: Yes (backend PID varies per session)
+- Tests passing: 394/394 ✅
+- Known issues: None
+- Scheduler hot-reload: Fully working ✅
+
+**Testing Results:**
+- ✅ Interval changes (300→600→900→1200 seconds) applied correctly
+- ✅ Logs confirm new intervals used after config update
+- ✅ Auto-start disabled mode handled correctly (no restart attempted)
+- ✅ Rapid successive changes handled gracefully
+- ✅ Test suite fixed with `config.SetTestConfig()` pattern
+
+**Key Lessons:**
+1. **Config pointer invalidation**: `Reload()` creates new struct, invalidating old pointers
+2. **Solution pattern**: Always use `config.Get()` for hot-reload support, never store config pointers
+3. **Ticker limitation**: No way to update ticker intervals - must Stop() and recreate
+4. **Channel recreation**: `stopChan` must be recreated after `Stop()` closes it
+5. **Test requirement**: Tests using global config must call `config.SetTestConfig()` first
+6. **Async restart**: Run scheduler restart in goroutine to avoid blocking HTTP response
+
+**Next Session TODO:**
+- [ ] User-based cleanup with watch tracking integration
+- [ ] Mobile responsiveness improvements
+- [ ] Statistics/charts for disk space trends
+- [ ] Consider adding UI indicator when scheduler restarts (optional UX improvement)
+
+---
+
+## Previous Session: Nov 5, 2025 (Session 33)
 
 ### Symlink Mount Simplification - COMPLETED ✅
 
