@@ -25,7 +25,7 @@ services:
       
       # Symlink directory (read-write for Prunarr to create "Leaving Soon" symlinks)
       # This path must be accessible by both Prunarr and Jellyfin containers
-      - /volume1/data/media/leaving-soon:/data/media/leaving-soon
+      - /volume3/docker/prunarr/leaving-soon:/app/leaving-soon
       
       # Media paths (read-only) - MUST match Radarr/Sonarr/Jellyfin paths exactly
       # Prunarr needs to read source files to create symlinks

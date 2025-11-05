@@ -22,9 +22,11 @@ docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
 - **Jellyfin** sees same file at: `/data/media/movies/Movie Name (2020)/movie.mkv`
 - **Prunarr** will see it at: `/data/media/movies/Movie Name (2020)/movie.mkv`
 
-**Symlinks will be created at:**
-- `/volume1/data/media/prunarr-leaving-soon/movies/Movie Name (2020).mkv` → `/data/media/movies/Movie Name (2020)/movie.mkv`
-- `/volume1/data/media/prunarr-leaving-soon/tv/Show Name (2020)/Season 01/episode.mkv` → `/data/media/tv/Show Name/Season 01/episode.mkv`
+**Symlinks will be created:**
+- **On host (NAS)**: `/volume3/docker/prunarr/leaving-soon/movies/Movie Name (2020).mkv`
+- **Prunarr container sees**: `/app/leaving-soon/movies/Movie Name (2020).mkv`
+- **Jellyfin container should see**: `/app/leaving-soon/movies/Movie Name (2020).mkv` (mount same host dir)
+- **Symlink target**: → `/data/media/movies/Movie Name (2020)/movie.mkv`
 
 ## Step-by-Step Deployment
 
@@ -96,7 +98,7 @@ server:
 
 symlink_library:
   enabled: true
-  base_path: /data/media/prunarr-leaving-soon
+  base_path: /app/leaving-soon
   movies_library_name: "Leaving Soon - Movies"
   tv_library_name: "Leaving Soon - TV Shows"
 ```
@@ -194,7 +196,7 @@ Add symlink directory to Jellyfin (edit your jellyfin docker-compose.yml):
 volumes:
   - /volume3/docker/jellyfin:/config
   - /volume1/data/media:/data/media
-  - /volume1/data/media/prunarr-leaving-soon:/data/media/prunarr-leaving-soon:ro  # ADD THIS LINE
+  - /volume3/docker/prunarr/leaving-soon:/app/leaving-soon:ro  # ADD THIS LINE
 ```
 
 Recreate Jellyfin container:
@@ -236,18 +238,18 @@ docker logs -f prunarr
 
 ```bash
 # Check symlink directories exist
-ls -la /volume1/data/media/prunarr-leaving-soon/
+ls -la /volume3/docker/prunarr/leaving-soon/
 
 # Should see:
 # drwxr-xr-x movies/
 # drwxr-xr-x tv/
 
 # Check symlink contents
-ls -la /volume1/data/media/prunarr-leaving-soon/movies/ | head -5
-ls -la /volume1/data/media/prunarr-leaving-soon/tv/ | head -5
+ls -la /volume3/docker/prunarr/leaving-soon/movies/ | head -5
+ls -la /volume3/docker/prunarr/leaving-soon/tv/ | head -5
 
 # Verify symlinks point to real files
-file /volume1/data/media/prunarr-leaving-soon/movies/* | head -3
+file /volume3/docker/prunarr/leaving-soon/movies/* | head -3
 ```
 
 ### Step 10: Verify Jellyfin Libraries Created
@@ -288,9 +290,10 @@ getenforce
 
 ```yaml
 volumes:
-  - /volume3/docker/prunarr/prunarr.yaml:/app/config/prunarr.yaml:z
+  - /volume3/docker/prunarr/config:/app/config:z
   - /volume3/docker/prunarr/data:/app/data:z
-  - /volume1/data/media/prunarr-leaving-soon:/data/media/prunarr-leaving-soon:z
+  - /volume3/docker/prunarr/logs:/app/logs:z
+  - /volume3/docker/prunarr/leaving-soon:/app/leaving-soon:z
   - /volume1/data:/data:ro  # Read-only mounts don't need :z
 ```
 
@@ -334,11 +337,11 @@ docker-compose up -d --force-recreate
 
 ```bash
 # Check directory permissions
-ls -la /volume1/data/media/ | grep prunarr-leaving-soon
+ls -la /volume3/docker/prunarr/
 
 # Should be owned by 1027:65536
 # If not, fix it:
-sudo chown -R 1027:65536 /volume1/data/media/prunarr-leaving-soon
+sudo chown -R 1027:65536 /volume3/docker/prunarr/leaving-soon
 ```
 
 ### Problem: Jellyfin libraries not created
@@ -370,7 +373,7 @@ Once you've deployed, share:
 
 2. **Symlink directory contents:**
    ```bash
-   ls -laR /volume1/data/media/prunarr-leaving-soon/
+   ls -laR /volume3/docker/prunarr/leaving-soon/
    ```
 
 3. **Integration status from API:**
