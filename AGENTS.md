@@ -61,7 +61,92 @@ This document provides essential context for AI coding agents working on the Pru
 
 ---
 
-## Recent Work (Last Session - Nov 5, 2025, Session 31)
+## Recent Work (Last Session - Nov 5, 2025, Session 32)
+
+### Documentation Fixes for Symlink Library & Docker Mounts - COMPLETED ✅
+
+**Work Completed:**
+- ✅ Fixed example config documentation (moved symlink_library to correct location)
+- ✅ Added file vs directory mount troubleshooting to NAS_DEPLOYMENT.md
+- ✅ Updated docker-compose example to use directory mounts
+- ✅ All 394 tests still passing
+
+**Problem Identified:**
+- Example config (`prunarr.yaml.example` lines 58-62) showed `symlink_library` at **root level**
+- Actual code structure (`types.go` line 70) has it **inside** `integrations.jellyfin`
+- User copied wrong structure from example, causing config parsing failures
+- User hit permission errors mounting individual files instead of directories
+
+**Root Causes:**
+1. **Documentation drift**: Example config didn't match code structure
+2. **File mount limitation**: Docker can't change ownership of bind-mounted individual files
+3. **Synology user GID confusion**: User initially used wrong group (100 vs 65536)
+
+**Solution Implemented:**
+1. **Moved symlink_library documentation** to correct location (under `integrations.jellyfin`)
+2. **Updated example config** with correct YAML structure and container paths (`/app/leaving-soon`)
+3. **Added troubleshooting section** for file vs directory mount permission errors
+4. **Updated docker-compose example**:
+   - Changed from: `/volume3/docker/prunarr/prunarr.yaml:/app/config/prunarr.yaml`
+   - Changed to: `/volume3/docker/prunarr/config:/app/config`
+   - Added all directories: config, data, logs, leaving-soon
+5. **Documented proper setup**: Create `config/` directory first, place file inside it
+
+**Correct Config Structure** (confirmed from code):
+```yaml
+integrations:
+  jellyfin:
+    enabled: true
+    url: http://jellyfin:8096
+    api_key: your-key
+    symlink_library:           # CORRECT: nested under jellyfin
+      enabled: true
+      base_path: /app/leaving-soon
+```
+
+**Files Modified & Committed:**
+- `config/prunarr.yaml.example` (+21 lines, -21 lines) - Moved symlink docs to correct location
+- `NAS_DEPLOYMENT.md` (+38 lines, -6 lines) - Added file mount troubleshooting
+
+**Commits:**
+1. `9e4160b` - docs: fix symlink_library config location and add file mount warning
+
+**Current State:**
+- Running: No (documentation fix only)
+- Tests passing: 394/394 ✅
+- Known issues: None
+- Documentation: Corrected ✅
+- Docker Hub: v1.2.0 published (Session 31)
+
+**User's Deployment Status:**
+- ✅ Container starts without permission errors (after fixing mounts)
+- ✅ Sync completes successfully (252 movies, 121 TV shows)
+- ✅ Web UI accessible
+- ⚠️ Retention = 0d (immediate deletion when dry_run disabled)
+- ⚠️ Red Dawn movie missing Jellyfin ID (not imported yet)
+- 🔄 User testing symlink library feature next
+
+**Next Session TODO:**
+- [ ] Help user test symlink library creation with corrected config structure
+- [ ] Help user add Jellyfin volume mount for leaving-soon directory access
+- [ ] Verify Jellyfin library creation works end-to-end
+- [ ] Consider default retention values (explicit safe defaults like 90d?)
+- [ ] User-based cleanup with watch tracking
+- [ ] Mobile responsiveness improvements
+
+**Key Lessons:**
+1. **Documentation sync**: Always verify example configs match actual code structure
+2. **File mounts block ownership**: Docker cannot `chown` bind-mounted individual files
+3. **Directory structure**: Create `config/` directory first, never mount single files
+4. **Config nesting**: Use `git grep "SymlinkLibrary"` to verify struct embedding in code
+5. **Synology groups**: NAS users typically use group 65536 (users), not 100 (root/admin)
+6. **Container networking**: `network_mode: synobridge` allows container name resolution on Synology
+7. **Volume mount order**: Always test directory mounts before file mounts to avoid permission issues
+8. **Config UI side effects**: Saving config may normalize URLs (IPs → container names)
+
+---
+
+## Previous Session: Nov 5, 2025 (Session 31)
 
 ### Docker PUID/PGID Simplification & SELinux Support - COMPLETED ✅
 
