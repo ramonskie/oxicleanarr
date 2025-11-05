@@ -116,10 +116,22 @@ This document provides essential context for AI coding agents working on the Pru
 **Commits:**
 1. `d52aed8` - feat: simplify Docker PUID/PGID implementation and add SELinux support
 
+**Docker Hub Publication:**
+- ✅ Published v1.2.0 to Docker Hub: ramonskie/prunarr:v1.2.0 and :latest
+- Image digest: sha256:d6eb302040ad97c38df4294d885d2b3ed62760562b20ff3b4cc1c88023214f24
+- Git tag created: v1.2.0
+- Commit: 42a231e (docs: add Session 31 summary)
+- Both tags point to same image: b5bfcc674a53
+
+**Version Comparison:**
+- v1.0.0: 29.1 MB (base production image, no PUID/PGID)
+- v1.1.0: 31.6 MB (+2.5 MB, usermod/groupmod approach with shadow package)
+- v1.2.0: 19.2 MB (-12.4 MB, simplified approach, -39% vs v1.1.0)
+
 **Current State:**
-- Running: No (implementation complete, ready for publication)
+- Running: No (implementation complete, Docker Hub published ✅)
 - Tests passing: 394/394 ✅
-- Docker image: Built successfully (prunarr:v1.2.0-test, 19.2 MB)
+- Docker image: Published ramonskie/prunarr:v1.2.0 (19.2 MB)
 - Known issues: None
 - Production ready: Yes ✅
 
@@ -142,11 +154,11 @@ services:
 ```
 
 **Next Session TODO:**
-- [ ] Publish v1.2.0 to Docker Hub (ramonskie/prunarr:v1.2.0 and :latest)
-- [ ] Create git tag v1.2.0
-- [ ] Test deployment on actual NAS system (Synology/QNAP)
+- [ ] Test deployment on actual NAS system (Synology/QNAP) with v1.2.0
 - [ ] Verify symlink library feature works with custom PUID/PGID
 - [ ] Validate Jellyfin integration with symlinked libraries
+- [ ] Update main README.md with Docker quick start guide (v1.2.0)
+- [ ] Consider GitHub release notes (if remote repo exists)
 - [ ] User-based cleanup with watch tracking
 - [ ] Mobile responsiveness improvements
 
@@ -158,6 +170,8 @@ services:
 5. **Container security context**: `container_file_t` label allows container writes on SELinux
 6. **Build-time vs runtime**: No need to create users at build time for PUID/PGID flexibility
 7. **Ownership checks**: Only fix ownership when it actually differs (performance optimization)
+8. **Docker layer caching**: Alpine base layer reused across versions = fast builds
+9. **Semantic versioning**: v1.2.0 = minor feature (simplified approach) + patch (SELinux fix)
 
 ---
 
