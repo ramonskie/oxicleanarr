@@ -61,7 +61,75 @@ This document provides essential context for AI coding agents working on the Pru
 
 ---
 
-## Recent Work (Last Session - Nov 5, 2025, Session 36)
+## Recent Work (Last Session - Nov 5, 2025, Session 37)
+
+### `hide_when_empty` Feature for Symlink Libraries - COMPLETED ✅
+
+**Work Completed:**
+- ✅ Added `HideWhenEmpty bool` field to `SymlinkLibraryConfig` (default: true)
+- ✅ Implemented automatic deletion of empty symlink libraries from Jellyfin sidebar
+- ✅ Updated `syncLibrary()` to detect empty libraries and delete them
+- ✅ Added 5 comprehensive unit tests covering all edge cases
+- ✅ All 394 tests passing
+
+**Problem Identified:**
+- User had empty "Leaving Soon - TV Shows" library visible in Jellyfin sidebar
+- No TV shows scheduled for deletion, making the library pointless
+- Cluttered sidebar with empty sections reduces UX quality
+- Should match behavior from Collections feature (Session 20)
+
+**Solution Implemented:**
+1. **Config Structure** (`types.go`, `defaults.go`):
+   - Added `HideWhenEmpty bool` field (default: true for better UX)
+   - Users can set to `false` to keep empty libraries visible
+   - Backward compatible with existing configs
+
+2. **Core Logic** (`symlink_library.go` lines 145-193):
+   - Check if library is empty AND `hide_when_empty: true`
+   - Query Jellyfin for existing virtual folders
+   - Delete library if it exists and is empty
+   - Early return to skip normal sync operations
+   - Graceful error handling (doesn't fail entire sync)
+
+3. **Comprehensive Testing** (5 new test cases):
+   - Delete when hide_when_empty is true
+   - Keep library when hide_when_empty is false
+   - Library lifecycle transitions (items → empty → deleted)
+   - Dry-run mode respects flag but doesn't delete
+   - Handling non-existent libraries gracefully
+
+**Files Modified & Committed:**
+- `internal/config/types.go` (+1 line) - Added HideWhenEmpty field
+- `internal/config/defaults.go` (+7 lines) - Set default to true
+- `config/prunarr.yaml.example` (+3 lines) - Documentation
+- `internal/services/symlink_library.go` (+42 lines) - Deletion logic
+- `internal/services/symlink_library_test.go` (+224 lines) - Unit tests
+
+**Commits:**
+1. `edaebcb` - feat: add hide_when_empty option for symlink libraries
+
+**Current State:**
+- Running: No (implementation complete)
+- Tests passing: 394/394 ✅
+- Known issues: None
+- Live testing: Pending user availability
+
+**Key Benefits:**
+- **Cleaner UI**: Empty libraries automatically removed from Jellyfin sidebar
+- **Per-library control**: Movies and TV shows evaluated independently
+- **Consistent behavior**: Matches Collections `hide_when_empty` pattern
+- **User choice**: Can be disabled via config if desired
+
+**Next Session TODO:**
+- [ ] Live environment testing with user's Jellyfin instance
+- [ ] Verify empty library deletion and sidebar updates
+- [ ] Consider Docker release (v1.3.1 or v1.4.0) if testing successful
+- [ ] User-based cleanup with watch tracking integration
+- [ ] Mobile responsiveness improvements
+
+---
+
+## Previous Session: Nov 5, 2025 (Session 36)
 
 ### Sync Scheduler Hot-Reload - COMPLETED ✅
 
