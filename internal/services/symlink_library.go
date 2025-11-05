@@ -156,7 +156,22 @@ func (m *SymlinkLibraryManager) syncLibrary(ctx context.Context, libraryName, co
 			Bool("dry_run", dryRun).
 			Msg("Library is empty and hide_when_empty is true, removing library from Jellyfin")
 
-		// Check if virtual folder exists before attempting deletion
+		// Step 1: Clean up any existing symlinks first
+		log.Info().
+			Str("library", libraryName).
+			Str("path", symlinkDir).
+			Msg("Cleaning up symlinks before removing empty library")
+
+		emptySymlinks := make(map[string]bool) // Empty map = remove all symlinks
+		if err := m.cleanupSymlinks(symlinkDir, emptySymlinks, dryRun); err != nil {
+			log.Warn().
+				Err(err).
+				Str("library", libraryName).
+				Msg("Failed to cleanup symlinks for empty library")
+			// Continue with library deletion anyway
+		}
+
+		// Step 2: Check if virtual folder exists before attempting deletion
 		log.Info().Str("library", libraryName).Msg("Fetching virtual folders from Jellyfin")
 		folders, err := m.jellyfinClient.GetVirtualFolders(ctx)
 		if err != nil {
@@ -181,7 +196,8 @@ func (m *SymlinkLibraryManager) syncLibrary(ctx context.Context, libraryName, co
 				Msg("Checking virtual folder")
 		}
 
-		// Delete the virtual folder if it exists
+		// Step 3: Delete the virtual folder if it exists
+		libraryDeleted := false
 		for _, folder := range folders {
 			if folder.Name == libraryName {
 				log.Info().
@@ -194,18 +210,33 @@ func (m *SymlinkLibraryManager) syncLibrary(ctx context.Context, libraryName, co
 						Msg("Failed to delete empty virtual folder")
 					return nil // Don't fail entire sync
 				}
+				libraryDeleted = true
 				log.Info().
 					Str("library", libraryName).
 					Bool("dry_run", dryRun).
 					Msg("Empty library removed from Jellyfin")
-				return nil
+				break
 			}
 		}
 
-		// Library doesn't exist, nothing to do
-		log.Debug().
-			Str("library", libraryName).
-			Msg("Library doesn't exist in Jellyfin, nothing to delete")
+		// Step 4: Trigger library scan to refresh Jellyfin's dashboard/UI
+		if libraryDeleted {
+			log.Info().
+				Str("library", libraryName).
+				Msg("Triggering Jellyfin library refresh to update dashboard after deletion")
+
+			if err := m.jellyfinClient.RefreshLibrary(ctx, dryRun); err != nil {
+				log.Warn().
+					Err(err).
+					Str("library", libraryName).
+					Msg("Failed to trigger library refresh after deletion, dashboard may not update immediately")
+			}
+		} else {
+			log.Debug().
+				Str("library", libraryName).
+				Msg("Library doesn't exist in Jellyfin, nothing to delete")
+		}
+
 		return nil
 	}
 
