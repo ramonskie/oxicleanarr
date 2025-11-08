@@ -212,3 +212,64 @@ type JellystatHistoryItem struct {
 	PlaybackDuration     int       `json:"PlaybackDuration"`     // Duration in seconds
 	ActivityDateInserted time.Time `json:"ActivityDateInserted"` // Last watched timestamp
 }
+
+// OxiCleanarr Bridge Plugin Types
+// These types are used for communicating with the Jellyfin OxiCleanarr Bridge Plugin
+
+// PluginSymlinkItem represents a symlink to be created by the plugin
+type PluginSymlinkItem struct {
+	Path            string `json:"path"`             // Full path where symlink should be created
+	TargetDirectory string `json:"target_directory"` // Directory containing the actual media file
+}
+
+// PluginAddSymlinksRequest represents the request to add symlinks
+type PluginAddSymlinksRequest struct {
+	Items  []PluginSymlinkItem `json:"items"`
+	DryRun bool                `json:"dry_run,omitempty"`
+}
+
+// PluginAddSymlinksResponse represents the response from adding symlinks
+type PluginAddSymlinksResponse struct {
+	Success      bool     `json:"success"`
+	Created      int      `json:"created"`
+	Skipped      int      `json:"skipped"`
+	Failed       int      `json:"failed"`
+	ErrorMessage string   `json:"error_message,omitempty"`
+	Details      []string `json:"details,omitempty"`
+}
+
+// PluginRemoveSymlinksRequest represents the request to remove symlinks
+type PluginRemoveSymlinksRequest struct {
+	Paths  []string `json:"paths"`
+	DryRun bool     `json:"dry_run,omitempty"`
+}
+
+// PluginRemoveSymlinksResponse represents the response from removing symlinks
+type PluginRemoveSymlinksResponse struct {
+	Success      bool     `json:"success"`
+	Removed      int      `json:"removed"`
+	Failed       int      `json:"failed"`
+	ErrorMessage string   `json:"error_message,omitempty"`
+	Details      []string `json:"details,omitempty"`
+}
+
+// PluginSymlinkInfo represents information about a symlink
+type PluginSymlinkInfo struct {
+	Path   string `json:"path"`
+	Target string `json:"target"`
+	Valid  bool   `json:"valid"`
+}
+
+// PluginListSymlinksResponse represents the response from listing symlinks
+type PluginListSymlinksResponse struct {
+	Success      bool                `json:"success"`
+	Symlinks     []PluginSymlinkInfo `json:"symlinks"`
+	ErrorMessage string              `json:"error_message,omitempty"`
+}
+
+// PluginStatusResponse represents the health check response from the plugin
+type PluginStatusResponse struct {
+	Success bool   `json:"success"`
+	Version string `json:"version,omitempty"`
+	Message string `json:"message,omitempty"`
+}

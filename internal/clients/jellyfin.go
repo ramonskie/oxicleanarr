@@ -1,6 +1,7 @@
 package clients
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -370,4 +371,198 @@ func (c *JellyfinClient) RefreshLibrary(ctx context.Context, dryRun bool) error 
 	log.Info().Msg("Library refresh triggered successfully in Jellyfin")
 
 	return nil
+}
+
+// OxiCleanarr Bridge Plugin Methods
+// These methods communicate with the Jellyfin OxiCleanarr Bridge Plugin
+// for managing symlinks without direct filesystem access
+
+// CheckPluginStatus checks if the OxiCleanarr Bridge Plugin is installed and responsive
+func (c *JellyfinClient) CheckPluginStatus(ctx context.Context) (*PluginStatusResponse, error) {
+	reqURL := fmt.Sprintf("%s/api/oxicleanarr/status?api_key=%s", c.baseURL, c.apiKey)
+
+	req, err := http.NewRequestWithContext(ctx, "GET", reqURL, nil)
+	if err != nil {
+		return nil, fmt.Errorf("creating request: %w", err)
+	}
+
+	log.Debug().Msg("Checking OxiCleanarr Bridge Plugin status")
+
+	resp, err := c.client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("making request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("plugin not available (status %d)", resp.StatusCode)
+	}
+
+	var statusResp PluginStatusResponse
+	if err := json.NewDecoder(resp.Body).Decode(&statusResp); err != nil {
+		return nil, fmt.Errorf("decoding response: %w", err)
+	}
+
+	log.Info().
+		Str("version", statusResp.Version).
+		Msg("OxiCleanarr Bridge Plugin is available")
+
+	return &statusResp, nil
+}
+
+// AddSymlinks creates symlinks via the OxiCleanarr Bridge Plugin
+func (c *JellyfinClient) AddSymlinks(ctx context.Context, items []PluginSymlinkItem, dryRun bool) (*PluginAddSymlinksResponse, error) {
+	if dryRun {
+		log.Info().
+			Int("count", len(items)).
+			Msg("[DRY-RUN] Would create symlinks via plugin")
+		return &PluginAddSymlinksResponse{
+			Success: true,
+			Created: len(items),
+			Skipped: 0,
+			Failed:  0,
+		}, nil
+	}
+
+	reqBody := PluginAddSymlinksRequest{
+		Items:  items,
+		DryRun: false,
+	}
+
+	bodyBytes, err := json.Marshal(reqBody)
+	if err != nil {
+		return nil, fmt.Errorf("marshaling request: %w", err)
+	}
+
+	reqURL := fmt.Sprintf("%s/api/oxicleanarr/symlinks/add?api_key=%s", c.baseURL, c.apiKey)
+
+	req, err := http.NewRequestWithContext(ctx, "POST", reqURL, bytes.NewReader(bodyBytes))
+	if err != nil {
+		return nil, fmt.Errorf("creating request: %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+
+	log.Info().
+		Int("count", len(items)).
+		Msg("Creating symlinks via OxiCleanarr Bridge Plugin")
+
+	resp, err := c.client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("making request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	var addResp PluginAddSymlinksResponse
+	if err := json.NewDecoder(resp.Body).Decode(&addResp); err != nil {
+		return nil, fmt.Errorf("decoding response: %w", err)
+	}
+
+	if !addResp.Success {
+		return &addResp, fmt.Errorf("plugin error: %s", addResp.ErrorMessage)
+	}
+
+	log.Info().
+		Int("created", addResp.Created).
+		Int("skipped", addResp.Skipped).
+		Int("failed", addResp.Failed).
+		Msg("Symlinks created successfully via plugin")
+
+	return &addResp, nil
+}
+
+// RemoveSymlinks removes symlinks via the OxiCleanarr Bridge Plugin
+func (c *JellyfinClient) RemoveSymlinks(ctx context.Context, paths []string, dryRun bool) (*PluginRemoveSymlinksResponse, error) {
+	if dryRun {
+		log.Info().
+			Int("count", len(paths)).
+			Msg("[DRY-RUN] Would remove symlinks via plugin")
+		return &PluginRemoveSymlinksResponse{
+			Success: true,
+			Removed: len(paths),
+			Failed:  0,
+		}, nil
+	}
+
+	reqBody := PluginRemoveSymlinksRequest{
+		Paths:  paths,
+		DryRun: false,
+	}
+
+	bodyBytes, err := json.Marshal(reqBody)
+	if err != nil {
+		return nil, fmt.Errorf("marshaling request: %w", err)
+	}
+
+	reqURL := fmt.Sprintf("%s/api/oxicleanarr/symlinks/remove?api_key=%s", c.baseURL, c.apiKey)
+
+	req, err := http.NewRequestWithContext(ctx, "POST", reqURL, bytes.NewReader(bodyBytes))
+	if err != nil {
+		return nil, fmt.Errorf("creating request: %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+
+	log.Info().
+		Int("count", len(paths)).
+		Msg("Removing symlinks via OxiCleanarr Bridge Plugin")
+
+	resp, err := c.client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("making request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	var removeResp PluginRemoveSymlinksResponse
+	if err := json.NewDecoder(resp.Body).Decode(&removeResp); err != nil {
+		return nil, fmt.Errorf("decoding response: %w", err)
+	}
+
+	if !removeResp.Success {
+		return &removeResp, fmt.Errorf("plugin error: %s", removeResp.ErrorMessage)
+	}
+
+	log.Info().
+		Int("removed", removeResp.Removed).
+		Int("failed", removeResp.Failed).
+		Msg("Symlinks removed successfully via plugin")
+
+	return &removeResp, nil
+}
+
+// ListSymlinks lists symlinks in a directory via the OxiCleanarr Bridge Plugin
+func (c *JellyfinClient) ListSymlinks(ctx context.Context, directory string) (*PluginListSymlinksResponse, error) {
+	reqURL := fmt.Sprintf("%s/api/oxicleanarr/symlinks/list?directory=%s&api_key=%s",
+		c.baseURL, url.QueryEscape(directory), c.apiKey)
+
+	req, err := http.NewRequestWithContext(ctx, "GET", reqURL, nil)
+	if err != nil {
+		return nil, fmt.Errorf("creating request: %w", err)
+	}
+
+	log.Debug().
+		Str("directory", directory).
+		Msg("Listing symlinks via OxiCleanarr Bridge Plugin")
+
+	resp, err := c.client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("making request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	var listResp PluginListSymlinksResponse
+	if err := json.NewDecoder(resp.Body).Decode(&listResp); err != nil {
+		return nil, fmt.Errorf("decoding response: %w", err)
+	}
+
+	if !listResp.Success {
+		return &listResp, fmt.Errorf("plugin error: %s", listResp.ErrorMessage)
+	}
+
+	log.Debug().
+		Int("count", len(listResp.Symlinks)).
+		Str("directory", directory).
+		Msg("Symlinks listed successfully via plugin")
+
+	return &listResp, nil
 }
