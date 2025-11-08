@@ -1,12 +1,12 @@
-# Prunarr AI Agent Context
+# OxiCleanarr AI Agent Context
 
-This document provides essential context for AI coding agents working on the Prunarr project. It serves as a quick reference to understand the project state, active work, and how to resume development.
+This document provides essential context for AI coding agents working on the OxiCleanarr project. It serves as a quick reference to understand the project state, active work, and how to resume development.
 
 ---
 
 ## Project Overview
 
-**Prunarr** is a lightweight media cleanup automation tool for the *arr stack (Sonarr, Radarr, Jellyfin). It provides intelligent retention policies, deletion visibility, and a modern web UI.
+**OxiCleanarr** is a lightweight media cleanup automation tool for the *arr stack (Sonarr, Radarr, Jellyfin). It provides intelligent retention policies, deletion visibility, and a modern web UI.
 
 **Tech Stack:**
 - **Backend**: Go 1.23+ with Chi router, Viper config, zerolog logging
@@ -112,12 +112,20 @@ This document provides essential context for AI coding agents working on the Pru
 
 **Commits:**
 1. `3b870e9` - fix: cleanup symlinks and refresh Jellyfin when empty library is removed
+2. `a23b4e0` - docs: add Session 39 summary - Jellyfin symlink library cleanup fix
+
+**Docker Release:**
+- ✅ Built and pushed to Docker Hub: ramonskie/oxicleanarr:latest
+- Image digest: sha256:02a3118c7b93260ae8a2bcdd374d1b641ec7546b5abeb0f5439f127025beabae
+- Image size: 19.2 MB
+- Image ID: 37cc430a0c89
 
 **Current State:**
 - Running: No (implementation complete)
 - Tests passing: 394/394 ✅ (all 5 packages)
 - Known issues: None
-- Build: Successful (./prunarr binary ready)
+- Build: Successful (./oxicleanarr binary ready)
+- Docker: Published to Docker Hub ✅
 - Ready for user testing ✅
 
 **Expected Behavior After Fix:**
@@ -133,11 +141,21 @@ When retention rules disabled → sync completes:
 - **Graceful degradation**: Warnings for errors, sync continues
 - **Improved logging**: Clear 4-step process for troubleshooting
 
+**How Users Can Test:**
+```bash
+# Pull latest image with fix
+docker pull ramonskie/oxicleanarr:latest
+
+# Or update existing deployment
+docker-compose pull oxicleanarr
+docker-compose up -d oxicleanarr
+```
+
 **Next Session TODO:**
 - [ ] User verification: Test with live Jellyfin instance
 - [ ] Verify symlinks cleaned up when library empty
 - [ ] Verify dashboard updates without Jellyfin restart
-- [ ] Consider Docker release (v1.4.0) if user confirms fix works
+- [ ] Consider version tag (v1.4.0) if user confirms fix works
 - [ ] User-based cleanup with watch tracking integration
 - [ ] Mobile responsiveness improvements
 
@@ -205,7 +223,7 @@ When retention rules disabled → sync completes:
 - Running: No (implementation complete)
 - Tests passing: 394/394 ✅ (292 subtests across 5 packages)
 - Known issues: None
-- Build: Successful (./prunarr binary ready)
+- Build: Successful (./oxicleanarr binary ready)
 - Ready for user testing with `disable_auth: true` config
 
 **Key Benefits:**
@@ -263,7 +281,7 @@ When retention rules disabled → sync completes:
 **Files Modified & Committed:**
 - `internal/config/types.go` (+1 line) - Added HideWhenEmpty field
 - `internal/config/defaults.go` (+7 lines) - Set default to true
-- `config/prunarr.yaml.example` (+3 lines) - Documentation
+- `config/oxicleanarr.yaml.example` (+3 lines) - Documentation
 - `internal/services/symlink_library.go` (+42 lines) - Deletion logic
 - `internal/services/symlink_library_test.go` (+224 lines) - Unit tests
 
@@ -361,7 +379,7 @@ When retention rules disabled → sync completes:
 6. **Async restart**: Run scheduler restart in goroutine to avoid blocking HTTP response
 
 **Docker Hub Publication:**
-- ✅ Published v1.3.0 to Docker Hub: ramonskie/prunarr:v1.3.0 and :latest
+- ✅ Published v1.3.0 to Docker Hub: ramonskie/oxicleanarr:v1.3.0 and :latest
 - Image digest: sha256:43f8dcffceac3e1ff4ec09c1db9e3c9f95c56b43d2302c13e119621d191c70f7
 - Image size: 19.2 MB (same as v1.2.0)
 - Git tag created: v1.3.0
@@ -416,7 +434,7 @@ integrations:
 
 **Docker Setup** (simplified):
 ```yaml
-prunarr:
+oxicleanarr:
   volumes:
     - /volume1/data/media:/data/media  # Creates symlinks at /data/media/leaving-soon/
 
@@ -434,11 +452,11 @@ jellyfin:
 
 **Alternative Approach** (still documented):
 - `base_path: /app/leaving-soon` for clean separation
-- Requires extra Jellyfin mount: `/volume3/docker/prunarr/leaving-soon:/app/leaving-soon:ro`
-- Use case: Want clear isolation of Prunarr-managed content
+- Requires extra Jellyfin mount: `/volume3/docker/oxicleanarr/leaving-soon:/app/leaving-soon:ro`
+- Use case: Want clear isolation of OxiCleanarr-managed content
 
 **Files Modified & Committed:**
-- `config/prunarr.yaml.example` (+12 lines, -13 lines) - Show recommended approach first
+- `config/oxicleanarr.yaml.example` (+12 lines, -13 lines) - Show recommended approach first
 - `NAS_DEPLOYMENT.md` (+48 lines, -41 lines) - Rewrite Step 5 to verify existing mount
 - `docker-compose.nas.yml` (+10 lines, -6 lines) - Remove separate leaving-soon mount
 
@@ -453,7 +471,7 @@ jellyfin:
 - Session 33: COMPLETE ✅
 
 **User's Next Steps:**
-- [ ] Deploy Prunarr with `base_path: /data/media/leaving-soon` config
+- [ ] Deploy OxiCleanarr with `base_path: /data/media/leaving-soon` config
 - [ ] Verify Jellyfin can see symlinks with existing `/data/media` mount
 - [ ] Test "Leaving Soon" libraries appear in Jellyfin sidebar
 - [ ] Confirm files playable (symlinks work end-to-end)
@@ -479,7 +497,7 @@ jellyfin:
 - ✅ All 394 tests still passing
 
 **Problem Identified:**
-- Example config (`prunarr.yaml.example` lines 58-62) showed `symlink_library` at **root level**
+- Example config (`oxicleanarr.yaml.example` lines 58-62) showed `symlink_library` at **root level**
 - Actual code structure (`types.go` line 70) has it **inside** `integrations.jellyfin`
 - User copied wrong structure from example, causing config parsing failures
 - User hit permission errors mounting individual files instead of directories
@@ -494,8 +512,8 @@ jellyfin:
 2. **Updated example config** with correct YAML structure and container paths (`/app/leaving-soon`)
 3. **Added troubleshooting section** for file vs directory mount permission errors
 4. **Updated docker-compose example**:
-   - Changed from: `/volume3/docker/prunarr/prunarr.yaml:/app/config/prunarr.yaml`
-   - Changed to: `/volume3/docker/prunarr/config:/app/config`
+   - Changed from: `/volume3/docker/oxicleanarr/oxicleanarr.yaml:/app/config/oxicleanarr.yaml`
+   - Changed to: `/volume3/docker/oxicleanarr/config:/app/config`
    - Added all directories: config, data, logs, leaving-soon
 5. **Documented proper setup**: Create `config/` directory first, place file inside it
 
@@ -512,7 +530,7 @@ integrations:
 ```
 
 **Files Modified & Committed:**
-- `config/prunarr.yaml.example` (+21 lines, -21 lines) - Moved symlink docs to correct location
+- `config/oxicleanarr.yaml.example` (+21 lines, -21 lines) - Moved symlink docs to correct location
 - `NAS_DEPLOYMENT.md` (+38 lines, -6 lines) - Added file mount troubleshooting
 
 **Commits:**
@@ -609,7 +627,7 @@ integrations:
 1. `d52aed8` - feat: simplify Docker PUID/PGID implementation and add SELinux support
 
 **Docker Hub Publication:**
-- ✅ Published v1.2.0 to Docker Hub: ramonskie/prunarr:v1.2.0 and :latest
+- ✅ Published v1.2.0 to Docker Hub: ramonskie/oxicleanarr:v1.2.0 and :latest
 - Image digest: sha256:d6eb302040ad97c38df4294d885d2b3ed62760562b20ff3b4cc1c88023214f24
 - Git tag created: v1.2.0
 - Commit: 42a231e (docs: add Session 31 summary)
@@ -623,23 +641,23 @@ integrations:
 **Current State:**
 - Running: No (implementation complete, Docker Hub published ✅)
 - Tests passing: 394/394 ✅
-- Docker image: Published ramonskie/prunarr:v1.2.0 (19.2 MB)
+- Docker image: Published ramonskie/oxicleanarr:v1.2.0 (19.2 MB)
 - Known issues: None
 - Production ready: Yes ✅
 
 **Usage Example (with SELinux):**
 ```yaml
 services:
-  prunarr:
-    image: ramonskie/prunarr:v1.2.0
+  oxicleanarr:
+    image: ramonskie/oxicleanarr:v1.2.0
     environment:
       - PUID=1027        # Your NAS user ID
       - PGID=65536       # Your NAS group ID
       - TZ=Europe/Amsterdam
     volumes:
       # :z flag required for SELinux systems (Fedora, RHEL, CentOS)
-      - /volume3/docker/prunarr/prunarr.yaml:/app/config/prunarr.yaml:z
-      - /volume3/docker/prunarr/data:/app/data:z
+      - /volume3/docker/oxicleanarr/oxicleanarr.yaml:/app/config/oxicleanarr.yaml:z
+      - /volume3/docker/oxicleanarr/data:/app/data:z
       - /volume1/data:/data:ro
     ports:
       - 8080:8080
@@ -673,7 +691,7 @@ services:
 
 **Work Completed:**
 - ✅ Built new Docker image with PUID/PGID support (v1.1.0)
-- ✅ Published to Docker Hub: ramonskie/prunarr:latest and ramonskie/prunarr:v1.1.0
+- ✅ Published to Docker Hub: ramonskie/oxicleanarr:latest and ramonskie/oxicleanarr:v1.1.0
 - ✅ Created git tag v1.1.0 with release message
 - ✅ Tested published image with custom and default PUID/PGID values
 - ✅ Verified entrypoint script works correctly in published image
@@ -692,7 +710,7 @@ services:
 - Git tag created locally: v1.1.0
 
 **Docker Hub Publication:**
-- Repository: ramonskie/prunarr
+- Repository: ramonskie/oxicleanarr
 - Tags published:
   - `latest` - Updated to v1.1.0 (rolling release)
   - `v1.1.0` - New versioned tag (stable release)
@@ -726,15 +744,15 @@ services:
 **Usage Example:**
 ```yaml
 services:
-  prunarr:
-    image: ramonskie/prunarr:latest  # or v1.1.0
+  oxicleanarr:
+    image: ramonskie/oxicleanarr:latest  # or v1.1.0
     environment:
       - PUID=1027        # Your NAS user ID
       - PGID=65536       # Your NAS group ID
       - TZ=Europe/Amsterdam
     volumes:
-      - /volume3/docker/prunarr/prunarr.yaml:/app/config/prunarr.yaml
-      - /volume3/docker/prunarr/data:/app/data
+      - /volume3/docker/oxicleanarr/oxicleanarr.yaml:/app/config/oxicleanarr.yaml
+      - /volume3/docker/oxicleanarr/data:/app/data
       - /volume1/data:/data:ro
     ports:
       - 8080:8080
@@ -755,7 +773,7 @@ services:
 3. **Version tagging**: Use semantic versioning (v1.1.0 = minor feature addition)
 4. **Tag strategy**: Both `latest` (rolling) and `vX.Y.Z` (pinned) for flexibility
 5. **Testing published images**: Always verify published image works before announcing
-6. **Production readiness**: PUID/PGID support makes Prunarr NAS-ready
+6. **Production readiness**: PUID/PGID support makes OxiCleanarr NAS-ready
 
 ---
 
@@ -785,15 +803,15 @@ services:
 - Container starts as root to allow user/group modification
 - Uses `usermod -o` and `groupmod -o` to change IDs (allows duplicate IDs)
 - Only runs ownership fix when IDs differ from defaults (performance optimization)
-- Switches to prunarr user via `su-exec` before starting application
+- Switches to oxicleanarr user via `su-exec` before starting application
 - **Simplified approach**: No user deletion/recreation (more reliable and cleaner)
 
 **Dockerfile Changes:**
 - Line 45: Added `shadow` package for usermod/groupmod commands
 - Line 64-65: Copy entrypoint script and make executable
-- Line 72-73: Removed `USER prunarr` directive (must start as root)
+- Line 72-73: Removed `USER oxicleanarr` directive (must start as root)
 - Line 90: Changed ENTRYPOINT to `/docker-entrypoint.sh`
-- Line 91: Changed CMD to pass prunarr binary and args to entrypoint
+- Line 91: Changed CMD to pass oxicleanarr binary and args to entrypoint
 
 **Entrypoint Script Features (Simplified):**
 ```sh
@@ -801,13 +819,13 @@ services:
 set -e
 PUID=${PUID:-1000}
 PGID=${PGID:-1000}
-groupmod -o -g "$PGID" prunarr
-usermod -o -u "$PUID" prunarr
+groupmod -o -g "$PGID" oxicleanarr
+usermod -o -u "$PUID" oxicleanarr
 if [ "$PUID" != "1000" ] || [ "$PGID" != "1000" ]; then
     echo "Setting ownership to $PUID:$PGID..."
-    chown -R prunarr:prunarr /app
+    chown -R oxicleanarr:oxicleanarr /app
 fi
-exec su-exec prunarr "$@"
+exec su-exec oxicleanarr "$@"
 ```
 
 **Key Design Decision:**
@@ -835,15 +853,15 @@ exec su-exec prunarr "$@"
 ```yaml
 # docker-compose.yml
 services:
-  prunarr:
-    image: prunarr:latest
+  oxicleanarr:
+    image: oxicleanarr:latest
     environment:
       - PUID=1027        # Your NAS user ID
       - PGID=65536       # Your NAS group ID
       - TZ=Europe/Amsterdam
     volumes:
-      - /volume3/docker/prunarr/prunarr.yaml:/app/config/prunarr.yaml
-      - /volume3/docker/prunarr/data:/app/data
+      - /volume3/docker/oxicleanarr/oxicleanarr.yaml:/app/config/oxicleanarr.yaml
+      - /volume3/docker/oxicleanarr/data:/app/data
       - /volume1/data:/data:ro
 ```
 
@@ -941,7 +959,7 @@ services:
 - `internal/config/validation.go` - Symlink validation (+34 lines)
 - `internal/services/sync.go` - Integration (+42 lines)
 - `internal/api/handlers/config.go` - Config handler updates (+38 lines)
-- `config/prunarr.yaml.example` - Symlink config docs (+28 lines)
+- `config/oxicleanarr.yaml.example` - Symlink config docs (+28 lines)
 - DELETED: `internal/services/jellyfin_collections.go` (-194 lines)
 - DELETED: `internal/services/jellyfin_collections_test.go` (-531 lines)
 
@@ -952,7 +970,7 @@ services:
 **Current State:**
 - Running: No (implementation complete, manual testing pending)
 - Tests passing: 394/394 ✅ (381 existing + 13 new)
-- Build: ✅ Successful (prunarr-symlink binary 14MB)
+- Build: ✅ Successful (oxicleanarr-symlink binary 14MB)
 - Known issues: None
 - Net change: +313 lines (1,243 added, 930 deleted)
 
@@ -965,9 +983,9 @@ services:
 
 **Requirements for Deployment:**
 - Docker volume mapping for symlink directories required
-- Both Prunarr and Jellyfin must see same media paths
-- Symlink base directory must be writable by Prunarr container
-- See `config/prunarr.yaml.example` for Docker Compose setup
+- Both OxiCleanarr and Jellyfin must see same media paths
+- Symlink base directory must be writable by OxiCleanarr container
+- See `config/oxicleanarr.yaml.example` for Docker Compose setup
 
 **Unit Tests Added (13 test cases):**
 - `TestNewSymlinkLibraryManager` - Constructor validation
@@ -1031,7 +1049,7 @@ services:
 - Virtual Folders (Libraries) appear in sidebar (better visibility than Collections)
 - Janitorr uses symlinks to create "Leaving Soon" as a library (not collection)
 - Requires filesystem access and complex Docker volume mapping
-- Path translation needed between Prunarr/Jellyfin/Radarr/Sonarr containers
+- Path translation needed between OxiCleanarr/Jellyfin/Radarr/Sonarr containers
 - Collections API already working perfectly (Sessions 7, 20)
 
 **Decision Made:**
@@ -1073,7 +1091,7 @@ services:
 - ✅ Removed dryRun field from JellyfinCollectionManager struct
 - ✅ Implemented dynamic config reading at runtime with nil-safety (defaults to dry_run=true)
 - ✅ Improved test safety by adding SetTestConfig() for in-memory test configs
-- ✅ Eliminated live credential loading in tests (was using prunarr.test.yaml)
+- ✅ Eliminated live credential loading in tests (was using oxicleanarr.test.yaml)
 - ✅ All 381 tests passing (13 collection tests + 368 others)
 - ✅ Live tested collections creation with dry_run: false
 - ✅ Collections created successfully: 11 movies + 6 TV shows
@@ -1094,7 +1112,7 @@ services:
 2. **Test Safety Improvements**:
    - Added `SetTestConfig(cfg *Config)` function to config package
    - Created `setupTestConfig(t)` helper for in-memory test configs
-   - Tests no longer load prunarr.test.yaml (no live credentials)
+   - Tests no longer load oxicleanarr.test.yaml (no live credentials)
    - 6 tests updated to use safe in-memory config
 
 **Files Modified & Committed:**
@@ -1276,7 +1294,7 @@ services:
 
 2. **Backend Fix**:
    - Stopped old backend process (PID 473594)
-   - Rebuilt binary: `go build -o prunarr-test`
+   - Rebuilt binary: `go build -o oxicleanarr-test`
    - Started fresh backend (PID 491951) with clean sync
    - Full sync completed: 0 scheduled deletions (correct!)
 
@@ -1708,12 +1726,12 @@ if len(wouldDelete) > 0 {
 ```
 /app/
 ├── config/
-│   └── prunarr.yaml          # Main configuration (hot-reload enabled)
+│   └── oxicleanarr.yaml          # Main configuration (hot-reload enabled)
 ├── data/
 │   ├── exclusions.json       # User "Keep" exclusions
 │   └── jobs.json             # Job history (circular buffer)
 └── logs/
-    └── prunarr.log           # Structured JSON logs
+    └── oxicleanarr.log           # Structured JSON logs
 ```
 
 ---
@@ -1735,8 +1753,8 @@ if len(wouldDelete) > 0 {
 - **Types**: `web/src/lib/types.ts` - TypeScript interfaces
 
 ### Configuration
-- **Example**: `config/prunarr.yaml.example` - Template with defaults
-- **Test Config**: `config/prunarr.test.yaml` - Testing configuration
+- **Example**: `config/oxicleanarr.yaml.example` - Template with defaults
+- **Test Config**: `config/oxicleanarr.test.yaml` - Testing configuration
 - **Validation**: `internal/config/validation.go` - Config checks
 
 ---
@@ -1761,10 +1779,10 @@ make test
 ### Testing Against Real Services
 ```bash
 # Use test config with real Jellyfin/Radarr/Sonarr
-./prunarr-test --config config/prunarr.test.yaml
+./oxicleanarr-test --config config/oxicleanarr.test.yaml
 
 # Check logs
-tail -f /tmp/prunarr-debug.log
+tail -f /tmp/oxicleanarr-debug.log
 
 # Access UI
 open http://localhost:8080
@@ -1894,10 +1912,10 @@ sync:
 export LOG_LEVEL=debug
 
 # Run with config flag
-./prunarr --config config/prunarr.test.yaml
+./oxicleanarr --config config/oxicleanarr.test.yaml
 
 # Check logs
-tail -f /tmp/prunarr-debug.log | jq
+tail -f /tmp/oxicleanarr-debug.log | jq
 ```
 
 ### Frontend Debugging
@@ -1945,7 +1963,7 @@ curl http://localhost:8080/api/media/movies | jq
 
 ### When Resuming Work
 1. **Read this file first** to understand current state
-2. **Check PRUNARR_SPEC.md** for detailed architecture
+2. **Check OXICLEANARR_SPEC.md** for detailed architecture
 3. **Review recent commits** (`git log --oneline -10`)
 4. **Check test coverage** (`make test`)
 
@@ -1954,7 +1972,7 @@ curl http://localhost:8080/api/media/movies | jq
 2. **Preserve exclusions** - Never break `applyExclusions()` logic
 3. **Maintain data source hierarchy** - Radarr/Sonarr = truth, Jellyfin = watch data only
 4. **Update this file** when completing major features
-5. **Document in PRUNARR_SPEC.md** when fixing bugs or adding features
+5. **Document in OXICLEANARR_SPEC.md** when fixing bugs or adding features
 
 ### When Debugging
 1. **Enable debug logging** (`LOG_LEVEL=debug`)
@@ -1967,10 +1985,10 @@ curl http://localhost:8080/api/media/movies | jq
 ## Quick Reference
 
 ### File Locations
-- Config: `config/prunarr.yaml`
+- Config: `config/oxicleanarr.yaml`
 - Data: `data/exclusions.json`, `data/jobs.json`
-- Logs: `/tmp/prunarr-debug.log` (test mode)
-- Binary: `./prunarr` or `./prunarr-test`
+- Logs: `/tmp/oxicleanarr-debug.log` (test mode)
+- Binary: `./oxicleanarr` or `./oxicleanarr-test`
 
 ### Ports
 - HTTP Server: `8080` (default)
@@ -2275,7 +2293,7 @@ When ending a session, update this section with:
 **Files Modified & Committed:**
 - `internal/config/types.go` - Added `EnableDeletion bool` field to `AppConfig`
 - `internal/config/defaults.go` - Set default `EnableDeletion: false` (safe mode)
-- `config/prunarr.yaml.example` - Documented new config with clear comments
+- `config/oxicleanarr.yaml.example` - Documented new config with clear comments
 - `internal/services/sync.go` (+47 lines) - Created `ExecuteDeletions()` and `CalculateDeletionInfo()`, updated `FullSync()`
 - `internal/api/handlers/sync.go` (+59 lines) - Added `ExecuteDeletions()` handler for `POST /api/deletions/execute`
 - `internal/api/router.go` (+1 line) - Added route for manual deletion endpoint
@@ -2313,7 +2331,7 @@ When ending a session, update this section with:
    - `TestSyncHandler_ExecuteDeletions` - Endpoint behavior with dry-run, empty, and actual execution
 
 **Next Session TODO:**
-- [ ] Configuration UI page (edit prunarr.yaml via web)
+- [ ] Configuration UI page (edit oxicleanarr.yaml via web)
 - [ ] Advanced rules UI (user-based rules editor)
 - [ ] Mobile responsiveness improvements
 - [ ] Statistics/charts for disk space trends
@@ -2375,7 +2393,7 @@ When ending a session, update this section with:
 - Follows Go best practices for dependency injection
 
 **Next Session TODO:**
-- [ ] Configuration UI page (edit prunarr.yaml via web)
+- [ ] Configuration UI page (edit oxicleanarr.yaml via web)
 - [ ] Advanced rules UI (user-based rules editor)
 - [ ] Mobile responsiveness improvements
 - [ ] Statistics/charts for disk space trends
@@ -2391,7 +2409,7 @@ When ending a session, update this section with:
 - ✅ Fixed URL encoding issues in Jellyfin API
 - ✅ Integrated into main sync flow (runs after retention rules)
 - ✅ Live tested with real Jellyfin instance
-- ✅ Successfully created "Prunarr - Movies Leaving Soon" collection with 8 movies
+- ✅ Successfully created "OxiCleanarr - Movies Leaving Soon" collection with 8 movies
 
 **Files Modified & Committed:**
 - `internal/services/jellyfin_collections.go` - NEW: 174 lines
@@ -2400,7 +2418,7 @@ When ending a session, update this section with:
 - `internal/config/types.go` - +20 lines (collection config)
 - `internal/config/validation.go` - +16 lines (collection validation)
 - `internal/services/sync.go` - +21 lines (integrate collection manager)
-- `config/prunarr.yaml.example` - +10 lines (collection config docs)
+- `config/oxicleanarr.yaml.example` - +10 lines (collection config docs)
 
 **Commits:**
 1. `54ded3f` - feat: add Jellyfin collections management for "Leaving Soon" items
@@ -2436,7 +2454,7 @@ When ending a session, update this section with:
 2. `6bd6305` - fix: use semantic date labels (N/A for deletions, Never/Unknown for watched)
 
 **Current State:**
-- Running: Yes (Prunarr + Frontend dev server)
+- Running: Yes (OxiCleanarr + Frontend dev server)
 - Tests passing: 282/282 ✅
 - Known issues: None
 - Media tracked: 378 items (255 movies, 123 TV shows)
@@ -2456,7 +2474,7 @@ When ending a session, update this section with:
 - Timeline Page: Only uses deletion context (filters out zero dates entirely)
 
 **Next Session TODO:**
-- [ ] Configuration UI page (allow editing prunarr.yaml via web)
+- [ ] Configuration UI page (allow editing oxicleanarr.yaml via web)
 - [ ] Collection management for "Leaving Soon" in Jellyfin
 - [ ] Advanced rules UI (user-based rules editor)
 - [ ] Mobile responsiveness improvements
@@ -2471,7 +2489,7 @@ When ending a session, update this section with:
 - ✅ Fixed Jellyseerr username resolution (DisplayName → JellyfinUsername fallback)
 - ✅ Added requester fields to scheduled deletion candidates in job summaries
 - ✅ Verified frontend displays requester info correctly on all three pages
-- ✅ Removed Plex-related fields (Prunarr is Jellyfin-only)
+- ✅ Removed Plex-related fields (OxiCleanarr is Jellyfin-only)
 - ✅ All 282 tests passing
 
 **Files Modified:**
@@ -2563,10 +2581,10 @@ When ending a session, update this section with:
 - Jellyseerr tests: Ping, GetRequests, pagination, request types, requester validation
 - Jellystat tests: Ping, GetHistory, pagination, user activity, playback duration
 - All tests follow integration + unit test pattern from existing clients
-- Integration tests require `PRUNARR_INTEGRATION_TEST=1` environment variable
+- Integration tests require `OXICLEANARR_INTEGRATION_TEST=1` environment variable
 
 **Next Session TODO:**
-- [ ] Configuration UI page (allow editing prunarr.yaml via web)
+- [ ] Configuration UI page (allow editing oxicleanarr.yaml via web)
 - [ ] Collection management for "Leaving Soon" in Jellyfin
 - [ ] Advanced rules UI (user-based rules editor)
 - [ ] Mobile responsiveness improvements
@@ -2582,8 +2600,8 @@ When ending a session, update this section with:
 - ✅ Enhanced code comments in UserRule struct
 - ✅ Created validation tests (61 new tests added)
 - ✅ Created config loading test for simplified rules
-- ✅ Updated PRUNARR_SPEC.md with clarified matching strategy
-- ✅ Updated config/prunarr.yaml.example with clear examples
+- ✅ Updated OXICLEANARR_SPEC.md with clarified matching strategy
+- ✅ Updated config/oxicleanarr.yaml.example with clear examples
 
 **Commits:**
 - `14f1d7d` - feat: add config hot-reload support for retention rules

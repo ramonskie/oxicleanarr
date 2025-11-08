@@ -129,7 +129,7 @@ export default function JobHistoryPage() {
       <header className="border-b">
         <div className="container mx-auto px-4 py-4 flex items-center justify-between">
           <div className="flex items-center gap-6">
-            <h1 className="text-2xl font-bold">Prunarr</h1>
+            <h1 className="text-2xl font-bold">OxiCleanarr</h1>
             <nav className="flex gap-4">
               <Button variant="ghost" onClick={() => navigate('/')}>
                 Dashboard

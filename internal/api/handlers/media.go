@@ -5,8 +5,8 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/ramonskie/prunarr/internal/models"
-	"github.com/ramonskie/prunarr/internal/services"
+	"github.com/ramonskie/oxicleanarr/internal/models"
+	"github.com/ramonskie/oxicleanarr/internal/services"
 	"github.com/rs/zerolog/log"
 )
 

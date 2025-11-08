@@ -1,0 +1,57 @@
+# Prunarr Configuration for NAS Deployment
+# IMPORTANT: Adjust paths based on your testing
+
+admin:
+  username: admin
+  password: changeme  # Will be auto-hashed on first run
+
+app:
+  dry_run: true                   # START IN DRY-RUN MODE FOR TESTING
+  enable_deletion: false
+  leaving_soon_days: 14
+
+integrations:
+  jellyfin:
+    enabled: true
+    url: http://jellyfin:8096      # Use container name (synobridge network)
+    api_key: YOUR_JELLYFIN_API_KEY
+  
+  radarr:
+    enabled: true
+    url: http://radarr:7878         # Use container name
+    api_key: YOUR_RADARR_API_KEY
+  
+  sonarr:
+    enabled: true
+    url: http://sonarr:8989         # Use container name
+    api_key: YOUR_SONARR_API_KEY
+  
+  jellyseerr:
+    enabled: false
+    url: http://jellyseerr:5055
+    api_key: ""
+  
+  jellystat:
+    enabled: true
+    url: http://jellystat:3000      # Already in your compose
+    api_key: YOUR_JELLYSTAT_API_KEY
+
+sync:
+  full_interval: 3600
+  incremental_interval: 900
+  auto_start: true
+
+rules:
+  movie_retention: 90d
+  tv_retention: 120d
+
+server:
+  host: 0.0.0.0
+  port: 8080
+
+# Symlink Library Configuration
+symlink_library:
+  enabled: true
+  base_path: /data/media/prunarr-leaving-soon
+  movies_library_name: "Leaving Soon - Movies"
+  tv_library_name: "Leaving Soon - TV Shows"

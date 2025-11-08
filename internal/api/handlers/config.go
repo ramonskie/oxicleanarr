@@ -6,8 +6,8 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/ramonskie/prunarr/internal/config"
-	"github.com/ramonskie/prunarr/internal/services"
+	"github.com/ramonskie/oxicleanarr/internal/config"
+	"github.com/ramonskie/oxicleanarr/internal/services"
 	"github.com/rs/zerolog/log"
 	"gopkg.in/yaml.v3"
 )

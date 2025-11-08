@@ -1,4 +1,4 @@
-module github.com/ramonskie/prunarr
+module github.com/ramonskie/oxicleanarr
 
 go 1.25.3
 

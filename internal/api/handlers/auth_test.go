@@ -8,9 +8,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ramonskie/prunarr/internal/config"
-	"github.com/ramonskie/prunarr/internal/services"
-	"github.com/ramonskie/prunarr/internal/utils"
+	"github.com/ramonskie/oxicleanarr/internal/config"
+	"github.com/ramonskie/oxicleanarr/internal/services"
+	"github.com/ramonskie/oxicleanarr/internal/utils"
 	"golang.org/x/crypto/bcrypt"
 )
 

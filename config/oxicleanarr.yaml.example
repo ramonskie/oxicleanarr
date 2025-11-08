@@ -1,0 +1,119 @@
+# Prunarr Configuration
+# Minimal viable config - just credentials and integrations
+
+admin:
+  username: admin
+  password: changeme  # Will be auto-hashed on first run
+
+integrations:
+  jellyfin:
+    enabled: true
+    url: http://jellyfin:8096
+    api_key: your-jellyfin-api-key-here
+    
+    # Symlink Libraries (optional) - Create "Leaving Soon" libraries in Jellyfin sidebar
+    # symlink_library:
+    #   enabled: true
+    #   base_path: /data/media/leaving-soon                # RECOMMENDED: Inside existing media mount (simplest!)
+    #   movies_library_name: "Leaving Soon - Movies"      # Optional: default is "Leaving Soon - Movies"
+    #   tv_library_name: "Leaving Soon - TV Shows"        # Optional: default is "Leaving Soon - TV Shows"
+    #   hide_when_empty: true                             # Optional: Auto-delete empty libraries (default: true)
+    #                                                      # When true, removes libraries from Jellyfin sidebar when no items scheduled
+    #                                                      # Set to false to keep empty libraries visible
+    #
+    # Docker Volume Mapping - RECOMMENDED APPROACH (reuse existing media mount):
+    #   prunarr:
+    #     volumes:
+    #       - /volume3/docker/prunarr/config:/app/config
+    #       - /volume3/docker/prunarr/data:/app/data
+    #       - /volume1/data/media:/data/media         # Prunarr creates symlinks at /data/media/leaving-soon/
+    #
+    #   jellyfin:
+    #     volumes:
+    #       - /volume1/data/media:/data/media:ro      # Already has access to symlinks! No extra mount needed ✅
+    #
+    # Alternative: Separate directory (more complex, requires extra Jellyfin mount):
+    #   base_path: /app/leaving-soon
+    #   prunarr volumes:
+    #     - /volume3/docker/prunarr/leaving-soon:/app/leaving-soon
+    #     - /volume1/data/media:/data/media:ro
+    #   jellyfin volumes:
+    #     - /volume3/docker/prunarr/leaving-soon:/app/leaving-soon:ro  # Extra mount required
+    #     - /volume1/data/media:/data/media:ro
+    #
+    # IMPORTANT: Jellyfin needs BOTH mounts for symlinks to work:
+    #   1. /app/leaving-soon mount - To see the symlink files Prunarr creates
+    #   2. /data/media mount - To follow symlinks and access the actual video files
+    # 
+    # How it works:
+    #   - Prunarr creates: /app/leaving-soon/movies/Movie.mkv → /data/media/movies/Movie/file.mkv
+    #   - Jellyfin Virtual Folder points to: /app/leaving-soon/movies/
+    #   - Jellyfin reads symlink and follows it to the real file at /data/media/...
+    #   - Without both mounts, Jellyfin can't access the files!
+  
+  radarr:
+    enabled: true
+    url: http://radarr:7878
+    api_key: your-radarr-api-key-here
+  
+  sonarr:
+    enabled: true
+    url: http://sonarr:8989
+    api_key: your-sonarr-api-key-here
+  
+  jellyseerr:
+    enabled: false
+    url: http://jellyseerr:5055
+    api_key: ""
+  
+  jellystat:
+    enabled: false
+    url: http://jellystat:3000
+    api_key: ""
+
+# Optional settings with defaults (uncomment to override)
+# app:
+#   dry_run: true                   # Preview mode - no actual deletions (recommended for testing)
+#   enable_deletion: false          # Enable automatic deletions during sync (requires dry_run: false)
+#   leaving_soon_days: 14           # Show items in "Leaving Soon" window
+
+# sync:
+#   full_interval: 3600
+#   incremental_interval: 900
+#   auto_start: true
+
+# rules:
+#   movie_retention: 90d        # How long to keep movies (e.g., "90d", "30d", "180d")
+#   tv_retention: 120d          # How long to keep TV shows (e.g., "120d", "60d", "240d")
+#   # Use "never" or "0d" to disable standard retention rules entirely
+#   # Useful when you only want user-based cleanup or advanced rules
+#   # movie_retention: never    # Disable movie retention (only user rules apply)
+#   # tv_retention: never       # Disable TV retention (only user rules apply)
+
+# server:
+#   host: 0.0.0.0
+#   port: 8080
+
+# Advanced Rules (optional) - Tag-based, episode limits, or user-based cleanup
+# advanced_rules:
+#   # Example 1: Tag-Based Rules
+#   - name: Kids Content
+#     type: tag
+#     enabled: true
+#     tag: kids
+#     retention: 60d
+#   
+#   # Example 2: User-Based Cleanup
+#   # Match users by EITHER user_id, username, OR email (any one is sufficient)
+#   - name: Trial Users
+#     type: user
+#     enabled: true
+#     users:
+#       - user_id: 1                # Match by Jellyseerr user ID
+#         retention: 30d
+#       - email: guest@example.com  # Match by email address
+#         retention: 7d
+#         require_watched: true     # Only delete after user has watched
+#       - username: trial_user      # Match by username
+#         retention: 14d
+

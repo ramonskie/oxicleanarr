@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ramonskie/prunarr/internal/storage"
+	"github.com/ramonskie/oxicleanarr/internal/storage"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

@@ -8,7 +8,7 @@ import (
 	"net/url"
 	"time"
 
-	"github.com/ramonskie/prunarr/internal/config"
+	"github.com/ramonskie/oxicleanarr/internal/config"
 	"github.com/rs/zerolog/log"
 )
 

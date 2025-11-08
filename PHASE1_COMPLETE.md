@@ -1,4 +1,4 @@
-# Prunarr Phase 1 - COMPLETED ✅
+# OxiCleanarr Phase 1 - COMPLETED ✅
 
 ## Implementation Status
 
@@ -57,7 +57,7 @@
 All tests passed successfully:
 
 1. ✅ Application starts without errors
-2. ✅ Config loads from ./config/prunarr.yaml
+2. ✅ Config loads from ./config/oxicleanarr.yaml
 3. ✅ Plain-text password auto-hashed on first run
 4. ✅ Health endpoint responds: GET /health
 5. ✅ Login endpoint works: POST /api/auth/login
@@ -69,8 +69,8 @@ All tests passed successfully:
 ### Project Structure
 
 ```
-prunarr/
-├── cmd/prunarr/main.go           # Application entry point
+oxicleanarr/
+├── cmd/oxicleanarr/main.go           # Application entry point
 ├── internal/
 │   ├── api/
 │   │   ├── handlers/             # Health, auth handlers
@@ -82,8 +82,8 @@ prunarr/
 │   ├── storage/                  # File storage (2 files)
 │   └── utils/                    # Logger, JWT (2 files)
 ├── config/
-│   ├── prunarr.yaml              # Active config (gitignored)
-│   └── prunarr.yaml.example      # Example config
+│   ├── oxicleanarr.yaml              # Active config (gitignored)
+│   └── oxicleanarr.yaml.example      # Example config
 ├── .gitignore
 ├── Makefile
 ├── quickstart.sh
@@ -134,7 +134,7 @@ prunarr/
 # Or manually:
 make setup
 make build
-./prunarr
+./oxicleanarr
 
 # Development mode
 make dev
@@ -195,7 +195,7 @@ Phase 2 will implement the core media operations:
 ## Files Created/Modified (19 files)
 
 **New Files:**
-1. cmd/prunarr/main.go
+1. cmd/oxicleanarr/main.go
 2. internal/config/types.go
 3. internal/config/defaults.go
 4. internal/config/validation.go
@@ -213,7 +213,7 @@ Phase 2 will implement the core media operations:
 16. internal/services/auth.go
 17. internal/utils/logger.go
 18. internal/utils/jwt.go
-19. config/prunarr.yaml.example
+19. config/oxicleanarr.yaml.example
 20. .gitignore
 21. Makefile
 22. README.md

@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 
-	"github.com/ramonskie/prunarr/internal/services"
+	"github.com/ramonskie/oxicleanarr/internal/services"
 	"github.com/rs/zerolog/log"
 )
 

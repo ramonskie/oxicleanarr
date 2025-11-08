@@ -7,10 +7,10 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/ramonskie/prunarr/internal/cache"
-	"github.com/ramonskie/prunarr/internal/config"
-	"github.com/ramonskie/prunarr/internal/services"
-	"github.com/ramonskie/prunarr/internal/storage"
+	"github.com/ramonskie/oxicleanarr/internal/cache"
+	"github.com/ramonskie/oxicleanarr/internal/config"
+	"github.com/ramonskie/oxicleanarr/internal/services"
+	"github.com/ramonskie/oxicleanarr/internal/storage"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

@@ -63,7 +63,7 @@ Added 5 test cases covering all scenarios:
 |------|---------------|-------------|
 | `internal/config/types.go` | +1 | Added `HideWhenEmpty bool` field |
 | `internal/config/defaults.go` | +7 | Set default to `true` with comments |
-| `config/prunarr.yaml.example` | +3 | Added documentation for option |
+| `config/oxicleanarr.yaml.example` | +3 | Added documentation for option |
 | `internal/services/symlink_library.go` | +42 | Implemented deletion logic |
 | `internal/services/symlink_library_test.go` | +224 | Added 5 comprehensive test cases |
 | **Total** | **+277 lines** | |
@@ -161,7 +161,7 @@ integrations:
 2. **Docker release** (if user requests):
    - Build new Docker image with feature
    - Tag as v1.3.1 (patch) or v1.4.0 (minor feature)
-   - Publish to Docker Hub: `ramonskie/prunarr:v1.3.1` or `:v1.4.0`
+   - Publish to Docker Hub: `ramonskie/oxicleanarr:v1.3.1` or `:v1.4.0`
 
 3. **Documentation updates**:
    - Consider updating NAS_DEPLOYMENT.md with `hide_when_empty` explanation

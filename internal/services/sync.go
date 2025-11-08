@@ -9,11 +9,11 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/ramonskie/prunarr/internal/cache"
-	"github.com/ramonskie/prunarr/internal/clients"
-	"github.com/ramonskie/prunarr/internal/config"
-	"github.com/ramonskie/prunarr/internal/models"
-	"github.com/ramonskie/prunarr/internal/storage"
+	"github.com/ramonskie/oxicleanarr/internal/cache"
+	"github.com/ramonskie/oxicleanarr/internal/clients"
+	"github.com/ramonskie/oxicleanarr/internal/config"
+	"github.com/ramonskie/oxicleanarr/internal/models"
+	"github.com/ramonskie/oxicleanarr/internal/storage"
 	"github.com/rs/zerolog/log"
 )
 

@@ -35,8 +35,8 @@ COPY . .
 # Build binary with static linking
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build \
     -ldflags="-w -s" \
-    -o prunarr \
-    ./cmd/prunarr
+    -o oxicleanarr \
+    ./cmd/oxicleanarr
 
 # Stage 3: Runtime Image
 FROM alpine:latest
@@ -48,13 +48,13 @@ RUN apk add --no-cache ca-certificates tzdata su-exec
 WORKDIR /app
 
 # Copy binary from backend builder
-COPY --from=backend-builder /app/prunarr /app/prunarr
+COPY --from=backend-builder /app/oxicleanarr /app/oxicleanarr
 
 # Copy frontend dist from frontend builder
 COPY --from=frontend-builder /app/web/dist /app/web/dist
 
 # Copy example config (users can override with volume mount)
-COPY config/prunarr.yaml.example /app/config/prunarr.yaml.example
+COPY config/oxicleanarr.yaml.example /app/config/oxicleanarr.yaml.example
 
 # Copy entrypoint script
 COPY docker-entrypoint.sh /docker-entrypoint.sh
@@ -71,9 +71,9 @@ EXPOSE 8080
 # Set environment variables
 ENV LOG_LEVEL=info \
     LOG_FORMAT=json \
-    CONFIG_PATH=/app/config/prunarr.yaml \
+    CONFIG_PATH=/app/config/oxicleanarr.yaml \
     DATA_PATH=/app/data \
-    LOG_FILE=/app/logs/prunarr.log \
+    LOG_FILE=/app/logs/oxicleanarr.log \
     FRONTEND_DIST_PATH=/app/web/dist
 
 # Health check
@@ -82,4 +82,4 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
 
 # Run via entrypoint script (handles PUID/PGID)
 ENTRYPOINT ["/docker-entrypoint.sh"]
-CMD ["/app/prunarr", "--config", "/app/config/prunarr.yaml"]
+CMD ["/app/oxicleanarr", "--config", "/app/config/oxicleanarr.yaml"]

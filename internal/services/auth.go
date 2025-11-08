@@ -3,8 +3,8 @@ package services
 import (
 	"errors"
 
-	"github.com/ramonskie/prunarr/internal/config"
-	"github.com/ramonskie/prunarr/internal/utils"
+	"github.com/ramonskie/oxicleanarr/internal/config"
+	"github.com/ramonskie/oxicleanarr/internal/utils"
 	"golang.org/x/crypto/bcrypt"
 )
 

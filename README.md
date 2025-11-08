@@ -1,6 +1,8 @@
-# Prunarr
+# OxiCleanarr
 
-A lightweight media cleanup automation tool for the *arr stack with Jellyfin integration.
+> **"But wait, there's more!"** - A lightweight media cleanup automation tool for the *arr stack with Jellyfin integration.
+
+**OxiCleanarr** removes media clutter from your Plex/Jellyfin server with the power and effectiveness you'd expect from a product endorsed by Billy Mays himself! Just like OxiClean tackles tough stains, OxiCleanarr tackles your unwatched media backlog.
 
 ## Features
 
@@ -23,22 +25,22 @@ A lightweight media cleanup automation tool for the *arr stack with Jellyfin int
 
 1. Clone the repository:
 ```bash
-git clone https://github.com/ramonskie/prunarr.git
-cd prunarr
+git clone https://github.com/ramonskie/oxicleanarr.git
+cd oxicleanarr
 ```
 
 2. Build the application:
 ```bash
-go build -o prunarr cmd/prunarr/main.go
+go build -o oxicleanarr cmd/oxicleanarr/main.go
 ```
 
 3. Create configuration file:
 ```bash
 mkdir -p config
-cp config/prunarr.yaml.example config/prunarr.yaml
+cp config/oxicleanarr.yaml.example config/oxicleanarr.yaml
 ```
 
-4. Edit `config/prunarr.yaml` with your service URLs and API keys:
+4. Edit `config/oxicleanarr.yaml` with your service URLs and API keys:
 ```yaml
 admin:
   username: admin
@@ -61,9 +63,9 @@ integrations:
     api_key: your-sonarr-api-key-here
 ```
 
-5. Run Prunarr:
+5. Run OxiCleanarr:
 ```bash
-./prunarr
+./oxicleanarr
 ```
 
 The application will start on `http://0.0.0.0:8080` by default.
@@ -72,7 +74,7 @@ The application will start on `http://0.0.0.0:8080` by default.
 
 ### Configuration File
 
-Prunarr uses a YAML configuration file located at `./config/prunarr.yaml`. The file supports hot-reloading - changes are automatically applied without restarting the application.
+OxiCleanarr uses a YAML configuration file located at `./config/oxicleanarr.yaml`. The file supports hot-reloading - changes are automatically applied without restarting the application.
 
 #### Minimal Configuration
 
@@ -158,15 +160,15 @@ integrations:
 
 ### Environment Variables
 
-Configuration can be overridden using environment variables with the `PRUNARR_` prefix:
+Configuration can be overridden using environment variables with the `OXICLEANARR_` prefix:
 
 ```bash
-export PRUNARR_ADMIN_USERNAME=myadmin
-export PRUNARR_ADMIN_PASSWORD=mypassword
-export PRUNARR_SERVER_PORT=9090
-export PRUNARR_APP_DRY_RUN=false
-export PRUNARR_INTEGRATIONS_JELLYFIN_URL=http://jellyfin:8096
-export PRUNARR_INTEGRATIONS_JELLYFIN_API_KEY=your-key
+export OXICLEANARR_ADMIN_USERNAME=myadmin
+export OXICLEANARR_ADMIN_PASSWORD=mypassword
+export OXICLEANARR_SERVER_PORT=9090
+export OXICLEANARR_APP_DRY_RUN=false
+export OXICLEANARR_INTEGRATIONS_JELLYFIN_URL=http://jellyfin:8096
+export OXICLEANARR_INTEGRATIONS_JELLYFIN_API_KEY=your-key
 ```
 
 ## API Documentation
@@ -424,9 +426,9 @@ Returns the most recent job execution.
 ## File Structure
 
 ```
-prunarr/
+oxicleanarr/
 ├── cmd/
-│   └── prunarr/
+│   └── oxicleanarr/
 │       └── main.go           # Application entry point
 ├── internal/
 │   ├── api/
@@ -439,7 +441,7 @@ prunarr/
 │   ├── storage/              # File-based persistence
 │   └── utils/                # Utilities (logging, JWT)
 ├── config/
-│   └── prunarr.yaml          # Configuration file
+│   └── oxicleanarr.yaml      # Configuration file
 ├── data/
 │   ├── exclusions.json       # Media exclusions
 │   └── jobs.json             # Job history
@@ -451,13 +453,13 @@ prunarr/
 ### Building
 
 ```bash
-go build -o prunarr cmd/prunarr/main.go
+go build -o oxicleanarr cmd/oxicleanarr/main.go
 ```
 
 ### Running in Development
 
 ```bash
-go run cmd/prunarr/main.go
+go run cmd/oxicleanarr/main.go
 ```
 
 ### Testing

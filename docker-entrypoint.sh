@@ -4,7 +4,7 @@ set -e
 PUID=${PUID:-1000}
 PGID=${PGID:-1000}
 
-echo "Starting Prunarr as UID:GID = $PUID:$PGID"
+echo "Starting OxiCleanarr as UID:GID = $PUID:$PGID"
 
 # Fix ownership on data directories to match PUID:PGID
 # This ensures bind-mounted volumes are writable by the container user

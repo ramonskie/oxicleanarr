@@ -1,14 +1,14 @@
 .PHONY: build run clean test dev dev-full dev-test install help
 
 # Binary name
-BINARY_NAME=prunarr
+BINARY_NAME=oxicleanarr
 CONFIG_DIR=./config
 DATA_DIR=./data
 
 # Build the application
 build:
 	@echo "Building $(BINARY_NAME)..."
-	@go build -o $(BINARY_NAME) cmd/prunarr/main.go
+	@go build -o $(BINARY_NAME) cmd/oxicleanarr/main.go
 	@echo "Build complete: ./$(BINARY_NAME)"
 
 # Run the application
@@ -19,7 +19,7 @@ run: build
 # Run in development mode (without building binary)
 dev:
 	@echo "Running in development mode..."
-	@go run cmd/prunarr/main.go
+	@go run cmd/oxicleanarr/main.go
 
 # Run backend + frontend in development mode with hot reload
 dev-full:
@@ -29,18 +29,18 @@ dev-full:
 	@echo ""
 	@trap 'kill 0' SIGINT; \
 	(cd web && npm run dev) & \
-	go run cmd/prunarr/main.go
+	go run cmd/oxicleanarr/main.go
 
 # Run with test config (backend + frontend)
 dev-test:
 	@echo "Starting backend (test config) + frontend with hot reload..."
 	@echo "Backend: http://localhost:8080"
 	@echo "Frontend: http://localhost:5173"
-	@echo "Config: config/prunarr.test.yaml"
+	@echo "Config: config/oxicleanarr.test.yaml"
 	@echo ""
 	@trap 'kill 0' SIGINT; \
 	(cd web && npm run dev) & \
-	go run cmd/prunarr/main.go --config config/prunarr.test.yaml
+	go run cmd/oxicleanarr/main.go --config config/oxicleanarr.test.yaml
 
 # Clean build artifacts
 clean:
@@ -76,16 +76,16 @@ dirs:
 
 # Setup for first run
 setup: dirs
-	@if [ ! -f $(CONFIG_DIR)/prunarr.yaml ]; then \
+	@if [ ! -f $(CONFIG_DIR)/oxicleanarr.yaml ]; then \
 		echo "Creating config from example..."; \
-		cp $(CONFIG_DIR)/prunarr.yaml.example $(CONFIG_DIR)/prunarr.yaml; \
+		cp $(CONFIG_DIR)/oxicleanarr.yaml.example $(CONFIG_DIR)/oxicleanarr.yaml; \
 	else \
 		echo "Config already exists"; \
 	fi
 
 # Show help
 help:
-	@echo "Prunarr - Media Cleanup Automation Tool"
+	@echo "OxiCleanarr - Media Cleanup Automation Tool"
 	@echo ""
 	@echo "Usage:"
 	@echo "  make build     - Build the application"

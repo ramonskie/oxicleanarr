@@ -1,8 +1,8 @@
-# Prunarr Quick Start Guide
+# OxiCleanarr Quick Start Guide
 
 ## Prerequisites
 
-Before running Prunarr, ensure you have:
+Before running OxiCleanarr, ensure you have:
 
 1. **Running Services** (at least one):
    - Jellyfin server with API access
@@ -22,15 +22,15 @@ Before running Prunarr, ensure you have:
 Copy the example configuration and edit it with your credentials:
 
 ```bash
-cp config/prunarr.yaml.example config/prunarr.yaml
-# Now edit config/prunarr.yaml with your API keys
+cp config/oxicleanarr.yaml.example config/oxicleanarr.yaml
+# Now edit config/oxicleanarr.yaml with your API keys
 ```
 
-**⚠️ IMPORTANT:** Never commit `config/prunarr.yaml` to version control - it contains sensitive API keys!
+**⚠️ IMPORTANT:** Never commit `config/oxicleanarr.yaml` to version control - it contains sensitive API keys!
 
 ### Step 2: Edit Configuration
 
-Edit `config/prunarr.yaml` and update the following:
+Edit `config/oxicleanarr.yaml` and update the following:
 
 ```yaml
 admin:
@@ -75,7 +75,7 @@ server:
   port: 8080                 # HTTP port
 ```
 
-## Running Prunarr
+## Running OxiCleanarr
 
 ### Option 1: Run Development Mode (Recommended for Testing)
 
@@ -86,14 +86,14 @@ make dev
 Or directly:
 
 ```bash
-go run cmd/prunarr/main.go
+go run cmd/oxicleanarr/main.go
 ```
 
 ### Option 2: Build and Run Binary
 
 ```bash
 make build
-./prunarr
+./oxicleanarr
 ```
 
 ### Option 3: Build and Run in One Command
@@ -254,7 +254,7 @@ curl -X DELETE http://localhost:8080/api/media/MEDIA_ID?dry_run=true \
 
 ### Complete Live Test Scenario
 
-1. **Start Prunarr** with `dry_run: true` in config:
+1. **Start OxiCleanarr** with `dry_run: true` in config:
    ```bash
    make dev
    ```
@@ -330,7 +330,7 @@ Logs are output to stdout/stderr. Look for:
 ### Common Issues
 
 1. **"Failed to load configuration"**
-   - Check `config/prunarr.yaml` exists
+   - Check `config/oxicleanarr.yaml` exists
    - Verify YAML syntax is correct
    - Ensure admin password is set
 
@@ -357,7 +357,7 @@ make dev
 
 ## Data Storage
 
-Prunarr stores data in the `./data` directory:
+OxiCleanarr stores data in the `./data` directory:
 
 - `exclusions.json` - List of excluded media items
 - `jobs.json` - Job history (last 100 jobs)
@@ -366,7 +366,7 @@ These files are automatically created on first run.
 
 ## Next Steps
 
-Once you've verified Prunarr is working:
+Once you've verified OxiCleanarr is working:
 
 1. **Set `dry_run: false`** in config to enable actual deletions
 2. **Configure retention rules** in the config file

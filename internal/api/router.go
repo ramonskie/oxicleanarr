@@ -7,10 +7,10 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/go-chi/cors"
-	"github.com/ramonskie/prunarr/internal/api/handlers"
-	mw "github.com/ramonskie/prunarr/internal/api/middleware"
-	"github.com/ramonskie/prunarr/internal/services"
-	"github.com/ramonskie/prunarr/internal/storage"
+	"github.com/ramonskie/oxicleanarr/internal/api/handlers"
+	mw "github.com/ramonskie/oxicleanarr/internal/api/middleware"
+	"github.com/ramonskie/oxicleanarr/internal/services"
+	"github.com/ramonskie/oxicleanarr/internal/storage"
 )
 
 // RouterDependencies holds dependencies for the router

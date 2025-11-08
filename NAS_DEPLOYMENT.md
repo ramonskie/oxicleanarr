@@ -1,4 +1,4 @@
-# Prunarr NAS Deployment Guide
+# OxiCleanarr NAS Deployment Guide
 
 ## Prerequisites Check
 
@@ -9,7 +9,7 @@ Run these commands on your NAS to verify the setup:
 ls -la /volume1/data/media/ | head -10
 
 # 2. Verify you can write to the media directory
-touch /volume1/data/media/test-prunarr.txt && rm /volume1/data/media/test-prunarr.txt && echo "Write access OK"
+touch /volume1/data/media/test-oxicleanarr.txt && rm /volume1/data/media/test-oxicleanarr.txt && echo "Write access OK"
 
 # 3. Check existing containers
 docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
@@ -22,11 +22,11 @@ docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
 **Example Setup (adjust paths to match YOUR system):**
 - **Radarr/Sonarr** see movies at: `/data/media/movies/Movie Name (2020)/movie.mkv`
 - **Jellyfin** sees same file at: `/data/media/movies/Movie Name (2020)/movie.mkv`
-- **Prunarr** will see it at: `/data/media/movies/Movie Name (2020)/movie.mkv`
+- **OxiCleanarr** will see it at: `/data/media/movies/Movie Name (2020)/movie.mkv`
 
 **Symlinks will be created:**
-- **On host (NAS)**: `/volume3/docker/prunarr/leaving-soon/movies/Movie Name (2020).mkv`
-- **Prunarr container sees**: `/app/leaving-soon/movies/Movie Name (2020).mkv`
+- **On host (NAS)**: `/volume3/docker/oxicleanarr/leaving-soon/movies/Movie Name (2020).mkv`
+- **OxiCleanarr container sees**: `/app/leaving-soon/movies/Movie Name (2020).mkv`
 - **Jellyfin container should see**: `/app/leaving-soon/movies/Movie Name (2020).mkv` (mount same host dir)
 - **Symlink target**: → `/data/media/movies/Movie Name (2020)/movie.mkv`
 
@@ -43,24 +43,24 @@ docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
 
 ## Step-by-Step Deployment
 
-### Step 1: Create Prunarr Directory Structure
+### Step 1: Create OxiCleanarr Directory Structure
 
 ```bash
 # SSH into your NAS, then:
-sudo mkdir -p /volume3/docker/prunarr/config
-sudo mkdir -p /volume3/docker/prunarr/data
-sudo mkdir -p /volume3/docker/prunarr/logs
-sudo mkdir -p /volume3/docker/prunarr/leaving-soon
-sudo chown -R 1027:65536 /volume3/docker/prunarr
+sudo mkdir -p /volume3/docker/oxicleanarr/config
+sudo mkdir -p /volume3/docker/oxicleanarr/data
+sudo mkdir -p /volume3/docker/oxicleanarr/logs
+sudo mkdir -p /volume3/docker/oxicleanarr/leaving-soon
+sudo chown -R 1027:65536 /volume3/docker/oxicleanarr
 ```
 
 **IMPORTANT**: Note we create a `config` **directory** (not just placing the file directly). This is critical for Docker ownership changes to work correctly.
 
-### Step 2: Create Prunarr Config File
+### Step 2: Create OxiCleanarr Config File
 
 ```bash
 # Create config file INSIDE the config directory
-sudo nano /volume3/docker/prunarr/config/prunarr.yaml
+sudo nano /volume3/docker/oxicleanarr/config/oxicleanarr.yaml
 ```
 
 Paste this content (replace API keys):
@@ -118,9 +118,9 @@ symlink_library:
 
 Save and exit (Ctrl+X, Y, Enter)
 
-### Step 3: Build Prunarr Docker Image
+### Step 3: Build OxiCleanarr Docker Image
 
-Prunarr uses a **multi-stage Dockerfile** that:
+OxiCleanarr uses a **multi-stage Dockerfile** that:
 1. Builds the React frontend (web UI)
 2. Builds the Go backend binary
 3. Combines both in a minimal Alpine runtime image
@@ -128,8 +128,8 @@ Prunarr uses a **multi-stage Dockerfile** that:
 **Option A: Build on NAS (if you have the source code)**
 
 ```bash
-cd /path/to/prunarr/source
-docker build -t prunarr:latest .
+cd /path/to/oxicleanarr/source
+docker build -t oxicleanarr:latest .
 
 # Build will take 5-10 minutes
 # You'll see 3 stages: frontend-builder, backend-builder, runtime
@@ -139,35 +139,35 @@ docker build -t prunarr:latest .
 
 ```bash
 # On dev machine:
-cd /path/to/prunarr
-docker build -t prunarr:latest .
-docker save prunarr:latest | gzip > prunarr-latest.tar.gz
+cd /path/to/oxicleanarr
+docker build -t oxicleanarr:latest .
+docker save oxicleanarr:latest | gzip > oxicleanarr-latest.tar.gz
 
 # Copy to NAS (replace with your NAS IP/hostname)
-scp prunarr-latest.tar.gz admin@your-nas:/volume3/docker/
+scp oxicleanarr-latest.tar.gz admin@your-nas:/volume3/docker/
 
 # On NAS (SSH in):
-docker load < /volume3/docker/prunarr-latest.tar.gz
+docker load < /volume3/docker/oxicleanarr-latest.tar.gz
 
 # Verify image loaded
-docker images | grep prunarr
-# Should show: prunarr  latest  <image-id>  <size>
+docker images | grep oxicleanarr
+# Should show: oxicleanarr  latest  <image-id>  <size>
 ```
 
 **Option C: Use docker-compose build (simplest if source is on NAS)**
 
 ```bash
 # If you cloned the repo to your NAS:
-cd /volume3/docker/prunarr/source
+cd /volume3/docker/oxicleanarr/source
 docker-compose -f docker-compose.nas.yml build
 
 # This will use the Dockerfile in the repo root
 ```
 
-### Step 4: Create Docker Compose File for Prunarr
+### Step 4: Create Docker Compose File for OxiCleanarr
 
 ```bash
-sudo nano /volume3/docker/prunarr/docker-compose.yml
+sudo nano /volume3/docker/oxicleanarr/docker-compose.yml
 ```
 
 Paste:
@@ -176,9 +176,9 @@ Paste:
 version: '3.8'
 
 services:
-  prunarr:
-    image: prunarr:latest
-    container_name: prunarr
+  oxicleanarr:
+    image: oxicleanarr:latest
+    container_name: oxicleanarr
     environment:
       - PUID=1027
       - PGID=65536
@@ -188,10 +188,10 @@ services:
       # NOTE: Use :z flag on SELinux systems (Fedora, RHEL, CentOS)
       # Synology/QNAP typically don't need :z flag
       # IMPORTANT: Mount directories, not individual files!
-      - /volume3/docker/prunarr/config:/app/config:z
-      - /volume3/docker/prunarr/data:/app/data:z
-      - /volume3/docker/prunarr/logs:/app/logs:z
-      - /volume3/docker/prunarr/leaving-soon:/app/leaving-soon:z
+      - /volume3/docker/oxicleanarr/config:/app/config:z
+      - /volume3/docker/oxicleanarr/data:/app/data:z
+      - /volume3/docker/oxicleanarr/logs:/app/logs:z
+      - /volume3/docker/oxicleanarr/leaving-soon:/app/leaving-soon:z
       
       # Media paths - MUST match your Radarr/Sonarr/Jellyfin configuration
       # Mount ONLY the media directory (more restrictive = more secure)
@@ -212,10 +212,10 @@ services:
 
 **RECOMMENDED APPROACH:** If you configured `base_path: /data/media/leaving-soon`, **no changes needed!**
 
-Jellyfin already has the `/data/media` mount, which includes the `leaving-soon` subdirectory where Prunarr creates symlinks.
+Jellyfin already has the `/data/media` mount, which includes the `leaving-soon` subdirectory where OxiCleanarr creates symlinks.
 
 **How it works:**
-- Prunarr creates: `/data/media/leaving-soon/movies/Red Dawn (2012).mkv` → `/data/media/movies/Red Dawn (2012)/file.mkv`
+- OxiCleanarr creates: `/data/media/leaving-soon/movies/Red Dawn (2012).mkv` → `/data/media/movies/Red Dawn (2012)/file.mkv`
 - Jellyfin Virtual Folder points to: `/data/media/leaving-soon/movies/`
 - Jellyfin can read both the symlink AND follow it to the real file (same mount!)
 
@@ -233,7 +233,7 @@ volumes:
 volumes:
   - /volume3/docker/jellyfin:/config
   - /volume1/data/media:/data/media:ro                          # Access actual files
-  - /volume3/docker/prunarr/leaving-soon:/app/leaving-soon:ro  # Access symlinks (extra mount)
+  - /volume3/docker/oxicleanarr/leaving-soon:/app/leaving-soon:ro  # Access symlinks (extra mount)
 ```
 
 If you changed anything, recreate Jellyfin container:
@@ -242,10 +242,10 @@ cd /path/to/jellyfin/compose
 docker-compose up -d
 ```
 
-### Step 6: Start Prunarr
+### Step 6: Start OxiCleanarr
 
 ```bash
-cd /volume3/docker/prunarr
+cd /volume3/docker/oxicleanarr
 docker-compose up -d
 ```
 
@@ -253,10 +253,10 @@ docker-compose up -d
 
 ```bash
 # Check logs
-docker logs -f prunarr
+docker logs -f oxicleanarr
 
 # Should see:
-# - "Starting Prunarr v1.0.0"
+# - "Starting OxiCleanarr v1.0.0"
 # - "Configuration loaded"
 # - "HTTP server listening on :8080"
 ```
@@ -277,18 +277,18 @@ docker logs -f prunarr
 # Check symlink directories exist (adjust path based on your config)
 ls -la /volume1/data/media/leaving-soon/   # If using recommended base_path
 # OR
-ls -la /volume3/docker/prunarr/leaving-soon/  # If using separate directory
+ls -la /volume3/docker/oxicleanarr/leaving-soon/  # If using separate directory
 
 # Should see:
 # drwxr-xr-x movies/
 # drwxr-xr-x tv/
 
 # Check symlink contents
-ls -la /volume3/docker/prunarr/leaving-soon/movies/ | head -5
-ls -la /volume3/docker/prunarr/leaving-soon/tv/ | head -5
+ls -la /volume3/docker/oxicleanarr/leaving-soon/movies/ | head -5
+ls -la /volume3/docker/oxicleanarr/leaving-soon/tv/ | head -5
 
 # Verify symlinks point to real files
-file /volume3/docker/prunarr/leaving-soon/movies/* | head -3
+file /volume3/docker/oxicleanarr/leaving-soon/movies/* | head -3
 ```
 
 ### Step 10: Verify Jellyfin Libraries Created
@@ -300,11 +300,11 @@ file /volume3/docker/prunarr/leaving-soon/movies/* | head -3
    - "Leaving Soon - TV Shows"
 4. Click into each library - should show scheduled items
 
-### Step 11: Check Prunarr Logs
+### Step 11: Check OxiCleanarr Logs
 
 ```bash
-docker logs prunarr 2>&1 | grep -i symlink
-docker logs prunarr 2>&1 | grep -i "virtual folder"
+docker logs oxicleanarr 2>&1 | grep -i symlink
+docker logs oxicleanarr 2>&1 | grep -i "virtual folder"
 ```
 
 Look for:
@@ -329,10 +329,10 @@ getenforce
 
 ```yaml
 volumes:
-  - /volume3/docker/prunarr/config:/app/config:z
-  - /volume3/docker/prunarr/data:/app/data:z
-  - /volume3/docker/prunarr/logs:/app/logs:z
-  - /volume3/docker/prunarr/leaving-soon:/app/leaving-soon:z
+  - /volume3/docker/oxicleanarr/config:/app/config:z
+  - /volume3/docker/oxicleanarr/data:/app/data:z
+  - /volume3/docker/oxicleanarr/logs:/app/logs:z
+  - /volume3/docker/oxicleanarr/leaving-soon:/app/leaving-soon:z
   - /volume1/data:/data:ro  # Read-only mounts don't need :z
 ```
 
@@ -342,7 +342,7 @@ volumes:
 
 If you see errors like:
 ```
-chmod: /app/config/prunarr.yaml: Operation not permitted
+chmod: /app/config/oxicleanarr.yaml: Operation not permitted
 open /app/data/jobs.json: permission denied
 ```
 
@@ -353,19 +353,19 @@ open /app/data/jobs.json: permission denied
 ```yaml
 # ❌ WRONG - File mount (causes permission errors)
 volumes:
-  - /volume3/docker/prunarr/prunarr.yaml:/app/config/prunarr.yaml
+  - /volume3/docker/oxicleanarr/oxicleanarr.yaml:/app/config/oxicleanarr.yaml
 
 # ✅ CORRECT - Directory mount (allows ownership changes)
 volumes:
-  - /volume3/docker/prunarr/config:/app/config
+  - /volume3/docker/oxicleanarr/config:/app/config
 ```
 
 **Fix existing deployment:**
 ```bash
 # Move config file into config directory
-mkdir -p /volume3/docker/prunarr/config
-mv /volume3/docker/prunarr/prunarr.yaml /volume3/docker/prunarr/config/
-sudo chown -R 1027:65536 /volume3/docker/prunarr
+mkdir -p /volume3/docker/oxicleanarr/config
+mv /volume3/docker/oxicleanarr/oxicleanarr.yaml /volume3/docker/oxicleanarr/config/
+sudo chown -R 1027:65536 /volume3/docker/oxicleanarr
 
 # Update docker-compose.yml to use directory mount
 # Then recreate container:
@@ -382,7 +382,7 @@ docker-compose up -d --force-recreate
 ls -la /volume1/data/media/leaving-soon/
 
 # If using base_path: /app/leaving-soon (separate directory)
-ls -la /volume3/docker/prunarr/leaving-soon/
+ls -la /volume3/docker/oxicleanarr/leaving-soon/
 
 # Should be owned by your PUID:PGID (default 1027:65536)
 # If not, fix it:
@@ -392,15 +392,15 @@ sudo chown -R 1027:65536 /volume1/data/media/leaving-soon
 ### Problem: Jellyfin libraries not created
 
 ```bash
-# Check if Prunarr can reach Jellyfin API
-docker exec prunarr curl -s http://jellyfin:8096/System/Info/Public | jq
+# Check if OxiCleanarr can reach Jellyfin API
+docker exec oxicleanarr curl -s http://jellyfin:8096/System/Info/Public | jq
 ```
 
 ### Problem: Jellyfin libraries empty or not showing items
 
 **Symptoms:**
 - "Leaving Soon - Movies" library exists but shows 0 items
-- Jellyfin can't see the symlinks Prunarr created
+- Jellyfin can't see the symlinks OxiCleanarr created
 
 **Root Cause:** Jellyfin doesn't have access to the symlink directory.
 
@@ -420,7 +420,7 @@ volumes:
 volumes:
   - /volume3/docker/jellyfin:/config
   - /volume1/data/media:/data/media:ro                          # Actual media files
-  - /volume3/docker/prunarr/leaving-soon:/app/leaving-soon:ro  # Symlinks (extra mount)
+  - /volume3/docker/oxicleanarr/leaving-soon:/app/leaving-soon:ro  # Symlinks (extra mount)
 ```
 
 **Verify mounts are working:**
@@ -439,7 +439,7 @@ docker exec jellyfin ls -la /data/media/leaving-soon/movies/
 **If using `base_path: /app/leaving-soon` (separate directory):**
 ```bash
 # From host: Check symlinks exist
-ls -la /volume3/docker/prunarr/leaving-soon/movies/
+ls -la /volume3/docker/oxicleanarr/leaving-soon/movies/
 
 # From Jellyfin container: Check if it can see symlinks
 docker exec jellyfin ls -la /app/leaving-soon/movies/
@@ -449,7 +449,7 @@ docker-compose restart jellyfin
 ```
 
 **How symlinks work:**
-1. Prunarr creates symlink: `/data/media/leaving-soon/movies/Movie.mkv` → `/data/media/movies/Movie/file.mkv`
+1. OxiCleanarr creates symlink: `/data/media/leaving-soon/movies/Movie.mkv` → `/data/media/movies/Movie/file.mkv`
 2. Jellyfin Virtual Folder points to: `/data/media/leaving-soon/movies/`
 3. Jellyfin reads the symlink file and follows it to the real file
 4. **Jellyfin only needs one mount** (the `/data/media` mount) to access both!
@@ -458,7 +458,7 @@ docker-compose restart jellyfin
 
 ```bash
 # Verify paths inside containers
-docker exec prunarr ls -la /data/media/movies/ | head -5
+docker exec oxicleanarr ls -la /data/media/movies/ | head -5
 docker exec jellyfin ls -la /data/media/movies/ | head -5
 docker exec radarr ls -la /data/media/movies/ | head -5
 
@@ -471,12 +471,12 @@ Once you've deployed, share:
 
 1. **Startup logs:**
    ```bash
-   docker logs prunarr | head -50
+   docker logs oxicleanarr | head -50
    ```
 
 2. **Symlink directory contents:**
    ```bash
-   ls -laR /volume3/docker/prunarr/leaving-soon/
+   ls -laR /volume3/docker/oxicleanarr/leaving-soon/
    ```
 
 3. **Integration status from API:**
@@ -486,8 +486,8 @@ Once you've deployed, share:
 
 4. **Any errors from logs:**
    ```bash
-   docker logs prunarr 2>&1 | grep -i error
-   docker logs prunarr 2>&1 | grep -i fail
+   docker logs oxicleanarr 2>&1 | grep -i error
+   docker logs oxicleanarr 2>&1 | grep -i fail
    ```
 
 ## Safety Notes

@@ -287,7 +287,7 @@ export default function ConfigurationPage() {
               <p>• Integration settings (Jellyfin, Radarr, Sonarr, etc.) can only be changed via the config file</p>
               <p>• For advanced rules (tag-based, episode limits, user-based), use the Advanced Rules page</p>
               <p>• Changes take effect immediately and will trigger a config reload</p>
-              <p>• Config file location: <code className="bg-blue-100 px-1 rounded">/app/config/prunarr.yaml</code></p>
+              <p>• Config file location: <code className="bg-blue-100 px-1 rounded">/app/config/oxicleanarr.yaml</code></p>
             </CardContent>
           </Card>
         </div>

@@ -5,7 +5,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/ramonskie/prunarr/internal/storage"
+	"github.com/ramonskie/oxicleanarr/internal/storage"
 )
 
 // JobsHandler handles job history requests

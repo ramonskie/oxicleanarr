@@ -5,7 +5,7 @@ import (
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/ramonskie/prunarr/internal/config"
+	"github.com/ramonskie/oxicleanarr/internal/config"
 	"github.com/rs/zerolog/log"
 )
 

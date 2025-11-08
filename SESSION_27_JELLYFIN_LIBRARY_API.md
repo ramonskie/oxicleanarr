@@ -79,7 +79,7 @@ Based on Jellyfin source code, the `collectionType` parameter accepts:
 - `musicvideos` - Music videos
 - `mixed` - Mixed content (not recommended)
 
-For Prunarr's "Leaving Soon" feature, we need:
+For OxiCleanarr's "Leaving Soon" feature, we need:
 - **Separate libraries** for movies (`movies`) and TV shows (`tvshows`)
 - This follows Jellyfin best practices and Janitorr's proven approach
 
@@ -90,7 +90,7 @@ For Prunarr's "Leaving Soon" feature, we need:
 - **Visibility**: Hidden by default, users must open Collections
 - **API**: `/Collections` endpoints (already implemented)
 - **Type**: BoxSet entities (groups of media)
-- **Status**: ✅ Working in Prunarr (Session 7, Session 20)
+- **Status**: ✅ Working in OxiCleanarr (Session 7, Session 20)
 
 ### Alternative: Jellyfin Virtual Folders (Libraries)
 - **Location**: Sidebar (always visible)
@@ -121,18 +121,18 @@ volumes:
 ```
 
 ### Path Resolution Challenge
-**Problem**: Prunarr, Jellyfin, Radarr, and Sonarr may see different filesystem paths
+**Problem**: OxiCleanarr, Jellyfin, Radarr, and Sonarr may see different filesystem paths
 
 **Example Scenario**:
 - **Radarr** sees: `/movies/Avatar (2009)/Avatar.mkv`
-- **Prunarr container** sees: `/media/movies/Avatar (2009)/Avatar.mkv`
+- **OxiCleanarr container** sees: `/media/movies/Avatar (2009)/Avatar.mkv`
 - **Jellyfin container** sees: `/data/movies/Avatar (2009)/Avatar.mkv`
 
 **Solution**: Radarr/Sonarr APIs provide actual filesystem paths in item responses
 - Radarr: `GET /api/v3/movie` returns `path` field
 - Sonarr: `GET /api/v3/series` returns `path` field
 - These are the **container filesystem paths** as seen by Radarr/Sonarr
-- Must be translated to paths visible to Prunarr and Jellyfin
+- Must be translated to paths visible to OxiCleanarr and Jellyfin
 
 ## Proposed Implementation Plan
 
@@ -163,7 +163,7 @@ volumes:
 4. `internal/clients/jellyfin.go` - Add virtual folder API methods (~150 lines)
 5. `internal/clients/types.go` - Add VirtualFolderInfo struct
 6. `internal/services/sync.go` - Integrate symlink sync
-7. `config/prunarr.yaml.example` - Document symlink config
+7. `config/oxicleanarr.yaml.example` - Document symlink config
 8. `README.md` - Document Docker volume requirements
 
 **Config Example**:
@@ -213,13 +213,13 @@ integrations:
 
 ## Recommendation
 
-**For Prunarr v1.0**: Keep current Collections approach (Option B)
+**For OxiCleanarr v1.0**: Keep current Collections approach (Option B)
 - Current implementation is **production-ready**
 - Avoids filesystem complexity
 - Easier for users to set up
 - Proven stable (Sessions 7, 20)
 
-**For Prunarr v2.0** (future enhancement): Consider Option A
+**For OxiCleanarr v2.0** (future enhancement): Consider Option A
 - Survey users to see if library visibility is a major concern
 - Document comprehensive setup guide for Docker volumes
 - Provide path mapping helper/validator
@@ -248,7 +248,7 @@ integrations:
 - **Jellyfin Source**: `LibraryStructureController.cs` - Virtual folder API implementation
 - **Janitorr Source**: `BaseMediaServerService.kt` - Abstract library management
 - **Jellyfin Docs**: https://jellyfin.org/docs/general/server/libraries
-- **Prunarr Collections**: `internal/services/jellyfin_collections.go` (current implementation)
+- **OxiCleanarr Collections**: `internal/services/jellyfin_collections.go` (current implementation)
 
 ---
 
