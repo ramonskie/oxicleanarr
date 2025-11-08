@@ -86,6 +86,114 @@ func (m *mockJellyfinClientForSymlink) GetTVShows(ctx context.Context) ([]client
 	return nil, nil
 }
 
+// Plugin methods for symlink management
+func (m *mockJellyfinClientForSymlink) CheckPluginStatus(ctx context.Context) (*clients.PluginStatusResponse, error) {
+	return &clients.PluginStatusResponse{
+		Success: true,
+		Version: "1.0.0",
+	}, nil
+}
+
+func (m *mockJellyfinClientForSymlink) AddSymlinks(ctx context.Context, items []clients.PluginSymlinkItem, dryRun bool) (*clients.PluginAddSymlinksResponse, error) {
+	created := 0
+	skipped := 0
+	failed := 0
+
+	if !dryRun {
+		// Actually create the symlinks in non-dry-run mode
+		for _, item := range items {
+			// Find media files in TargetDirectory
+			files, err := filepath.Glob(filepath.Join(item.TargetDirectory, "*"))
+			if err != nil || len(files) == 0 {
+				skipped++
+				continue
+			}
+
+			// Use first media file found as target
+			targetFile := files[0]
+
+			// Ensure directory exists for symlink
+			dir := filepath.Dir(item.Path)
+			if err := os.MkdirAll(dir, 0755); err != nil {
+				failed++
+				continue
+			}
+
+			// Create symlink: item.Path -> targetFile
+			if err := os.Symlink(targetFile, item.Path); err != nil {
+				failed++
+			} else {
+				created++
+			}
+		}
+	}
+
+	return &clients.PluginAddSymlinksResponse{
+		Success: true,
+		Created: created,
+		Skipped: skipped,
+		Failed:  failed,
+	}, nil
+}
+
+func (m *mockJellyfinClientForSymlink) RemoveSymlinks(ctx context.Context, paths []string, dryRun bool) (*clients.PluginRemoveSymlinksResponse, error) {
+	removed := 0
+	failed := 0
+
+	if !dryRun {
+		// Actually remove the symlinks in non-dry-run mode
+		for _, path := range paths {
+			if err := os.Remove(path); err != nil {
+				failed++
+			} else {
+				removed++
+			}
+		}
+	}
+
+	return &clients.PluginRemoveSymlinksResponse{
+		Success: true,
+		Removed: removed,
+		Failed:  failed,
+	}, nil
+}
+
+func (m *mockJellyfinClientForSymlink) ListSymlinks(ctx context.Context, directory string) (*clients.PluginListSymlinksResponse, error) {
+	// In tests, scan the actual directory to match plugin behavior
+	var symlinks []clients.PluginSymlinkInfo
+
+	entries, err := os.ReadDir(directory)
+	if err != nil {
+		// Directory doesn't exist - return empty list
+		return &clients.PluginListSymlinksResponse{
+			Success:  true,
+			Symlinks: []clients.PluginSymlinkInfo{},
+		}, nil
+	}
+
+	for _, entry := range entries {
+		fullPath := filepath.Join(directory, entry.Name())
+		fileInfo, err := os.Lstat(fullPath)
+		if err != nil {
+			continue
+		}
+
+		// Only include symlinks
+		if fileInfo.Mode()&os.ModeSymlink != 0 {
+			target, _ := os.Readlink(fullPath)
+			symlinks = append(symlinks, clients.PluginSymlinkInfo{
+				Path:   fullPath,
+				Target: target,
+			})
+		}
+	}
+
+	return &clients.PluginListSymlinksResponse{
+		Success:  true,
+		Symlinks: symlinks,
+	}, nil
+}
+
 // Helper function to create test media items
 func createTestMediaItemForSymlink(id, title string, mediaType models.MediaType, deletionDate time.Time, excluded bool) models.Media {
 	return models.Media{
@@ -422,13 +530,14 @@ func TestCleanupSymlinks(t *testing.T) {
 
 	mockClient := &mockJellyfinClientForSymlink{}
 	manager := NewSymlinkLibraryManager(mockClient, cfg)
+	ctx := context.Background()
 
 	t.Run("removes stale symlinks", func(t *testing.T) {
 		expectedSymlinks := map[string]bool{
 			"Keep This (2023).mkv": true,
 		}
 
-		err := manager.cleanupSymlinks(symlinkDir, expectedSymlinks, false)
+		err := manager.cleanupSymlinks(ctx, symlinkDir, expectedSymlinks, false)
 		require.NoError(t, err)
 
 		// symlink1 should still exist
@@ -444,7 +553,7 @@ func TestCleanupSymlinks(t *testing.T) {
 		// Recreate symlink2 for this test
 		require.NoError(t, os.Symlink(targetFile, symlink2))
 
-		err := manager.cleanupSymlinks(symlinkDir, map[string]bool{}, true)
+		err := manager.cleanupSymlinks(ctx, symlinkDir, map[string]bool{}, true)
 		require.NoError(t, err)
 
 		// Both symlinks should still exist in dry-run

@@ -3,7 +3,6 @@ package services
 import (
 	"context"
 	"fmt"
-	"os"
 	"path/filepath"
 	"strings"
 	"time"
@@ -14,13 +13,19 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
-// JellyfinVirtualFolderClient defines the interface for Virtual Folder operations
+// JellyfinVirtualFolderClient defines the interface for Virtual Folder and Plugin operations
 type JellyfinVirtualFolderClient interface {
 	GetVirtualFolders(ctx context.Context) ([]clients.JellyfinVirtualFolder, error)
 	CreateVirtualFolder(ctx context.Context, name, collectionType string, paths []string, dryRun bool) error
 	DeleteVirtualFolder(ctx context.Context, name string, dryRun bool) error
 	AddPathToVirtualFolder(ctx context.Context, name, path string, dryRun bool) error
 	RefreshLibrary(ctx context.Context, dryRun bool) error
+
+	// Plugin methods for symlink management
+	CheckPluginStatus(ctx context.Context) (*clients.PluginStatusResponse, error)
+	AddSymlinks(ctx context.Context, items []clients.PluginSymlinkItem, dryRun bool) (*clients.PluginAddSymlinksResponse, error)
+	RemoveSymlinks(ctx context.Context, paths []string, dryRun bool) (*clients.PluginRemoveSymlinksResponse, error)
+	ListSymlinks(ctx context.Context, directory string) (*clients.PluginListSymlinksResponse, error)
 }
 
 // SymlinkLibraryManager manages Jellyfin symlink-based libraries for "Leaving Soon" items
@@ -163,7 +168,7 @@ func (m *SymlinkLibraryManager) syncLibrary(ctx context.Context, libraryName, co
 			Msg("Cleaning up symlinks before removing empty library")
 
 		emptySymlinks := make(map[string]bool) // Empty map = remove all symlinks
-		if err := m.cleanupSymlinks(symlinkDir, emptySymlinks, dryRun); err != nil {
+		if err := m.cleanupSymlinks(ctx, symlinkDir, emptySymlinks, dryRun); err != nil {
 			log.Warn().
 				Err(err).
 				Str("library", libraryName).
@@ -245,23 +250,18 @@ func (m *SymlinkLibraryManager) syncLibrary(ctx context.Context, libraryName, co
 		return fmt.Errorf("failed to ensure virtual folder: %w", err)
 	}
 
-	// Step 2: Create symlink directory if needed
-	if err := m.ensureDirectory(symlinkDir, dryRun); err != nil {
-		return fmt.Errorf("failed to create symlink directory: %w", err)
-	}
-
-	// Step 3: Create/update symlinks for scheduled items
+	// Step 2: Create/update symlinks for scheduled items (plugin handles directory creation)
 	currentSymlinks, err := m.createSymlinks(symlinkDir, items, dryRun)
 	if err != nil {
 		return fmt.Errorf("failed to create symlinks: %w", err)
 	}
 
-	// Step 4: Clean up stale symlinks
-	if err := m.cleanupSymlinks(symlinkDir, currentSymlinks, dryRun); err != nil {
+	// Step 3: Clean up stale symlinks
+	if err := m.cleanupSymlinks(ctx, symlinkDir, currentSymlinks, dryRun); err != nil {
 		return fmt.Errorf("failed to cleanup symlinks: %w", err)
 	}
 
-	// Step 5: Trigger Jellyfin library scan to discover new content
+	// Step 4: Trigger Jellyfin library scan to discover new content
 	if len(items) > 0 || len(currentSymlinks) > 0 {
 		log.Info().
 			Str("library", libraryName).
@@ -343,30 +343,31 @@ func (m *SymlinkLibraryManager) ensureVirtualFolder(ctx context.Context, name, c
 	return nil
 }
 
-// ensureDirectory creates the directory if it doesn't exist
-func (m *SymlinkLibraryManager) ensureDirectory(path string, dryRun bool) error {
-	// Check if directory exists
-	if _, err := os.Stat(path); os.IsNotExist(err) {
-		log.Info().
-			Str("path", path).
-			Bool("dry_run", dryRun).
-			Msg("Creating symlink directory")
+// createSymlinks creates symlinks for media items via plugin API and returns a map of created symlink names
+func (m *SymlinkLibraryManager) createSymlinks(symlinkDir string, items []models.Media, dryRun bool) (map[string]bool, error) {
+	ctx := context.Background()
+	currentSymlinks := make(map[string]bool)
 
-		if !dryRun {
-			if err := os.MkdirAll(path, 0755); err != nil {
-				return fmt.Errorf("failed to create directory: %w", err)
-			}
-		}
-	} else {
-		log.Debug().Str("path", path).Msg("Directory already exists")
+	// Get existing symlinks from plugin to check what needs updating
+	listResp, err := m.jellyfinClient.ListSymlinks(ctx, symlinkDir)
+	if err != nil {
+		log.Warn().
+			Err(err).
+			Str("directory", symlinkDir).
+			Msg("Failed to list existing symlinks, will create all")
+		listResp = &clients.PluginListSymlinksResponse{Symlinks: []clients.PluginSymlinkInfo{}}
 	}
 
-	return nil
-}
+	// Build map of existing symlinks for quick lookup
+	existingSymlinks := make(map[string]string) // path -> target
+	for _, symlink := range listResp.Symlinks {
+		existingSymlinks[symlink.Path] = symlink.Target
+	}
 
-// createSymlinks creates symlinks for media items and returns a map of created symlink names
-func (m *SymlinkLibraryManager) createSymlinks(symlinkDir string, items []models.Media, dryRun bool) (map[string]bool, error) {
-	currentSymlinks := make(map[string]bool)
+	// Build list of symlinks to create/update
+	var symlinkItems []clients.PluginSymlinkItem
+	var staleSymlinks []string
+	pendingSymlinks := make(map[string]string) // symlinkPath -> symlinkName (for tracking after creation)
 
 	for _, media := range items {
 		// Skip items without file paths
@@ -378,21 +379,12 @@ func (m *SymlinkLibraryManager) createSymlinks(symlinkDir string, items []models
 			continue
 		}
 
-		// Check if source file exists (skip if missing)
-		if _, err := os.Stat(media.FilePath); os.IsNotExist(err) {
-			log.Warn().
-				Str("title", media.Title).
-				Str("file_path", media.FilePath).
-				Msg("Source file does not exist, skipping symlink creation")
-			continue
-		}
-
 		// Generate safe symlink name
 		symlinkName := m.generateSymlinkName(media)
 		symlinkPath := filepath.Join(symlinkDir, symlinkName)
 
 		// Check if symlink already exists and points to correct target
-		if existingTarget, err := os.Readlink(symlinkPath); err == nil {
+		if existingTarget, exists := existingSymlinks[symlinkPath]; exists {
 			if existingTarget == media.FilePath {
 				log.Debug().
 					Str("symlink", symlinkName).
@@ -401,83 +393,169 @@ func (m *SymlinkLibraryManager) createSymlinks(symlinkDir string, items []models
 				currentSymlinks[symlinkName] = true
 				continue
 			} else {
-				// Symlink exists but points to wrong target - remove it
+				// Symlink exists but points to wrong target - mark for removal
 				log.Info().
 					Str("symlink", symlinkName).
 					Str("old_target", existingTarget).
 					Str("new_target", media.FilePath).
 					Bool("dry_run", dryRun).
-					Msg("Removing stale symlink")
-
-				if !dryRun {
-					if err := os.Remove(symlinkPath); err != nil {
-						log.Error().Err(err).Str("path", symlinkPath).Msg("Failed to remove stale symlink")
-						continue
-					}
-				}
+					Msg("Marking stale symlink for removal")
+				staleSymlinks = append(staleSymlinks, symlinkPath)
 			}
 		}
 
-		// Create symlink
+		// Add to creation list
 		log.Info().
 			Str("symlink", symlinkName).
 			Str("target", media.FilePath).
 			Bool("dry_run", dryRun).
-			Msg("Creating symlink")
+			Msg("Preparing symlink for creation")
 
-		if !dryRun {
-			if err := os.Symlink(media.FilePath, symlinkPath); err != nil {
-				log.Error().
-					Err(err).
-					Str("symlink", symlinkPath).
-					Str("target", media.FilePath).
-					Msg("Failed to create symlink")
-				continue
+		symlinkItems = append(symlinkItems, clients.PluginSymlinkItem{
+			Path:            symlinkPath,
+			TargetDirectory: filepath.Dir(media.FilePath),
+		})
+
+		// Store mapping for later tracking (after successful creation)
+		// Map from symlinkPath to symlinkName for tracking
+		pendingSymlinks[symlinkPath] = symlinkName
+	}
+
+	// Remove stale symlinks first (if any)
+	if len(staleSymlinks) > 0 {
+		log.Info().
+			Int("count", len(staleSymlinks)).
+			Bool("dry_run", dryRun).
+			Msg("Removing stale symlinks before creating new ones")
+
+		removeResp, err := m.jellyfinClient.RemoveSymlinks(ctx, staleSymlinks, dryRun)
+		if err != nil {
+			log.Error().
+				Err(err).
+				Int("count", len(staleSymlinks)).
+				Msg("Failed to remove stale symlinks via plugin")
+			// Continue anyway - we'll try to create new ones
+		} else {
+			log.Info().
+				Int("removed", removeResp.Removed).
+				Int("failed", removeResp.Failed).
+				Msg("Stale symlinks removed")
+		}
+	}
+
+	// Create new/updated symlinks via plugin API
+	if len(symlinkItems) > 0 {
+		log.Info().
+			Int("count", len(symlinkItems)).
+			Bool("dry_run", dryRun).
+			Msg("Creating symlinks via plugin")
+
+		addResp, err := m.jellyfinClient.AddSymlinks(ctx, symlinkItems, dryRun)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create symlinks via plugin: %w", err)
+		}
+
+		log.Info().
+			Int("created", addResp.Created).
+			Int("skipped", addResp.Skipped).
+			Int("failed", addResp.Failed).
+			Msg("Symlinks created via plugin")
+
+		// Log individual failures if any
+		if addResp.Failed > 0 && len(addResp.Details) > 0 {
+			for _, detail := range addResp.Details {
+				log.Warn().
+					Str("detail", detail).
+					Msg("Symlink creation issue")
 			}
 		}
 
-		// Track successfully created symlink
-		currentSymlinks[symlinkName] = true
+		// Track symlinks based on mode
+		if dryRun {
+			// In dry-run mode, track everything we would have created
+			for _, name := range pendingSymlinks {
+				currentSymlinks[name] = true
+			}
+		} else if addResp.Created > 0 {
+			// In live mode, verify which symlinks actually exist
+			// We need to verify since plugin only returns counts, not which items succeeded
+			verifyResp, err := m.jellyfinClient.ListSymlinks(ctx, symlinkDir)
+			if err != nil {
+				log.Warn().
+					Err(err).
+					Msg("Failed to verify created symlinks, tracking all attempted")
+				// Fall back to tracking all pending symlinks
+				for _, name := range pendingSymlinks {
+					currentSymlinks[name] = true
+				}
+			} else {
+				// Build set of actually created symlink paths
+				createdPaths := make(map[string]bool)
+				for _, symlink := range verifyResp.Symlinks {
+					createdPaths[symlink.Path] = true
+				}
+				// Only track symlinks that actually exist
+				for path, name := range pendingSymlinks {
+					if createdPaths[path] {
+						currentSymlinks[name] = true
+					}
+				}
+			}
+		}
 	}
 
 	return currentSymlinks, nil
 }
 
 // cleanupSymlinks removes symlinks that are no longer needed
-func (m *SymlinkLibraryManager) cleanupSymlinks(symlinkDir string, currentSymlinks map[string]bool, dryRun bool) error {
-	// Read directory contents
-	entries, err := os.ReadDir(symlinkDir)
+func (m *SymlinkLibraryManager) cleanupSymlinks(ctx context.Context, symlinkDir string, currentSymlinks map[string]bool, dryRun bool) error {
+	// List existing symlinks via plugin API
+	listResp, err := m.jellyfinClient.ListSymlinks(ctx, symlinkDir)
 	if err != nil {
-		if os.IsNotExist(err) {
-			log.Debug().Str("path", symlinkDir).Msg("Symlink directory does not exist, nothing to clean up")
-			return nil
-		}
-		return fmt.Errorf("failed to read symlink directory: %w", err)
+		// If directory doesn't exist or plugin can't access it, that's fine
+		log.Debug().
+			Err(err).
+			Str("path", symlinkDir).
+			Msg("Cannot list symlinks (directory may not exist)")
+		return nil
 	}
 
-	// Remove symlinks not in current set
-	for _, entry := range entries {
-		if !currentSymlinks[entry.Name()] {
-			symlinkPath := filepath.Join(symlinkDir, entry.Name())
+	// Find symlinks not in current set
+	var staleSymlinks []string
+	for _, symlink := range listResp.Symlinks {
+		symlinkName := filepath.Base(symlink.Path)
+		if !currentSymlinks[symlinkName] {
+			staleSymlinks = append(staleSymlinks, symlink.Path)
+			log.Debug().
+				Str("symlink", symlinkName).
+				Str("path", symlink.Path).
+				Msg("Found stale symlink")
+		}
+	}
 
-			// Only remove if it's actually a symlink
-			info, err := os.Lstat(symlinkPath)
-			if err != nil {
-				log.Warn().Err(err).Str("path", symlinkPath).Msg("Failed to stat file")
-				continue
-			}
+	// Remove stale symlinks via plugin API
+	if len(staleSymlinks) > 0 {
+		log.Info().
+			Int("count", len(staleSymlinks)).
+			Bool("dry_run", dryRun).
+			Msg("Removing stale symlinks via plugin")
 
-			if info.Mode()&os.ModeSymlink != 0 {
-				log.Info().
-					Str("symlink", entry.Name()).
-					Bool("dry_run", dryRun).
-					Msg("Removing stale symlink")
+		removeResp, err := m.jellyfinClient.RemoveSymlinks(ctx, staleSymlinks, dryRun)
+		if err != nil {
+			return fmt.Errorf("failed to remove stale symlinks via plugin: %w", err)
+		}
 
-				if !dryRun {
-					if err := os.Remove(symlinkPath); err != nil {
-						log.Error().Err(err).Str("path", symlinkPath).Msg("Failed to remove symlink")
-					}
-				}
+		log.Info().
+			Int("removed", removeResp.Removed).
+			Int("failed", removeResp.Failed).
+			Msg("Stale symlinks removed")
+
+		// Log details if any failures
+		if removeResp.Failed > 0 && len(removeResp.Details) > 0 {
+			for _, detail := range removeResp.Details {
+				log.Warn().
+					Str("detail", detail).
+					Msg("Symlink removal issue")
 			}
 		}
 	}
