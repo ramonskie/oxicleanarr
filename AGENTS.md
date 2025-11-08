@@ -56,12 +56,96 @@ This document provides essential context for AI coding agents working on the Oxi
 ⏳ Comprehensive error handling  
 
 ### Testing Status
-- **394 tests passing** (116 test functions with subtests)
+- **405 tests passing** (116 test functions with subtests)
 - **Coverage**: Handlers 89.0%, Storage 92.7%, Services 58.3%+, Clients 5.8%
 
 ---
 
-## Recent Work (Last Session - Nov 5, 2025, Session 39)
+## Recent Work (Last Session - Nov 8, 2025, Session 40)
+
+### Symlink Tracking Logic Fix - COMPLETED ✅
+
+**Work Completed:**
+- ✅ Fixed mock plugin implementation to use correct `PluginSymlinkItem` fields
+- ✅ Fixed symlink tracking to only include successfully created symlinks
+- ✅ Added verification logic to query filesystem after creation in live mode
+- ✅ Implemented mode-aware tracking (dry-run vs live with proper verification)
+- ✅ All 405 tests passing (up from 394, subtests expanded)
+- ✅ 1 commit created
+
+**Problem Identified:**
+- Mock plugin `AddSymlinks()` used non-existent `item.Source` and `item.Target` fields
+- Service tracked ALL symlinks in `pendingSymlinks` before creation attempt
+- When plugin skipped items (missing source files), they remained in `currentSymlinks` map
+- Cleanup would try to remove symlinks that never existed (incorrect tracking)
+- Root cause: No verification of what actually got created vs what was attempted
+
+**Root Cause:**
+- Service immediately tracked symlinks in `currentSymlinks` map at lines 420-421 (old code)
+- Plugin API only returns aggregate counts (created/skipped/failed), not which items succeeded
+- If plugin skipped items, they were still tracked as existing symlinks
+- This caused incorrect cleanup behavior and stale symlink references
+
+**Solution Implemented:**
+1. **Fixed Mock Plugin** (`symlink_library_test.go`):
+   - Changed `item.Source` → `item.TargetDirectory` (correct field)
+   - Changed `item.Target` → `item.Path` (correct field)
+   - Used `filepath.Glob()` to find media files in target directory
+   - Created proper symlinks with accurate count tracking
+
+2. **Added Pending Tracking** (`symlink_library.go` line 370):
+   - Created `pendingSymlinks` map to store path→name mappings temporarily
+   - Changed line 421 from immediate tracking to pending storage
+
+3. **Added Verification Logic** (`symlink_library.go` lines 473-503):
+   - **Dry-run mode**: Track all pending symlinks (show what would be created)
+   - **Live mode with creations**: Query `ListSymlinks()` to verify actual filesystem state
+   - **Live mode no creations**: Track nothing
+   - **Verification failure fallback**: Track all pending (safer than tracking nothing)
+
+**Files Modified & Committed:**
+- `internal/services/symlink_library.go` (+135 lines, -92 lines) - Fixed tracking logic
+- `internal/services/symlink_library_test.go` (+52 lines) - Fixed mock plugin
+
+**Commits:**
+1. `aa8d2e9` - fix: correct symlink tracking to only include successfully created symlinks
+
+**Current State:**
+- Running: No (implementation complete)
+- Tests passing: 405/405 ✅ (all 5 packages, subtests expanded)
+- Known issues: None
+- Build: Pending rebuild
+- Docker: Not yet published (Session 39 image still latest)
+
+**Key Implementation Detail:**
+- Plugin API returns only aggregate counts, not which specific items succeeded
+- Must query `ListSymlinks()` after creation to determine actual filesystem state
+- This ensures cleanup only removes symlinks that actually exist
+- Dry-run mode doesn't need verification since nothing is created
+
+**Testing Results:**
+- ✅ `TestCreateSymlinks/creates_symlinks_successfully` - Live mode with verification
+- ✅ `TestCreateSymlinks/dry-run_mode_does_not_create_symlinks` - Tracks all pending
+- ✅ `TestCreateSymlinks/skips_missing_source_files` - Plugin skips correctly, tracking accurate
+- ✅ All other tests passing (auth, config, handlers, storage, clients)
+
+**Next Session TODO:**
+- [ ] Rebuild binary to verify changes work end-to-end
+- [ ] Manual integration testing with real Jellyfin instance
+- [ ] Consider Docker release (v1.3.1 or v1.4.0) if testing successful
+- [ ] User-based cleanup with watch tracking integration
+- [ ] Mobile responsiveness improvements
+
+**Key Lessons:**
+1. **Plugin API limitations**: Aggregate counts require post-creation verification
+2. **Filesystem state verification**: Can't trust counts alone, must query actual state
+3. **Map tracking purpose**: `currentSymlinks` used by cleanup, must be accurate
+4. **Mock test importance**: Proper mock implementation caught the tracking bug
+5. **Mode-aware logic**: Dry-run and live mode have different verification needs
+
+---
+
+## Previous Session: Nov 5, 2025 (Session 39)
 
 ### Jellyfin Symlink Library Cleanup Fix - COMPLETED ✅
 
@@ -1973,6 +2057,30 @@ curl http://localhost:8080/api/media/movies | jq
 3. **Maintain data source hierarchy** - Radarr/Sonarr = truth, Jellyfin = watch data only
 4. **Update this file** when completing major features
 5. **Document in OXICLEANARR_SPEC.md** when fixing bugs or adding features
+
+### ⚠️ IMPORTANT: Git Commit Policy
+**DO NOT create git commits unless explicitly told to do so by the user.**
+
+- **Default behavior**: Make changes, run tests, verify everything works, but DO NOT commit
+- **When to commit**: Only when the user explicitly says "commit this", "create a commit", "commit these changes", or similar direct instruction
+- **Rationale**: The user may want to review changes, test manually, or group multiple changes into a single commit
+- **Exception**: When completing a well-defined session and the user has indicated they want changes committed
+- **Always ask**: If you're unsure whether to commit, ask the user first
+
+**Example workflow:**
+```bash
+# ✅ CORRECT: Make changes and verify
+make test
+go build -o oxicleanarr
+
+# ❌ WRONG: Do not automatically commit
+# git add .
+# git commit -m "feat: add new feature"
+
+# ✅ CORRECT: Wait for user instruction
+# User: "This looks good, please commit it"
+# Then: git add . && git commit -m "..."
+```
 
 ### When Debugging
 1. **Enable debug logging** (`LOG_LEVEL=debug`)
