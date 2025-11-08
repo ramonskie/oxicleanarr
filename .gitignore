@@ -42,3 +42,16 @@ data/
 # Environment variables
 .env
 .env.local
+
+# Integration test runtime directories
+integration-test/jellyfin-config/
+integration-test/jellyfin-cache/
+integration-test/radarr-config/
+integration-test/oxicleanarr-config/
+integration-test/oxicleanarr-data/
+integration-test/oxicleanarr-logs/
+integration-test/leaving-soon/
+integration-test/test-media/
+integration-test/*.db
+integration-test/*.log
+integration-test/.plugin-temp/

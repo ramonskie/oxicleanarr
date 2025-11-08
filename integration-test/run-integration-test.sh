@@ -94,6 +94,53 @@ cleanup() {
     print_status "Cleanup complete"
 }
 
+create_test_media() {
+    print_info "Creating test media directory structure..."
+    mkdir -p test-media/movies
+    
+    # Create 5 test movies
+    print_info "Creating test movie files..."
+    local created_count=0
+    local skipped_count=0
+    
+    for i in {1..5}; do
+        movie_dir="test-media/movies/Test Movie ${i} (2024)"
+        movie_file="$movie_dir/Test Movie ${i} (2024).mkv"
+        nfo_file="$movie_dir/Test Movie ${i} (2024).nfo"
+        
+        if [ ! -f "$movie_file" ]; then
+            mkdir -p "$movie_dir"
+            # Create a 10MB dummy video file
+            dd if=/dev/zero of="$movie_file" bs=1M count=10 2>/dev/null
+            ((created_count++))
+            print_status "Created: Test Movie ${i} (2024).mkv"
+        else
+            ((skipped_count++))
+            print_info "Test Movie ${i} already exists"
+        fi
+        
+        # Create movie metadata (nfo files for better Jellyfin parsing)
+        if [ ! -f "$nfo_file" ]; then
+            cat > "$nfo_file" << EOF
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<movie>
+    <title>Test Movie ${i}</title>
+    <year>2024</year>
+    <plot>This is a test movie for OxiCleanarr integration testing.</plot>
+    <genre>Test</genre>
+</movie>
+EOF
+        fi
+    done
+    
+    if [ $created_count -gt 0 ]; then
+        print_status "Created $created_count test movies (10MB each)"
+    fi
+    if [ $skipped_count -gt 0 ]; then
+        print_status "Skipped $skipped_count existing movies"
+    fi
+}
+
 # Main test flow
 print_header "OxiCleanarr Integration Test"
 echo "This test will:"
@@ -152,41 +199,7 @@ else
 fi
 
 print_step 2 "Creating Test Media"
-mkdir -p test-media/movies
-
-# Create 5 test movies
-print_info "Creating test movie files..."
-for i in {1..5}; do
-    movie_dir="test-media/movies/Test Movie ${i} (2024)"
-    movie_file="$movie_dir/Test Movie ${i} (2024).mkv"
-    
-    if [ ! -f "$movie_file" ]; then
-        mkdir -p "$movie_dir"
-        # Create a 10MB dummy video file
-        dd if=/dev/zero of="$movie_file" bs=1M count=10 2>/dev/null
-        print_status "Created: Test Movie ${i} (2024).mkv"
-    else
-        print_info "Test Movie ${i} already exists"
-    fi
-done
-
-# Create some movie metadata (nfo files for better Jellyfin parsing)
-for i in {1..5}; do
-    nfo_file="test-media/movies/Test Movie ${i} (2024)/Test Movie ${i} (2024).nfo"
-    if [ ! -f "$nfo_file" ]; then
-        cat > "$nfo_file" << EOF
-<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<movie>
-    <title>Test Movie ${i}</title>
-    <year>2024</year>
-    <plot>This is a test movie for OxiCleanarr integration testing.</plot>
-    <genre>Test</genre>
-</movie>
-EOF
-    fi
-done
-
-print_status "Created 5 test movies (10MB each)"
+create_test_media
 
 print_step 3 "Creating Configuration Files"
 
