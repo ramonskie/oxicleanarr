@@ -179,7 +179,7 @@ WARN  Failed to trigger library refresh, content may not appear immediately libr
 
 2. **Run full sync**:
    ```bash
-   ./oxicleanarr --config config/oxicleanarr.yaml
+   ./oxicleanarr --config config/config.yaml
    ```
 
 3. **Check logs** for library refresh messages:

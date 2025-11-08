@@ -37,10 +37,10 @@ go build -o oxicleanarr cmd/oxicleanarr/main.go
 3. Create configuration file:
 ```bash
 mkdir -p config
-cp config/oxicleanarr.yaml.example config/oxicleanarr.yaml
+cp config/config.yaml.example config/config.yaml
 ```
 
-4. Edit `config/oxicleanarr.yaml` with your service URLs and API keys:
+4. Edit `config/config.yaml` with your service URLs and API keys:
 ```yaml
 admin:
   username: admin
@@ -74,7 +74,7 @@ The application will start on `http://0.0.0.0:8080` by default.
 
 ### Configuration File
 
-OxiCleanarr uses a YAML configuration file located at `./config/oxicleanarr.yaml`. The file supports hot-reloading - changes are automatically applied without restarting the application.
+OxiCleanarr uses a YAML configuration file located at `./config/config.yaml`. The file supports hot-reloading - changes are automatically applied without restarting the application.
 
 #### Minimal Configuration
 
@@ -441,7 +441,7 @@ oxicleanarr/
 │   ├── storage/              # File-based persistence
 │   └── utils/                # Utilities (logging, JWT)
 ├── config/
-│   └── oxicleanarr.yaml      # Configuration file
+│   └── config.yaml      # Configuration file
 ├── data/
 │   ├── exclusions.json       # Media exclusions
 │   └── jobs.json             # Job history

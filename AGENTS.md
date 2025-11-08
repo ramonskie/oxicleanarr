@@ -281,7 +281,7 @@ docker-compose up -d oxicleanarr
 **Files Modified & Committed:**
 - `internal/config/types.go` (+1 line) - Added HideWhenEmpty field
 - `internal/config/defaults.go` (+7 lines) - Set default to true
-- `config/oxicleanarr.yaml.example` (+3 lines) - Documentation
+- `config/config.yaml.example` (+3 lines) - Documentation
 - `internal/services/symlink_library.go` (+42 lines) - Deletion logic
 - `internal/services/symlink_library_test.go` (+224 lines) - Unit tests
 
@@ -456,7 +456,7 @@ jellyfin:
 - Use case: Want clear isolation of OxiCleanarr-managed content
 
 **Files Modified & Committed:**
-- `config/oxicleanarr.yaml.example` (+12 lines, -13 lines) - Show recommended approach first
+- `config/config.yaml.example` (+12 lines, -13 lines) - Show recommended approach first
 - `NAS_DEPLOYMENT.md` (+48 lines, -41 lines) - Rewrite Step 5 to verify existing mount
 - `docker-compose.nas.yml` (+10 lines, -6 lines) - Remove separate leaving-soon mount
 
@@ -497,7 +497,7 @@ jellyfin:
 - ✅ All 394 tests still passing
 
 **Problem Identified:**
-- Example config (`oxicleanarr.yaml.example` lines 58-62) showed `symlink_library` at **root level**
+- Example config (`config.yaml.example` lines 58-62) showed `symlink_library` at **root level**
 - Actual code structure (`types.go` line 70) has it **inside** `integrations.jellyfin`
 - User copied wrong structure from example, causing config parsing failures
 - User hit permission errors mounting individual files instead of directories
@@ -512,7 +512,7 @@ jellyfin:
 2. **Updated example config** with correct YAML structure and container paths (`/app/leaving-soon`)
 3. **Added troubleshooting section** for file vs directory mount permission errors
 4. **Updated docker-compose example**:
-   - Changed from: `/volume3/docker/oxicleanarr/oxicleanarr.yaml:/app/config/oxicleanarr.yaml`
+   - Changed from: `/volume3/docker/oxicleanarr/config.yaml:/app/config/config.yaml`
    - Changed to: `/volume3/docker/oxicleanarr/config:/app/config`
    - Added all directories: config, data, logs, leaving-soon
 5. **Documented proper setup**: Create `config/` directory first, place file inside it
@@ -530,7 +530,7 @@ integrations:
 ```
 
 **Files Modified & Committed:**
-- `config/oxicleanarr.yaml.example` (+21 lines, -21 lines) - Moved symlink docs to correct location
+- `config/config.yaml.example` (+21 lines, -21 lines) - Moved symlink docs to correct location
 - `NAS_DEPLOYMENT.md` (+38 lines, -6 lines) - Added file mount troubleshooting
 
 **Commits:**
@@ -656,7 +656,7 @@ services:
       - TZ=Europe/Amsterdam
     volumes:
       # :z flag required for SELinux systems (Fedora, RHEL, CentOS)
-      - /volume3/docker/oxicleanarr/oxicleanarr.yaml:/app/config/oxicleanarr.yaml:z
+      - /volume3/docker/oxicleanarr/config.yaml:/app/config/config.yaml:z
       - /volume3/docker/oxicleanarr/data:/app/data:z
       - /volume1/data:/data:ro
     ports:
@@ -751,7 +751,7 @@ services:
       - PGID=65536       # Your NAS group ID
       - TZ=Europe/Amsterdam
     volumes:
-      - /volume3/docker/oxicleanarr/oxicleanarr.yaml:/app/config/oxicleanarr.yaml
+      - /volume3/docker/oxicleanarr/config.yaml:/app/config/config.yaml
       - /volume3/docker/oxicleanarr/data:/app/data
       - /volume1/data:/data:ro
     ports:
@@ -860,7 +860,7 @@ services:
       - PGID=65536       # Your NAS group ID
       - TZ=Europe/Amsterdam
     volumes:
-      - /volume3/docker/oxicleanarr/oxicleanarr.yaml:/app/config/oxicleanarr.yaml
+      - /volume3/docker/oxicleanarr/config.yaml:/app/config/config.yaml
       - /volume3/docker/oxicleanarr/data:/app/data
       - /volume1/data:/data:ro
 ```
@@ -959,7 +959,7 @@ services:
 - `internal/config/validation.go` - Symlink validation (+34 lines)
 - `internal/services/sync.go` - Integration (+42 lines)
 - `internal/api/handlers/config.go` - Config handler updates (+38 lines)
-- `config/oxicleanarr.yaml.example` - Symlink config docs (+28 lines)
+- `config/config.yaml.example` - Symlink config docs (+28 lines)
 - DELETED: `internal/services/jellyfin_collections.go` (-194 lines)
 - DELETED: `internal/services/jellyfin_collections_test.go` (-531 lines)
 
@@ -985,7 +985,7 @@ services:
 - Docker volume mapping for symlink directories required
 - Both OxiCleanarr and Jellyfin must see same media paths
 - Symlink base directory must be writable by OxiCleanarr container
-- See `config/oxicleanarr.yaml.example` for Docker Compose setup
+- See `config/config.yaml.example` for Docker Compose setup
 
 **Unit Tests Added (13 test cases):**
 - `TestNewSymlinkLibraryManager` - Constructor validation
@@ -1091,7 +1091,7 @@ services:
 - ✅ Removed dryRun field from JellyfinCollectionManager struct
 - ✅ Implemented dynamic config reading at runtime with nil-safety (defaults to dry_run=true)
 - ✅ Improved test safety by adding SetTestConfig() for in-memory test configs
-- ✅ Eliminated live credential loading in tests (was using oxicleanarr.test.yaml)
+- ✅ Eliminated live credential loading in tests (was using config.test.yaml)
 - ✅ All 381 tests passing (13 collection tests + 368 others)
 - ✅ Live tested collections creation with dry_run: false
 - ✅ Collections created successfully: 11 movies + 6 TV shows
@@ -1112,7 +1112,7 @@ services:
 2. **Test Safety Improvements**:
    - Added `SetTestConfig(cfg *Config)` function to config package
    - Created `setupTestConfig(t)` helper for in-memory test configs
-   - Tests no longer load oxicleanarr.test.yaml (no live credentials)
+   - Tests no longer load config.test.yaml (no live credentials)
    - 6 tests updated to use safe in-memory config
 
 **Files Modified & Committed:**
@@ -1726,7 +1726,7 @@ if len(wouldDelete) > 0 {
 ```
 /app/
 ├── config/
-│   └── oxicleanarr.yaml          # Main configuration (hot-reload enabled)
+│   └── config.yaml          # Main configuration (hot-reload enabled)
 ├── data/
 │   ├── exclusions.json       # User "Keep" exclusions
 │   └── jobs.json             # Job history (circular buffer)
@@ -1753,8 +1753,8 @@ if len(wouldDelete) > 0 {
 - **Types**: `web/src/lib/types.ts` - TypeScript interfaces
 
 ### Configuration
-- **Example**: `config/oxicleanarr.yaml.example` - Template with defaults
-- **Test Config**: `config/oxicleanarr.test.yaml` - Testing configuration
+- **Example**: `config/config.yaml.example` - Template with defaults
+- **Test Config**: `config/config.test.yaml` - Testing configuration
 - **Validation**: `internal/config/validation.go` - Config checks
 
 ---
@@ -1779,7 +1779,7 @@ make test
 ### Testing Against Real Services
 ```bash
 # Use test config with real Jellyfin/Radarr/Sonarr
-./oxicleanarr-test --config config/oxicleanarr.test.yaml
+./oxicleanarr-test --config config/config.test.yaml
 
 # Check logs
 tail -f /tmp/oxicleanarr-debug.log
@@ -1912,7 +1912,7 @@ sync:
 export LOG_LEVEL=debug
 
 # Run with config flag
-./oxicleanarr --config config/oxicleanarr.test.yaml
+./oxicleanarr --config config/config.test.yaml
 
 # Check logs
 tail -f /tmp/oxicleanarr-debug.log | jq
@@ -1985,7 +1985,7 @@ curl http://localhost:8080/api/media/movies | jq
 ## Quick Reference
 
 ### File Locations
-- Config: `config/oxicleanarr.yaml`
+- Config: `config/config.yaml`
 - Data: `data/exclusions.json`, `data/jobs.json`
 - Logs: `/tmp/oxicleanarr-debug.log` (test mode)
 - Binary: `./oxicleanarr` or `./oxicleanarr-test`
@@ -2293,7 +2293,7 @@ When ending a session, update this section with:
 **Files Modified & Committed:**
 - `internal/config/types.go` - Added `EnableDeletion bool` field to `AppConfig`
 - `internal/config/defaults.go` - Set default `EnableDeletion: false` (safe mode)
-- `config/oxicleanarr.yaml.example` - Documented new config with clear comments
+- `config/config.yaml.example` - Documented new config with clear comments
 - `internal/services/sync.go` (+47 lines) - Created `ExecuteDeletions()` and `CalculateDeletionInfo()`, updated `FullSync()`
 - `internal/api/handlers/sync.go` (+59 lines) - Added `ExecuteDeletions()` handler for `POST /api/deletions/execute`
 - `internal/api/router.go` (+1 line) - Added route for manual deletion endpoint
@@ -2331,7 +2331,7 @@ When ending a session, update this section with:
    - `TestSyncHandler_ExecuteDeletions` - Endpoint behavior with dry-run, empty, and actual execution
 
 **Next Session TODO:**
-- [ ] Configuration UI page (edit oxicleanarr.yaml via web)
+- [ ] Configuration UI page (edit config.yaml via web)
 - [ ] Advanced rules UI (user-based rules editor)
 - [ ] Mobile responsiveness improvements
 - [ ] Statistics/charts for disk space trends
@@ -2393,7 +2393,7 @@ When ending a session, update this section with:
 - Follows Go best practices for dependency injection
 
 **Next Session TODO:**
-- [ ] Configuration UI page (edit oxicleanarr.yaml via web)
+- [ ] Configuration UI page (edit config.yaml via web)
 - [ ] Advanced rules UI (user-based rules editor)
 - [ ] Mobile responsiveness improvements
 - [ ] Statistics/charts for disk space trends
@@ -2418,7 +2418,7 @@ When ending a session, update this section with:
 - `internal/config/types.go` - +20 lines (collection config)
 - `internal/config/validation.go` - +16 lines (collection validation)
 - `internal/services/sync.go` - +21 lines (integrate collection manager)
-- `config/oxicleanarr.yaml.example` - +10 lines (collection config docs)
+- `config/config.yaml.example` - +10 lines (collection config docs)
 
 **Commits:**
 1. `54ded3f` - feat: add Jellyfin collections management for "Leaving Soon" items
@@ -2474,7 +2474,7 @@ When ending a session, update this section with:
 - Timeline Page: Only uses deletion context (filters out zero dates entirely)
 
 **Next Session TODO:**
-- [ ] Configuration UI page (allow editing oxicleanarr.yaml via web)
+- [ ] Configuration UI page (allow editing config.yaml via web)
 - [ ] Collection management for "Leaving Soon" in Jellyfin
 - [ ] Advanced rules UI (user-based rules editor)
 - [ ] Mobile responsiveness improvements
@@ -2584,7 +2584,7 @@ When ending a session, update this section with:
 - Integration tests require `OXICLEANARR_INTEGRATION_TEST=1` environment variable
 
 **Next Session TODO:**
-- [ ] Configuration UI page (allow editing oxicleanarr.yaml via web)
+- [ ] Configuration UI page (allow editing config.yaml via web)
 - [ ] Collection management for "Leaving Soon" in Jellyfin
 - [ ] Advanced rules UI (user-based rules editor)
 - [ ] Mobile responsiveness improvements
@@ -2601,7 +2601,7 @@ When ending a session, update this section with:
 - ✅ Created validation tests (61 new tests added)
 - ✅ Created config loading test for simplified rules
 - ✅ Updated OXICLEANARR_SPEC.md with clarified matching strategy
-- ✅ Updated config/oxicleanarr.yaml.example with clear examples
+- ✅ Updated config/config.yaml.example with clear examples
 
 **Commits:**
 - `14f1d7d` - feat: add config hot-reload support for retention rules

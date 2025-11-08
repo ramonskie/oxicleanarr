@@ -163,7 +163,7 @@ volumes:
 4. `internal/clients/jellyfin.go` - Add virtual folder API methods (~150 lines)
 5. `internal/clients/types.go` - Add VirtualFolderInfo struct
 6. `internal/services/sync.go` - Integrate symlink sync
-7. `config/oxicleanarr.yaml.example` - Document symlink config
+7. `config/config.yaml.example` - Document symlink config
 8. `README.md` - Document Docker volume requirements
 
 **Config Example**:

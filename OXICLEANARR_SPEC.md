@@ -63,7 +63,7 @@ Logging:   Structured JSON logs
 
 ### 2.1 Minimal Configuration
 
-**Bare minimum `oxicleanarr.yaml`:**
+**Bare minimum `config.yaml`:**
 ```yaml
 # Minimal viable config
 admin:
@@ -222,7 +222,7 @@ ERROR: Configuration validation failed
 
 **Behavior:**
 1. On first load, if `admin.password` is plain-text → auto-hash with bcrypt
-2. Write hashed password back to `oxicleanarr.yaml`
+2. Write hashed password back to `config.yaml`
 3. Log warning: `"Plain-text password detected and auto-hashed"`
 4. Subsequent loads use the hashed password
 
@@ -240,7 +240,7 @@ admin:
 ### 2.6 Hot-Reload Strategy
 
 **All configuration changes hot-reload automatically:**
-- Uses `fsnotify` to watch `oxicleanarr.yaml`
+- Uses `fsnotify` to watch `config.yaml`
 - On file change:
   1. Reload config from disk
   2. Validate new config
@@ -258,7 +258,7 @@ admin:
 ```
 /app/
 ├── config/
-│   └── oxicleanarr.yaml            # Main configuration (editable via UI)
+│   └── config.yaml            # Main configuration (editable via UI)
 ├── data/
 │   ├── exclusions.json         # User "Keep" exclusions
 │   └── jobs.json               # Job history
@@ -925,7 +925,7 @@ Response:
 **Tools Available**:
 - `make dev` - Start development server
 - `./test-api.sh` - Automated API testing
-- `config/oxicleanarr.yaml.example` - Configuration template
+- `config/config.yaml.example` - Configuration template
 
 ---
 
@@ -1146,7 +1146,7 @@ services:
 |----------|---------|-------------|
 | `SERVER_PORT` | `8080` | HTTP server port |
 | `SERVER_HOST` | `0.0.0.0` | HTTP bind address |
-| `CONFIG_PATH` | `/app/config/oxicleanarr.yaml` | Config file path |
+| `CONFIG_PATH` | `/app/config/config.yaml` | Config file path |
 | `DATA_PATH` | `/app/data` | Data directory |
 | `LOG_LEVEL` | `info` | Log level (debug/info/warn/error) |
 | `LOG_FORMAT` | `json` | Log format (json/text) |

@@ -257,7 +257,7 @@ go test -v ./internal/config -run TestValidate_DisableAuth
 
 3. **Start OxiCleanarr:**
    ```bash
-   ./oxicleanarr --config config/oxicleanarr.yaml
+   ./oxicleanarr --config config/config.yaml
    ```
 
 4. **Test advanced rule updates via UI:**

@@ -30,7 +30,7 @@ func Load(path string) (*Config, error) {
 	v.SetConfigType("yaml")
 
 	// Environment variable support
-	v.SetEnvPrefix("PRUNARR")
+	v.SetEnvPrefix("OXICLEANARR")
 	v.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
 	v.AutomaticEnv()
 
@@ -117,15 +117,15 @@ func Reload() error {
 // getDefaultConfigPath returns the default config file path
 func getDefaultConfigPath() string {
 	// Check environment variable first
-	if path := os.Getenv("PRUNARR_CONFIG_PATH"); path != "" {
+	if path := os.Getenv("OXICLEANARR_CONFIG_PATH"); path != "" {
 		return path
 	}
 
 	// Default paths to check
 	paths := []string{
-		"./config/prunarr.yaml",
-		"/app/config/prunarr.yaml",
-		"./prunarr.yaml",
+		"./config/config.yaml",
+		"/app/config/config.yaml",
+		"./config.yaml",
 	}
 
 	for _, path := range paths {

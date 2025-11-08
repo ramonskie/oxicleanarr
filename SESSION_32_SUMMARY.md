@@ -7,7 +7,7 @@
 
 **Impact**: Users copying from example got config parsing errors
 
-**Fix**: Moved documentation to correct location in `config/oxicleanarr.yaml.example`
+**Fix**: Moved documentation to correct location in `config/config.yaml.example`
 
 **Correct Structure**:
 ```yaml
@@ -19,11 +19,11 @@ integrations:
 ```
 
 ### 2. Docker File Mount Permission Issues ✅
-**Problem**: User mounted individual files (`oxicleanarr.yaml:/app/config/oxicleanarr.yaml`) which prevented Docker from changing ownership
+**Problem**: User mounted individual files (`config.yaml:/app/config/config.yaml`) which prevented Docker from changing ownership
 
 **Symptoms**:
 ```
-chmod: /app/config/oxicleanarr.yaml: Operation not permitted
+chmod: /app/config/config.yaml: Operation not permitted
 open /app/data/jobs.json: permission denied
 ```
 
@@ -32,7 +32,7 @@ open /app/data/jobs.json: permission denied
 **Fix**: Updated all documentation to use directory mounts:
 ```yaml
 # ❌ WRONG - File mount
-- /volume3/docker/oxicleanarr/oxicleanarr.yaml:/app/config/oxicleanarr.yaml
+- /volume3/docker/oxicleanarr/config.yaml:/app/config/config.yaml
 
 # ✅ CORRECT - Directory mount  
 - /volume3/docker/oxicleanarr/config:/app/config
@@ -46,7 +46,7 @@ open /app/data/jobs.json: permission denied
 
 ## Files Changed
 
-1. **config/oxicleanarr.yaml.example** - Moved symlink_library docs to correct nesting level
+1. **config/config.yaml.example** - Moved symlink_library docs to correct nesting level
 2. **NAS_DEPLOYMENT.md** - Added file mount troubleshooting + updated examples
 3. **AGENTS.md** - Added Session 32 summary
 

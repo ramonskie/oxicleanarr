@@ -57,7 +57,7 @@
 All tests passed successfully:
 
 1. ✅ Application starts without errors
-2. ✅ Config loads from ./config/oxicleanarr.yaml
+2. ✅ Config loads from ./config/config.yaml
 3. ✅ Plain-text password auto-hashed on first run
 4. ✅ Health endpoint responds: GET /health
 5. ✅ Login endpoint works: POST /api/auth/login
@@ -82,8 +82,8 @@ oxicleanarr/
 │   ├── storage/                  # File storage (2 files)
 │   └── utils/                    # Logger, JWT (2 files)
 ├── config/
-│   ├── oxicleanarr.yaml              # Active config (gitignored)
-│   └── oxicleanarr.yaml.example      # Example config
+│   ├── config.yaml              # Active config (gitignored)
+│   └── config.yaml.example      # Example config
 ├── .gitignore
 ├── Makefile
 ├── quickstart.sh
@@ -213,7 +213,7 @@ Phase 2 will implement the core media operations:
 16. internal/services/auth.go
 17. internal/utils/logger.go
 18. internal/utils/jwt.go
-19. config/oxicleanarr.yaml.example
+19. config/config.yaml.example
 20. .gitignore
 21. Makefile
 22. README.md

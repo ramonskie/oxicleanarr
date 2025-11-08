@@ -60,7 +60,7 @@ sudo chown -R 1027:65536 /volume3/docker/oxicleanarr
 
 ```bash
 # Create config file INSIDE the config directory
-sudo nano /volume3/docker/oxicleanarr/config/oxicleanarr.yaml
+sudo nano /volume3/docker/oxicleanarr/config/config.yaml
 ```
 
 Paste this content (replace API keys):
@@ -342,7 +342,7 @@ volumes:
 
 If you see errors like:
 ```
-chmod: /app/config/oxicleanarr.yaml: Operation not permitted
+chmod: /app/config/config.yaml: Operation not permitted
 open /app/data/jobs.json: permission denied
 ```
 
@@ -353,7 +353,7 @@ open /app/data/jobs.json: permission denied
 ```yaml
 # ❌ WRONG - File mount (causes permission errors)
 volumes:
-  - /volume3/docker/oxicleanarr/oxicleanarr.yaml:/app/config/oxicleanarr.yaml
+  - /volume3/docker/oxicleanarr/config.yaml:/app/config/config.yaml
 
 # ✅ CORRECT - Directory mount (allows ownership changes)
 volumes:
@@ -364,7 +364,7 @@ volumes:
 ```bash
 # Move config file into config directory
 mkdir -p /volume3/docker/oxicleanarr/config
-mv /volume3/docker/oxicleanarr/oxicleanarr.yaml /volume3/docker/oxicleanarr/config/
+mv /volume3/docker/oxicleanarr/config.yaml /volume3/docker/oxicleanarr/config/
 sudo chown -R 1027:65536 /volume3/docker/oxicleanarr
 
 # Update docker-compose.yml to use directory mount

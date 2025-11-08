@@ -12,10 +12,10 @@ import (
 )
 
 // TestJellystatIntegration runs integration tests against a real Jellystat instance
-// Set PRUNARR_INTEGRATION_TEST=1 to enable these tests
+// Set OXICLEANARR_INTEGRATION_TEST=1 to enable these tests
 func TestJellystatIntegration(t *testing.T) {
-	if os.Getenv("PRUNARR_INTEGRATION_TEST") != "1" {
-		t.Skip("Skipping integration test. Set PRUNARR_INTEGRATION_TEST=1 to run.")
+	if os.Getenv("OXICLEANARR_INTEGRATION_TEST") != "1" {
+		t.Skip("Skipping integration test. Set OXICLEANARR_INTEGRATION_TEST=1 to run.")
 	}
 
 	// Load test configuration

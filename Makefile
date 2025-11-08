@@ -36,11 +36,11 @@ dev-test:
 	@echo "Starting backend (test config) + frontend with hot reload..."
 	@echo "Backend: http://localhost:8080"
 	@echo "Frontend: http://localhost:5173"
-	@echo "Config: config/oxicleanarr.test.yaml"
+	@echo "Config: config/config.test.yaml"
 	@echo ""
 	@trap 'kill 0' SIGINT; \
 	(cd web && npm run dev) & \
-	go run cmd/oxicleanarr/main.go --config config/oxicleanarr.test.yaml
+	go run cmd/oxicleanarr/main.go --config config/config.test.yaml
 
 # Clean build artifacts
 clean:
@@ -76,9 +76,9 @@ dirs:
 
 # Setup for first run
 setup: dirs
-	@if [ ! -f $(CONFIG_DIR)/oxicleanarr.yaml ]; then \
+	@if [ ! -f $(CONFIG_DIR)/config.yaml ]; then \
 		echo "Creating config from example..."; \
-		cp $(CONFIG_DIR)/oxicleanarr.yaml.example $(CONFIG_DIR)/oxicleanarr.yaml; \
+		cp $(CONFIG_DIR)/config.yaml.example $(CONFIG_DIR)/config.yaml; \
 	else \
 		echo "Config already exists"; \
 	fi

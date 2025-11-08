@@ -42,7 +42,7 @@ Improved documentation clarity for Jellyfin symlink library setup by explaining 
    - Verification commands (host + container checks)
    - 4-step symlink architecture explanation
 
-3. **config/oxicleanarr.yaml.example Enhancement** (+7 lines):
+3. **config/config.yaml.example Enhancement** (+7 lines):
    - Expanded Jellyfin mount comments
    - Numbered explanation of why both mounts needed
    - Symlink flow diagram with example
@@ -50,7 +50,7 @@ Improved documentation clarity for Jellyfin symlink library setup by explaining 
 
 **Files Modified:**
 - `NAS_DEPLOYMENT.md` (+47 lines) - Step 5 + troubleshooting
-- `config/oxicleanarr.yaml.example` (+7 lines) - Enhanced comments
+- `config/config.yaml.example` (+7 lines) - Enhanced comments
 
 **Commit:**
 - `903ef78` - docs: clarify Jellyfin requires both leaving-soon and media mounts for symlink libraries
@@ -217,7 +217,7 @@ Commits (Session 32 carryover):
 - **Troubleshooting:** New "Jellyfin libraries empty" section with verification commands
 - **Net change:** +47 lines (enhanced user clarity)
 
-### config/oxicleanarr.yaml.example
+### config/config.yaml.example
 - **Jellyfin volumes section:** Expanded comments with numbered explanation
 - **Symlink flow:** Added architecture diagram in comments
 - **Net change:** +7 lines (better inline docs)

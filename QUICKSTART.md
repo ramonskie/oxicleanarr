@@ -22,15 +22,15 @@ Before running OxiCleanarr, ensure you have:
 Copy the example configuration and edit it with your credentials:
 
 ```bash
-cp config/oxicleanarr.yaml.example config/oxicleanarr.yaml
-# Now edit config/oxicleanarr.yaml with your API keys
+cp config/config.yaml.example config/config.yaml
+# Now edit config/config.yaml with your API keys
 ```
 
-**⚠️ IMPORTANT:** Never commit `config/oxicleanarr.yaml` to version control - it contains sensitive API keys!
+**⚠️ IMPORTANT:** Never commit `config/config.yaml` to version control - it contains sensitive API keys!
 
 ### Step 2: Edit Configuration
 
-Edit `config/oxicleanarr.yaml` and update the following:
+Edit `config/config.yaml` and update the following:
 
 ```yaml
 admin:
@@ -330,7 +330,7 @@ Logs are output to stdout/stderr. Look for:
 ### Common Issues
 
 1. **"Failed to load configuration"**
-   - Check `config/oxicleanarr.yaml` exists
+   - Check `config/config.yaml` exists
    - Verify YAML syntax is correct
    - Ensure admin password is set
 

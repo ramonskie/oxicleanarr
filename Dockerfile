@@ -54,7 +54,7 @@ COPY --from=backend-builder /app/oxicleanarr /app/oxicleanarr
 COPY --from=frontend-builder /app/web/dist /app/web/dist
 
 # Copy example config (users can override with volume mount)
-COPY config/oxicleanarr.yaml.example /app/config/oxicleanarr.yaml.example
+COPY config/config.yaml.example /app/config/config.yaml.example
 
 # Copy entrypoint script
 COPY docker-entrypoint.sh /docker-entrypoint.sh
@@ -71,7 +71,7 @@ EXPOSE 8080
 # Set environment variables
 ENV LOG_LEVEL=info \
     LOG_FORMAT=json \
-    CONFIG_PATH=/app/config/oxicleanarr.yaml \
+    CONFIG_PATH=/app/config/config.yaml \
     DATA_PATH=/app/data \
     LOG_FILE=/app/logs/oxicleanarr.log \
     FRONTEND_DIST_PATH=/app/web/dist
@@ -82,4 +82,4 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
 
 # Run via entrypoint script (handles PUID/PGID)
 ENTRYPOINT ["/docker-entrypoint.sh"]
-CMD ["/app/oxicleanarr", "--config", "/app/config/oxicleanarr.yaml"]
+CMD ["/app/oxicleanarr", "--config", "/app/config/config.yaml"]

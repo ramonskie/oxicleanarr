@@ -63,7 +63,7 @@ Added 5 test cases covering all scenarios:
 |------|---------------|-------------|
 | `internal/config/types.go` | +1 | Added `HideWhenEmpty bool` field |
 | `internal/config/defaults.go` | +7 | Set default to `true` with comments |
-| `config/oxicleanarr.yaml.example` | +3 | Added documentation for option |
+| `config/config.yaml.example` | +3 | Added documentation for option |
 | `internal/services/symlink_library.go` | +42 | Implemented deletion logic |
 | `internal/services/symlink_library_test.go` | +224 | Added 5 comprehensive test cases |
 | **Total** | **+277 lines** | |

@@ -12,9 +12,9 @@ BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
 # Configuration
-BASE_URL="${PRUNARR_URL:-http://localhost:8080}"
-USERNAME="${PRUNARR_USER:-admin}"
-PASSWORD="${PRUNARR_PASS:-changeme}"
+BASE_URL="${OXICLEANARR_URL:-http://localhost:8080}"
+USERNAME="${OXICLEANARR_USER:-admin}"
+PASSWORD="${OXICLEANARR_PASS:-changeme}"
 
 echo -e "${BLUE}╔════════════════════════════════════════╗${NC}"
 echo -e "${BLUE}║    Prunarr Live API Test Script       ║${NC}"
