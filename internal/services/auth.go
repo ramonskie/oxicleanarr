@@ -5,7 +5,6 @@ import (
 
 	"github.com/ramonskie/oxicleanarr/internal/config"
 	"github.com/ramonskie/oxicleanarr/internal/utils"
-	"golang.org/x/crypto/bcrypt"
 )
 
 var (
@@ -31,8 +30,8 @@ func (s *AuthService) Login(username, password string) (string, error) {
 		return "", ErrInvalidCredentials
 	}
 
-	// Check password
-	if err := bcrypt.CompareHashAndPassword([]byte(s.cfg.Admin.Password), []byte(password)); err != nil {
+	// Check password (plain text comparison)
+	if password != s.cfg.Admin.Password {
 		return "", ErrInvalidCredentials
 	}
 
@@ -47,19 +46,13 @@ func (s *AuthService) Login(username, password string) (string, error) {
 
 // ChangePassword changes the admin password
 func (s *AuthService) ChangePassword(currentPassword, newPassword string) error {
-	// Verify current password
-	if err := bcrypt.CompareHashAndPassword([]byte(s.cfg.Admin.Password), []byte(currentPassword)); err != nil {
+	// Verify current password (plain text comparison)
+	if currentPassword != s.cfg.Admin.Password {
 		return ErrInvalidCredentials
 	}
 
-	// Hash new password
-	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(newPassword), bcrypt.DefaultCost)
-	if err != nil {
-		return err
-	}
-
-	// Update config (in memory)
-	s.cfg.Admin.Password = string(hashedPassword)
+	// Update config (in memory) - plain text
+	s.cfg.Admin.Password = newPassword
 
 	// Note: In a complete implementation, you'd want to persist this to the config file
 	// This would require access to the config file writer

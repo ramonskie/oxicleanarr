@@ -11,7 +11,6 @@ import (
 	"github.com/ramonskie/oxicleanarr/internal/config"
 	"github.com/ramonskie/oxicleanarr/internal/services"
 	"github.com/ramonskie/oxicleanarr/internal/utils"
-	"golang.org/x/crypto/bcrypt"
 )
 
 func setupAuthHandler(t *testing.T) (*AuthHandler, *config.Config) {
@@ -20,16 +19,11 @@ func setupAuthHandler(t *testing.T) (*AuthHandler, *config.Config) {
 	// Initialize JWT for testing
 	utils.InitJWT("test-secret-key-for-testing-min-32-chars", 24*time.Hour)
 
-	// Create test config with hashed password
-	hashedPassword, err := bcrypt.GenerateFromPassword([]byte("testpassword"), bcrypt.DefaultCost)
-	if err != nil {
-		t.Fatalf("Failed to hash password: %v", err)
-	}
-
+	// Create test config with plain text password
 	cfg := &config.Config{
 		Admin: config.AdminConfig{
 			Username: "admin",
-			Password: string(hashedPassword),
+			Password: "testpassword",
 		},
 	}
 

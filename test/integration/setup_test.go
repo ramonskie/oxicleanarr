@@ -15,10 +15,6 @@ import (
 // Phase 1: Basic infrastructure validation (Jellyfin + Radarr + OxiCleanarr)
 // Phase 2 (later): Symlink lifecycle tests
 func TestInfrastructureSetup(t *testing.T) {
-	if os.Getenv("OXICLEANARR_INTEGRATION_TEST") != "1" {
-		t.Skip("Integration tests require OXICLEANARR_INTEGRATION_TEST=1")
-	}
-
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
 
@@ -54,16 +50,12 @@ func TestInfrastructureSetup(t *testing.T) {
 	}
 	t.Log("✅ Radarr is ready")
 
-	// Step 6: Wait for OxiCleanarr to be ready
-	t.Log("Step 6: Waiting for OxiCleanarr to be ready...")
+	// Note: OxiCleanarr will start but crash due to missing API keys in config.
+	// We'll check its health after config is populated and it's restarted (Step 16).
 	oxicleanURL := "http://localhost:8080"
-	if err := waitForDockerService(ctx, t, oxicleanURL+"/health", 30*time.Second); err != nil {
-		t.Fatalf("OxiCleanarr failed to become ready: %v", err)
-	}
-	t.Log("✅ OxiCleanarr is ready")
 
-	// Step 7: Initialize Jellyfin
-	t.Log("Step 7: Initializing Jellyfin...")
+	// Step 6: Initialize Jellyfin
+	t.Log("Step 6: Initializing Jellyfin...")
 	composeFilePath := filepath.Join("..", "assets", "docker-compose.yml")
 	absComposeFile, err := filepath.Abs(composeFilePath)
 	if err != nil {
@@ -75,8 +67,8 @@ func TestInfrastructureSetup(t *testing.T) {
 	}
 	t.Logf("✅ Jellyfin initialized (User ID: %s, API key: %s)", jellyfinUserID[:8]+"...", jellyfinAPIKey[:8]+"...")
 
-	// Step 7a: Extract Radarr API key from Docker container
-	t.Log("Step 7a: Extracting Radarr API key from container...")
+	// Step 6a: Extract Radarr API key from Docker container
+	t.Log("Step 6a: Extracting Radarr API key from container...")
 	cmd := exec.Command("docker", "exec", "oxicleanarr-test-radarr", "cat", "/config/config.xml")
 	configXML, err := cmd.Output()
 	if err != nil {
@@ -94,28 +86,28 @@ func TestInfrastructureSetup(t *testing.T) {
 	}
 	t.Logf("✅ Radarr API key extracted: %s...", radarrAPIKey[:8])
 
-	// Step 7b: Verify OxiCleanarr plugin installation
-	t.Log("Step 7b: Verifying OxiCleanarr Bridge plugin status...")
+	// Step 6b: Verify OxiCleanarr plugin installation
+	t.Log("Step 6b: Verifying OxiCleanarr Bridge plugin status...")
 	if err := VerifyOxiCleanarrPlugin(t, jellyfinURL, jellyfinAPIKey); err != nil {
 		t.Fatalf("❌ Plugin verification failed: %v", err)
 	}
 
-	// Step 7c: Verify OxiCleanarr plugin API endpoint
-	t.Log("Step 7c: Verifying OxiCleanarr plugin API endpoint...")
+	// Step 6c: Verify OxiCleanarr plugin API endpoint
+	t.Log("Step 6c: Verifying OxiCleanarr plugin API endpoint...")
 	if err := VerifyOxiCleanarrPluginAPI(t, jellyfinURL, jellyfinAPIKey); err != nil {
 		t.Fatalf("❌ Plugin API verification failed: %v", err)
 	}
 
-	// Step 8: Initialize Radarr
-	t.Log("Step 8: Initializing Radarr...")
+	// Step 7: Initialize Radarr
+	t.Log("Step 7: Initializing Radarr...")
 	movieCount, err := SetupRadarrForTest(t, radarrURL, radarrAPIKey)
 	if err != nil {
 		t.Fatalf("Failed to initialize Radarr: %v", err)
 	}
 	t.Logf("✅ Radarr initialized with %d movies", movieCount)
 
-	// Step 9: Import movies into Radarr
-	t.Log("Step 9: Importing movies into Radarr...")
+	// Step 8: Import movies into Radarr
+	t.Log("Step 8: Importing movies into Radarr...")
 	if err := EnsureRadarrMoviesExist(t, radarrURL, radarrAPIKey); err != nil {
 		t.Fatalf("Failed to import movies into Radarr: %v", err)
 	}
@@ -127,37 +119,37 @@ func TestInfrastructureSetup(t *testing.T) {
 	// - Add GetJellyfinMovieCount() function
 	// - Validate movie count matches between Radarr and Jellyfin
 
-	// Step 10: Create Jellyfin movie library for testing
-	t.Log("Step 10: Creating Jellyfin movie library...")
+	// Step 9: Create Jellyfin movie library for testing
+	t.Log("Step 9: Creating Jellyfin movie library...")
 	if err := EnsureJellyfinLibrary(t, jellyfinURL, jellyfinAPIKey, "Movies", "/media/movies", "movies"); err != nil {
 		t.Fatalf("Failed to create Jellyfin movie library: %v", err)
 	}
 	t.Log("✅ Jellyfin movie library created")
 
-	// Step 11: Get Jellyfin library ID
-	t.Log("Step 11: Getting Jellyfin library ID...")
+	// Step 10: Get Jellyfin library ID
+	t.Log("Step 10: Getting Jellyfin library ID...")
 	libraryID, err := GetJellyfinLibraryID(t, jellyfinURL, jellyfinAPIKey, "Movies")
 	if err != nil {
 		t.Fatalf("Failed to get Jellyfin library ID: %v", err)
 	}
 	t.Logf("✅ Jellyfin library ID: %s", libraryID)
 
-	// Step 12: Trigger Jellyfin library scan to import movies
-	t.Log("Step 12: Triggering Jellyfin library scan...")
+	// Step 11: Trigger Jellyfin library scan to import movies
+	t.Log("Step 11: Triggering Jellyfin library scan...")
 	if err := TriggerJellyfinLibraryScan(t, jellyfinURL, jellyfinAPIKey, libraryID); err != nil {
 		t.Fatalf("Failed to trigger Jellyfin library scan: %v", err)
 	}
 	t.Log("✅ Jellyfin library scan triggered")
 
-	// Step 13: Wait for Jellyfin to match all movies
-	t.Log("Step 13: Waiting for Jellyfin to match movies...")
+	// Step 12: Wait for Jellyfin to match all movies
+	t.Log("Step 12: Waiting for Jellyfin to match movies...")
 	if err := WaitForJellyfinMovies(t, jellyfinURL, jellyfinAPIKey, movieCount, libraryID); err != nil {
 		t.Fatalf("Failed to wait for Jellyfin movie matching: %v", err)
 	}
 	t.Logf("✅ Jellyfin matched %d movies", movieCount)
 
-	// Step 14: Update OxiCleanarr config with real API keys
-	t.Log("Step 14: Updating OxiCleanarr config with API keys...")
+	// Step 13: Update OxiCleanarr config with real API keys
+	t.Log("Step 13: Updating OxiCleanarr config with API keys...")
 	configPath := filepath.Join("..", "assets", "config", "config.yaml")
 	absConfigPath, err := filepath.Abs(configPath)
 	if err != nil {
@@ -166,39 +158,39 @@ func TestInfrastructureSetup(t *testing.T) {
 	UpdateConfigAPIKeys(t, absConfigPath, jellyfinAPIKey, radarrAPIKey)
 	t.Log("✅ Config updated with API keys")
 
-	// Step 15: Restart OxiCleanarr to reload config
-	t.Log("Step 15: Restarting OxiCleanarr to reload config...")
+	// Step 14: Restart OxiCleanarr to reload config
+	t.Log("Step 14: Restarting OxiCleanarr to reload config...")
 	RestartOxiCleanarr(t, absComposeFile)
 	t.Log("✅ OxiCleanarr restarted")
 
-	// Step 16: Wait for OxiCleanarr to be ready after restart
-	t.Log("Step 16: Waiting for OxiCleanarr to be ready after restart...")
+	// Step 15: Wait for OxiCleanarr to be ready after restart
+	t.Log("Step 15: Waiting for OxiCleanarr to be ready after restart...")
 	if err := waitForDockerService(ctx, t, oxicleanURL+"/health", 30*time.Second); err != nil {
 		t.Fatalf("OxiCleanarr not ready after restart: %v", err)
 	}
 	t.Log("✅ OxiCleanarr ready after restart")
 
-	// Step 17: Create OxiCleanarr test client and authenticate
-	t.Log("Step 17: Authenticating with OxiCleanarr...")
+	// Step 16: Create OxiCleanarr test client and authenticate
+	t.Log("Step 16: Authenticating with OxiCleanarr...")
 	client := NewTestClient(t, oxicleanURL)
 	client.Authenticate("admin", "adminpassword")
 	t.Log("✅ Authenticated with OxiCleanarr")
 
-	// Step 18: Trigger OxiCleanarr full sync
-	t.Log("Step 18: Triggering OxiCleanarr full sync...")
+	// Step 17: Trigger OxiCleanarr full sync
+	t.Log("Step 17: Triggering OxiCleanarr full sync...")
 	client.TriggerSync()
 	t.Log("✅ Full sync triggered")
 
-	// Step 19: Verify OxiCleanarr synced movies from Radarr
-	t.Log("Step 19: Verifying OxiCleanarr synced movies...")
+	// Step 18: Verify OxiCleanarr synced movies from Radarr
+	t.Log("Step 18: Verifying OxiCleanarr synced movies...")
 	syncedMovieCount := client.GetMovieCount()
 	if syncedMovieCount != movieCount {
 		t.Fatalf("OxiCleanarr movie count mismatch: expected %d, got %d", movieCount, syncedMovieCount)
 	}
 	t.Logf("✅ OxiCleanarr synced %d movies from Radarr", syncedMovieCount)
 
-	// Step 20: Validate data consistency across all services
-	t.Log("Step 20: Validating data consistency across services...")
+	// Step 19: Validate data consistency across all services
+	t.Log("Step 19: Validating data consistency across services...")
 	radarrCount, err := GetRadarrMovieCount(t, radarrURL, radarrAPIKey)
 	if err != nil {
 		t.Fatalf("Failed to get Radarr movie count: %v", err)

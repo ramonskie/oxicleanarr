@@ -3,7 +3,7 @@
 
 admin:
   username: admin
-  password: testpass123
+  password: adminpassword
   disable_auth: true  # Auth disabled for integration tests
 
 app:

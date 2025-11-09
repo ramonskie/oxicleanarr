@@ -68,7 +68,7 @@ Paste this content (replace API keys):
 ```yaml
 admin:
   username: admin
-  password: changeme
+  password: changeme  # ⚠️ CHANGE THIS! Stored in plain text
 
 app:
   dry_run: true                   # KEEP THIS TRUE FOR TESTING
@@ -117,6 +117,12 @@ symlink_library:
 ```
 
 Save and exit (Ctrl+X, Y, Enter)
+
+**⚠️ Security Warning:**
+- The admin password is stored in **plain text** in this file
+- Change "changeme" to a strong password
+- Protect the file: `sudo chmod 600 /volume3/docker/oxicleanarr/config/config.yaml`
+- Only the NAS admin user should be able to read this file
 
 ### Step 3: Build OxiCleanarr Docker Image
 

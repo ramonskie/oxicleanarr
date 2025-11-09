@@ -3,7 +3,7 @@
 
 admin:
   username: admin
-  password: changeme  # Will be auto-hashed on first run
+  password: changeme  # ⚠️ SECURITY WARNING: Stored in plain text - use strong passwords and protect this file!
 
 integrations:
   jellyfin:

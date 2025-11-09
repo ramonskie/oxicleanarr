@@ -35,7 +35,7 @@ Edit `config/config.yaml` and update the following:
 ```yaml
 admin:
   username: admin
-  password: $2a$10$Eeb9ayA0hJQGJqAIcbFQ..x9aaXMCKyFjlZyfpR5HWEgYdFiDBYVm  # password: "changeme"
+  password: changeme  # ⚠️ CHANGE THIS! Plain text password
 
 integrations:
   jellyfin:
@@ -54,7 +54,11 @@ integrations:
     api_key: YOUR-SONARR-API-KEY         # Update this
 ```
 
-**Default admin password is**: `changeme` (already hashed in config)
+**⚠️ Security Warning:** 
+- Passwords are stored in **plain text** in the config file
+- Change the default password immediately!
+- Protect the config file: `chmod 600 config/config.yaml`
+- Use a strong password since it's not hashed
 
 ### Step 2: Optional Settings
 

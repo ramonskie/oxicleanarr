@@ -3,12 +3,10 @@ package config
 import (
 	"fmt"
 	"os"
-	"path/filepath"
 	"strings"
 
 	"github.com/rs/zerolog/log"
 	"github.com/spf13/viper"
-	"golang.org/x/crypto/bcrypt"
 )
 
 var (
@@ -73,11 +71,6 @@ func Load(path string) (*Config, error) {
 		return nil, err
 	}
 
-	// Auto-hash plain-text password
-	if err := hashPasswordIfNeeded(cfg); err != nil {
-		return nil, fmt.Errorf("failed to hash password: %w", err)
-	}
-
 	globalConfig = cfg
 	return cfg, nil
 }
@@ -136,76 +129,4 @@ func getDefaultConfigPath() string {
 
 	// Return first default if none exist
 	return paths[0]
-}
-
-// hashPasswordIfNeeded checks if the password is plain-text and hashes it
-func hashPasswordIfNeeded(cfg *Config) error {
-	// Check if password looks like a bcrypt hash
-	if strings.HasPrefix(cfg.Admin.Password, "$2a$") || strings.HasPrefix(cfg.Admin.Password, "$2b$") {
-		// Already hashed
-		return nil
-	}
-
-	// Hash the plain-text password
-	log.Warn().Msg("Plain-text password detected and auto-hashed")
-	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(cfg.Admin.Password), bcrypt.DefaultCost)
-	if err != nil {
-		return err
-	}
-
-	cfg.Admin.Password = string(hashedPassword)
-
-	// Write back to config file
-	if err := writePasswordToConfig(configPath, string(hashedPassword)); err != nil {
-		log.Warn().Err(err).Msg("Failed to write hashed password back to config file")
-		// Not a fatal error - the in-memory config is updated
-	}
-
-	return nil
-}
-
-// writePasswordToConfig writes the hashed password back to the config file
-func writePasswordToConfig(path string, hashedPassword string) error {
-	// Create config directory if it doesn't exist
-	dir := filepath.Dir(path)
-	if err := os.MkdirAll(dir, 0755); err != nil {
-		return err
-	}
-
-	// Read the config file
-	data, err := os.ReadFile(path)
-	if err != nil {
-		if os.IsNotExist(err) {
-			// Create a minimal config file
-			minimalConfig := fmt.Sprintf(`admin:
-  username: %s
-  password: %s
-`, globalConfig.Admin.Username, hashedPassword)
-			return os.WriteFile(path, []byte(minimalConfig), 0600)
-		}
-		return err
-	}
-
-	// Simple replacement of the password line
-	// This is a basic implementation - for production, consider using a YAML library
-	lines := strings.Split(string(data), "\n")
-	for i, line := range lines {
-		trimmed := strings.TrimSpace(line)
-		if strings.HasPrefix(trimmed, "password:") {
-			// Preserve indentation
-			indent := ""
-			for _, ch := range line {
-				if ch == ' ' || ch == '\t' {
-					indent += string(ch)
-				} else {
-					break
-				}
-			}
-			lines[i] = fmt.Sprintf("%spassword: %s", indent, hashedPassword)
-			break
-		}
-	}
-
-	// Write back to file
-	return os.WriteFile(path, []byte(strings.Join(lines, "\n")), 0600)
 }

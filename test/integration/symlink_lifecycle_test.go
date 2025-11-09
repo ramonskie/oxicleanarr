@@ -1,7 +1,6 @@
 package integration
 
 import (
-	"os"
 	"path/filepath"
 	"testing"
 	"time"
@@ -20,11 +19,6 @@ const (
 // Phase 1: Create symlinks with 7d retention
 // Phase 2: Cleanup symlinks with 0d retention
 func TestSymlinkLifecycle(t *testing.T) {
-	// Environment gate
-	if os.Getenv("OXICLEANARR_INTEGRATION_TEST") != "1" {
-		t.Skip("Skipping integration test (set OXICLEANARR_INTEGRATION_TEST=1 to run)")
-	}
-
 	// Validate paths exist
 	absConfigPath, err := filepath.Abs(ConfigPath)
 	require.NoError(t, err)

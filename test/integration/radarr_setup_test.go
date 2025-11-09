@@ -600,10 +600,6 @@ func GetRadarrAPIKey() string {
 
 // TestRadarrSetup is a standalone test to verify Radarr setup works
 func TestRadarrSetup(t *testing.T) {
-	if os.Getenv("OXICLEANARR_INTEGRATION_TEST") != "1" {
-		t.Skip("Skipping Radarr setup test (set OXICLEANARR_INTEGRATION_TEST=1 to run)")
-	}
-
 	apiKey := GetRadarrAPIKey()
 	require.NotEmpty(t, apiKey, "RADARR_API_KEY must be set")
 

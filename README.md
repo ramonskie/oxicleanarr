@@ -44,7 +44,7 @@ cp config/config.yaml.example config/config.yaml
 ```yaml
 admin:
   username: admin
-  password: changeme  # Will be auto-hashed on first run
+  password: changeme  # ⚠️ Change this! Stored in plain text
 
 integrations:
   jellyfin:
@@ -62,6 +62,8 @@ integrations:
     url: http://sonarr:8989
     api_key: your-sonarr-api-key-here
 ```
+
+**⚠️ Security Note:** Passwords are stored in plain text in the configuration file. Ensure the file has restricted permissions (`chmod 600 config/config.yaml`) and use a strong password.
 
 5. Run OxiCleanarr:
 ```bash
@@ -489,10 +491,10 @@ curl -H "Authorization: Bearer $TOKEN" http://localhost:8080/api/endpoint
 
 ## Security
 
-- Passwords are automatically hashed using bcrypt
 - JWT tokens for API authentication
 - Configurable token expiration (default: 24 hours)
 - CORS support for web UI integration
+- **⚠️ Important:** Passwords are stored in plain text in `config/config.yaml` - protect this file with appropriate permissions
 
 ## License
 
