@@ -100,6 +100,12 @@ func TestInfrastructureSetup(t *testing.T) {
 		t.Fatalf("❌ Plugin verification failed: %v", err)
 	}
 
+	// Step 7c: Verify OxiCleanarr plugin API endpoint
+	t.Log("Step 7c: Verifying OxiCleanarr plugin API endpoint...")
+	if err := VerifyOxiCleanarrPluginAPI(t, jellyfinURL, jellyfinAPIKey); err != nil {
+		t.Fatalf("❌ Plugin API verification failed: %v", err)
+	}
+
 	// Step 8: Initialize Radarr
 	t.Log("Step 8: Initializing Radarr...")
 	movieCount, err := SetupRadarrForTest(t, radarrURL, radarrAPIKey)
@@ -191,14 +197,40 @@ func TestInfrastructureSetup(t *testing.T) {
 	}
 	t.Logf("✅ OxiCleanarr synced %d movies from Radarr", syncedMovieCount)
 
+	// Step 20: Validate data consistency across all services
+	t.Log("Step 20: Validating data consistency across services...")
+	radarrCount, err := GetRadarrMovieCount(t, radarrURL, radarrAPIKey)
+	if err != nil {
+		t.Fatalf("Failed to get Radarr movie count: %v", err)
+	}
+	jellyfinCount, err := GetJellyfinMovieCount(t, jellyfinURL, jellyfinAPIKey, libraryID)
+	if err != nil {
+		t.Fatalf("Failed to get Jellyfin movie count: %v", err)
+	}
+
+	t.Logf("Data consistency check: Radarr=%d, Jellyfin=%d, OxiCleanarr=%d",
+		radarrCount, jellyfinCount, syncedMovieCount)
+
+	if radarrCount != movieCount {
+		t.Fatalf("Radarr count mismatch: expected %d, got %d", movieCount, radarrCount)
+	}
+	if jellyfinCount != movieCount {
+		t.Fatalf("Jellyfin count mismatch: expected %d, got %d", movieCount, jellyfinCount)
+	}
+	if syncedMovieCount != movieCount {
+		t.Fatalf("OxiCleanarr count mismatch: expected %d, got %d", movieCount, syncedMovieCount)
+	}
+	t.Log("✅ Data consistency validated: All services report 7 movies")
+
 	// Infrastructure Setup Complete
 	t.Log("\n========================================")
 	t.Log("✅ Infrastructure Setup Test PASSED")
 	t.Log("========================================")
 	t.Log("Summary:")
-	t.Logf("  - Jellyfin: Ready with OxiCleanarr plugin (%s)", jellyfinURL)
-	t.Logf("  - Radarr: Ready with %d movies (%s)", movieCount, radarrURL)
+	t.Logf("  - Jellyfin: Ready with OxiCleanarr plugin and %d movies (%s)", jellyfinCount, jellyfinURL)
+	t.Logf("  - Radarr: Ready with %d movies (%s)", radarrCount, radarrURL)
 	t.Logf("  - OxiCleanarr: Ready and synced %d movies (%s)", syncedMovieCount, oxicleanURL)
+	t.Logf("  - Data consistency: All 3 services validated with matching counts")
 	t.Log("\nNext Steps:")
 	t.Log("  - Run TestSymlinkLifecycle to test symlink creation/cleanup")
 	t.Log("  - Run TestHideWhenEmpty to test empty library behavior")

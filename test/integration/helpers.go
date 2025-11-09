@@ -817,3 +817,66 @@ func WaitForJellyfinMovies(t *testing.T, jellyfinURL, apiKey string, expectedCou
 
 	return fmt.Errorf("jellyfin failed to match %d movies within timeout", expectedCount)
 }
+
+// GetRadarrMovieCount queries Radarr's /api/v3/movie endpoint and returns the movie count
+func GetRadarrMovieCount(t *testing.T, radarrURL, apiKey string) (int, error) {
+	t.Helper()
+
+	client := &http.Client{Timeout: 10 * time.Second}
+	req, err := http.NewRequest(http.MethodGet, radarrURL+"/api/v3/movie", nil)
+	if err != nil {
+		return 0, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("X-Api-Key", apiKey)
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return 0, fmt.Errorf("failed to query Radarr movies: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return 0, fmt.Errorf("unexpected status code %d from Radarr", resp.StatusCode)
+	}
+
+	var movies []map[string]interface{}
+	if err := json.NewDecoder(resp.Body).Decode(&movies); err != nil {
+		return 0, fmt.Errorf("failed to decode Radarr response: %w", err)
+	}
+
+	return len(movies), nil
+}
+
+// GetJellyfinMovieCount queries Jellyfin for the movie count in a specific library
+func GetJellyfinMovieCount(t *testing.T, jellyfinURL, apiKey, libraryID string) (int, error) {
+	t.Helper()
+
+	client := &http.Client{Timeout: 10 * time.Second}
+	url := fmt.Sprintf("%s/Items?ParentId=%s&Recursive=true&IncludeItemTypes=Movie", jellyfinURL, libraryID)
+	req, err := http.NewRequest(http.MethodGet, url, nil)
+	if err != nil {
+		return 0, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("X-MediaBrowser-Token", apiKey)
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return 0, fmt.Errorf("failed to query Jellyfin movies: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return 0, fmt.Errorf("unexpected status code %d from Jellyfin", resp.StatusCode)
+	}
+
+	var result struct {
+		TotalRecordCount int `json:"TotalRecordCount"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return 0, fmt.Errorf("failed to decode Jellyfin response: %w", err)
+	}
+
+	return result.TotalRecordCount, nil
+}

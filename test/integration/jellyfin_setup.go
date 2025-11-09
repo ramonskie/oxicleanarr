@@ -832,6 +832,39 @@ func VerifyOxiCleanarrPlugin(t *testing.T, jellyfinURL, apiKey string) error {
 	return fmt.Errorf("OxiCleanarr Bridge plugin not found in Jellyfin - required for symlink integration tests")
 }
 
+// VerifyOxiCleanarrPluginAPI verifies the OxiCleanarr plugin's custom API endpoint is functional
+// This checks the /api/oxicleanarr/status endpoint that OxiCleanarr will actually call
+func VerifyOxiCleanarrPluginAPI(t *testing.T, jellyfinURL, apiKey string) error {
+	client := &http.Client{Timeout: 10 * time.Second}
+
+	// Call the plugin's custom API endpoint
+	req, err := http.NewRequest(http.MethodGet, jellyfinURL+"/api/oxicleanarr/status", nil)
+	if err != nil {
+		return fmt.Errorf("failed to create status request: %w", err)
+	}
+	req.Header.Set("X-MediaBrowser-Token", apiKey)
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return fmt.Errorf("failed to call plugin API endpoint: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("plugin API returned status %d (expected 200): %s", resp.StatusCode, string(body))
+	}
+
+	// Read and parse response
+	var statusResp map[string]interface{}
+	if err := json.NewDecoder(resp.Body).Decode(&statusResp); err != nil {
+		return fmt.Errorf("failed to decode plugin API response: %w", err)
+	}
+
+	t.Logf("✅ OxiCleanarr plugin API is functional: %+v", statusResp)
+	return nil
+}
+
 // EnsureJellyfinLibrary ensures a media library exists in Jellyfin
 func EnsureJellyfinLibrary(t *testing.T, jellyfinURL, apiKey, name, path, contentType string) error {
 	setup := NewJellyfinSetup(t, jellyfinURL, "", "")
