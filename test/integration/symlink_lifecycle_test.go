@@ -35,75 +35,24 @@ func TestSymlinkLifecycle(t *testing.T) {
 	t.Logf("Compose file: %s", absComposeFile)
 	t.Logf("Symlink directory: %s", absSymlinkDir)
 
-	// Cleanup test environment (stop containers, delete databases, restart)
-	t.Logf("Cleaning up test environment...")
-	err = CleanupTestEnvironment(t, absComposeFile)
-	require.NoError(t, err, "Failed to clean test environment")
-
-	// Wait for services to be ready after cleanup
-	t.Logf("Waiting for services to start...")
-	time.Sleep(10 * time.Second)
-
-	// Setup Jellyfin (automated initialization)
-	t.Logf("Setting up Jellyfin...")
-	userID, jellyfinAPIKey, err := SetupJellyfinForTest(t, JellyfinURL, AdminUsername, AdminPassword, absComposeFile)
-	require.NoError(t, err, "Failed to setup Jellyfin")
-	t.Logf("Jellyfin setup complete - UserID: %s, API Key: %s", userID, jellyfinAPIKey[:8]+"...")
-
-	// Ensure Jellyfin has a movie library for testing
-	t.Logf("Ensuring Jellyfin movie library exists...")
-	err = EnsureJellyfinLibrary(t, JellyfinURL, jellyfinAPIKey, "Movies", "/media/movies", "movies")
-	require.NoError(t, err, "Failed to ensure Jellyfin movie library")
-
-	// Read Radarr API key from container (auto-generated on first run)
-	t.Logf("Reading Radarr API key from container...")
-	radarrAPIKey, err := GetRadarrAPIKeyFromContainer(t, "oxicleanarr-test-radarr")
-	require.NoError(t, err, "Failed to read Radarr API key from container")
-	t.Logf("Radarr API key: %s...", radarrAPIKey[:8])
-
-	// Wait for Radarr to be fully initialized
-	t.Logf("Waiting for Radarr to be ready...")
-	err = WaitForRadarr(t, RadarrURL, radarrAPIKey)
-	require.NoError(t, err, "Failed to wait for Radarr")
-	t.Logf("Radarr is ready")
-
-	// Setup Radarr with test movies
-	t.Logf("Setting up Radarr with test movies...")
-	err = EnsureRadarrMoviesExist(t, RadarrURL, radarrAPIKey)
-	require.NoError(t, err, "Failed to setup Radarr")
-	t.Logf("Radarr setup complete")
-
-	// Get Jellyfin library ID for movie library
-	t.Logf("Getting Jellyfin library ID...")
-	libraryID, err := GetJellyfinLibraryID(t, JellyfinURL, jellyfinAPIKey, "Movies")
-	require.NoError(t, err, "Failed to get Jellyfin library ID")
-	t.Logf("Jellyfin library ID: %s", libraryID)
-
-	// Trigger Jellyfin library scan to import movies from Radarr
-	t.Logf("Triggering Jellyfin library scan to import movies from Radarr...")
-	err = TriggerJellyfinLibraryScan(t, JellyfinURL, jellyfinAPIKey, libraryID)
-	require.NoError(t, err, "Failed to trigger Jellyfin library scan")
-
-	// Wait for Jellyfin to match all 7 movies
-	t.Logf("Waiting for Jellyfin to match all 7 movies...")
-	err = WaitForJellyfinMovies(t, JellyfinURL, jellyfinAPIKey, 7, libraryID)
-	require.NoError(t, err, "Failed to wait for Jellyfin movie matching")
-	t.Logf("Jellyfin has successfully matched all 7 movies")
-
-	// Update OxiCleanarr config with API keys
-	t.Logf("Updating OxiCleanarr config with API keys...")
-	UpdateConfigAPIKeys(t, absConfigPath, jellyfinAPIKey, radarrAPIKey)
-	t.Logf("Config updated with API keys")
+	// NOTE: This test assumes infrastructure is already running from TestInfrastructureSetup
+	// It does NOT tear down and rebuild - it uses the existing environment
+	t.Logf("Assuming infrastructure already initialized by TestInfrastructureSetup")
 
 	// Create test client
 	client := NewTestClient(t, OxiCleanarrURL)
 
 	// Authenticate
+	t.Logf("Authenticating with OxiCleanarr...")
 	client.Authenticate(AdminUsername, AdminPassword)
+	t.Logf("Authentication successful")
 
 	// Get hide_when_empty setting
 	hideWhenEmpty := GetHideWhenEmpty(t, absConfigPath)
 	t.Logf("hide_when_empty setting: %v", hideWhenEmpty)
+
+	// Extract Jellyfin API key for library verification
+	jellyfinAPIKey := GetJellyfinAPIKey(t, absConfigPath)
 
 	// Phase 1: Create Symlinks (7d retention)
 	t.Run("Phase1_CreateSymlinks", func(t *testing.T) {
