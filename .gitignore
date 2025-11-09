@@ -1,5 +1,6 @@
 # Binaries
 oxicleanarr
+oxicleanarr-test
 *.exe
 *.dll
 *.so
@@ -19,9 +20,6 @@ vendor/
 
 # Configuration files (may contain secrets)
 # Ignore all active config files that may contain real API keys
-config/prunarr.yaml
-config/prunarr.test.yaml
-config/prunarr.*.yaml
 
 # Data files
 data/

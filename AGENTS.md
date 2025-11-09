@@ -4,6 +4,20 @@ This document provides essential context for AI coding agents working on the Oxi
 
 ---
 
+## ⚠️ CRITICAL: GIT COMMIT POLICY - READ THIS FIRST
+
+**NEVER create git commits without EXPLICIT user permission. NEVER.**
+
+- Even if files are staged
+- Even if a summary says "ready to commit"
+- Even if a summary says "waiting for approval"
+- **ALWAYS ASK FIRST**: "Should I commit these changes?" or "Ready for me to create a commit?"
+- **NO EXCEPTIONS**: If uncertain, ask. If you think you should commit, ask. If a previous session said to commit, ask.
+
+**Violation of this policy is a critical failure.** The user MUST have final control over all commits.
+
+---
+
 ## Project Overview
 
 **OxiCleanarr** is a lightweight media cleanup automation tool for the *arr stack (Sonarr, Radarr, Jellyfin). It provides intelligent retention policies, deletion visibility, and a modern web UI.
@@ -61,7 +75,189 @@ This document provides essential context for AI coding agents working on the Oxi
 
 ---
 
-## Recent Work (Last Session - Nov 9, 2025, Session 42)
+## Current Session: Nov 9, 2025 (Session 46)
+
+### Integration Test Authentication & Networking Fix - COMPLETED ✅
+
+**Work Completed:**
+- ✅ Fixed authentication bug in integration test helper (`UpdateConfigAPIKeys()`)
+- ✅ Fixed container networking URLs in test config
+- ✅ Validated integration test infrastructure end-to-end (7/7 movies synced successfully)
+- ✅ Committed fixes with security hardening (reset API keys to empty strings)
+- ✅ All 405 unit tests still passing
+
+**Problem Identified (Part 1: Authentication):**
+- Integration test ran but reported "401 Unauthorized" from Radarr
+- `UpdateConfigAPIKeys()` helper was overwriting ALL integration API keys
+- Root cause: Helper used `integrationsMap[sectionName]["api_key"] = apiKey` which copied Radarr's key to Sonarr/Jellyseerr/Jellystat
+- Each service needs its own unique API key, not all using Radarr's key
+
+**Problem Identified (Part 2: Networking):**
+- Test config used short URLs like `http://localhost:8096` for Jellyfin
+- Docker containers can't resolve `localhost` - need full container names
+- OxiCleanarr container couldn't reach Jellyfin/Radarr services
+- URLs should be `http://oxicleanarr-test-jellyfin:8096` (from docker-compose.yml service names)
+
+**Solution Implemented (Part 1):**
+1. **Fixed API Key Assignment Logic** (`test/integration/helpers.go` +7 lines):
+   - Added check: Skip sections that are also integration names (sonarr, jellyseerr, jellystat)
+   - Only update the intended integration's API key
+   - Preserves sibling integration keys during update
+   - Code change at line 647-653:
+     ```go
+     // Skip this section if it's a sibling integration (not the one we're updating)
+     if sectionName == "sonarr" || sectionName == "jellyseerr" || sectionName == "jellystat" {
+         continue
+     }
+     ```
+
+**Solution Implemented (Part 2):**
+1. **Updated Container URLs** (`test/assets/config/config.yaml` 11 lines changed):
+   - Changed `http://localhost:8096` → `http://oxicleanarr-test-jellyfin:8096`
+   - Changed `http://localhost:7878` → `http://oxicleanarr-test-radarr:7878`
+   - Changed `http://localhost:8989` → `http://oxicleanarr-test-sonarr:8989`
+   - Changed `http://localhost:5055` → `http://oxicleanarr-test-jellyseerr:5055`
+   - Changed `http://localhost:3001` → `http://oxicleanarr-test-jellystat:3001`
+   - All URLs now match service names from `test/assets/docker-compose.yml`
+
+2. **Security Hardening**:
+   - Reset all API keys to empty strings in config file
+   - Keys populated at runtime by test helper (as designed)
+   - No credentials committed to repository
+
+**Files Modified & Committed:**
+- `test/integration/helpers.go` (+7 lines) - Fixed API key assignment logic
+- `test/assets/config/config.yaml` (11 lines changed) - Container URLs + empty API keys
+
+**Commits:**
+1. `9d15b59` - fix: correct integration test authentication and container networking
+
+**Current State:**
+- Running: No (infrastructure validated, ready for lifecycle tests)
+- Tests passing: 405/405 unit tests ✅
+- Integration test validation: 7/7 movies synced successfully ✅
+- Known issues: None
+- Git status: Clean (all fixes committed)
+
+**Validation Results (from Session 46 test run):**
+- ✅ All 21 infrastructure steps passed
+- ✅ OxiCleanarr Bridge plugin verified (version 3.2.1.0, Active)
+- ✅ Plugin API endpoint functional (`/api/oxicleanarr/status`)
+- ✅ Data consistency validated: Radarr (7) = Jellyfin (7) = OxiCleanarr (7)
+- ✅ Test user created with API key
+- ✅ Media library scanned (7 movies)
+- ✅ Network connectivity: 172.25.0.x subnet
+- ✅ Symlink library feature enabled
+
+**Next Session TODO:**
+- [ ] Begin Session 47: Implement symlink lifecycle tests
+- [ ] Test scenarios in `test/integration/symlink_lifecycle_test.go`:
+  - Create symlinks for scheduled deletions
+  - Update retention rules
+  - Verify symlink cleanup
+  - Validate OxiCleanarr Bridge plugin API integration
+- [ ] End-to-end test: OxiCleanarr sync → plugin creates symlinks → Jellyfin library updates
+
+**Key Lessons:**
+1. **Helper function scope**: Must check for sibling sections to avoid overwriting unrelated config
+2. **Docker networking**: Containers use service names from docker-compose.yml, not `localhost`
+3. **Container name format**: `{project}-{service}` where project = directory name or COMPOSE_PROJECT_NAME
+4. **URL consistency**: All integration URLs must use Docker service names for inter-container communication
+5. **Security**: Always reset credentials in committed config files (populate at runtime)
+6. **Test validation order**: Authentication before API calls, networking before data sync
+7. **Integration test debugging**: Check both code logic (helpers) and config values (URLs/keys)
+
+---
+
+## Previous Session: Nov 9, 2025 (Session 44)
+
+### Integration Test Environment Variable Removal & Documentation Fixes - COMPLETED ✅
+
+**Work Completed:**
+- ✅ Removed `OXICLEANARR_INTEGRATION_TEST=1` environment variable requirement from all integration tests
+- ✅ Tests now run by default without special flag (simpler workflow)
+- ✅ Created comprehensive `test/README.md` documentation (610 lines)
+- ✅ Fixed 7 incorrect test name references in README (5 TestSetup + 2 TestSymlink)
+- ✅ All 405 unit tests still passing
+
+**Problem Identified:**
+- Integration tests required `OXICLEANARR_INTEGRATION_TEST=1` env var to run (from Session 42)
+- Added friction to development workflow (extra flag required)
+- Documentation referenced wrong test function names:
+  - 5 instances of `TestSetup` (should be `TestInfrastructure`)
+  - 2 instances of `TestSymlink` (should be `TestSymlinkLifecycle`)
+- Test patterns `-run TestSetup` and `-run TestSymlink` wouldn't match actual function names
+
+**Solution Implemented:**
+1. **Removed Skip Checks** (3 test files):
+   - Deleted environment variable checks from `setup_test.go`
+   - Deleted environment variable checks from `radarr_setup_test.go`
+   - Deleted environment variable checks from `symlink_lifecycle_test.go`
+   - Tests now execute immediately without flag requirement
+
+2. **Created Comprehensive Documentation** (`test/README.md`):
+   - Complete test infrastructure overview (21-step validation)
+   - Docker setup instructions with docker-compose.yml
+   - Test assets documentation (config, 7 sample movies)
+   - Usage examples for running tests
+   - Troubleshooting section for common issues
+   - Development workflow and cleanup instructions
+
+3. **Fixed Test Name References**:
+   - Changed 5 instances: `TestSetup` → `TestInfrastructure`
+   - Changed 2 instances: `TestSymlink` → `TestSymlinkLifecycle`
+   - All `-run` patterns now match actual function names
+
+**Files Modified (Not Yet Committed):**
+- `test/integration/setup_test.go` (-4 lines) - Removed skip check
+- `test/integration/radarr_setup_test.go` (-4 lines) - Removed skip check
+- `test/integration/symlink_lifecycle_test.go` (-4 lines) - Removed skip check
+- `test/README.md` - NEW (610 lines) - Comprehensive integration test documentation
+- `AGENTS.md` - This session summary
+
+**Commits:**
+- Pending user approval (all 5 files ready to commit)
+
+**Current State:**
+- Running: No (documentation and minor code changes)
+- Tests passing: 405/405 unit tests ✅
+- Integration tests: Ready to run without environment variable ✅
+- Documentation: Complete with correct test names ✅
+- Known issues: None
+
+**Workflow Improvement:**
+```bash
+# OLD: Required environment variable
+OXICLEANARR_INTEGRATION_TEST=1 go test -v ./test/integration/ -run TestInfrastructure
+
+# NEW: Direct execution (simpler)
+go test -v ./test/integration/ -run TestInfrastructure
+```
+
+**Documentation Highlights:**
+- 21-step infrastructure validation checklist
+- Docker container setup with health checks
+- Test media library (7 sample movies with .nfo files)
+- Plugin verification (OxiCleanarr Bridge v3.2.1.0)
+- Data consistency validation across all services
+- Troubleshooting guide for common Docker issues
+
+**Next Session TODO:**
+- [ ] Implement symlink lifecycle tests (placeholder from Session 42)
+- [ ] Test scenarios: create symlinks, update retention, verify cleanup
+- [ ] Validate OxiCleanarr Bridge plugin API integration
+- [ ] End-to-end test: OxiCleanarr sync → plugin creates symlinks → Jellyfin library updates
+
+**Key Lessons:**
+1. **Simplicity wins**: Tests should run by default without special configuration
+2. **Documentation accuracy**: Test names in docs must match actual function names
+3. **Pattern matching**: Go test `-run` uses regex matching on function names
+4. **Environment variables**: Only use env vars for optional features, not core functionality
+5. **Developer experience**: Remove friction from test execution workflow
+
+---
+
+## Previous Session: Nov 9, 2025 (Session 42)
 
 ### Integration Test Infrastructure with Complete Validation - COMPLETED ✅
 
@@ -2379,14 +2575,35 @@ curl http://localhost:8080/api/media/movies | jq
 4. **Update this file** when completing major features
 5. **Document in OXICLEANARR_SPEC.md** when fixing bugs or adding features
 
-### ⚠️ IMPORTANT: Git Commit Policy
-**DO NOT create git commits unless explicitly told to do so by the user.**
+### ⚠️ CRITICAL: Git Commit Policy (DETAILED)
+**ABSOLUTE RULE: DO NOT create git commits unless explicitly told to do so by the user.**
 
-- **Default behavior**: Make changes, run tests, verify everything works, but DO NOT commit
-- **When to commit**: Only when the user explicitly says "commit this", "create a commit", "commit these changes", or similar direct instruction
-- **Rationale**: The user may want to review changes, test manually, or group multiple changes into a single commit
-- **Exception**: When completing a well-defined session and the user has indicated they want changes committed
-- **Always ask**: If you're unsure whether to commit, ask the user first
+**This means:**
+- ❌ NEVER commit just because files are staged
+- ❌ NEVER commit just because tests are passing
+- ❌ NEVER commit just because a previous summary said "ready to commit"
+- ❌ NEVER commit just because a previous summary said "waiting for approval"
+- ❌ NEVER commit just because work seems complete
+- ❌ NEVER assume the user wants you to commit
+- ✅ ALWAYS ask: "Should I commit these changes now?" before ANY git commit command
+
+**When to commit**: ONLY when the user explicitly uses words like:
+- "commit this"
+- "create a commit"
+- "commit these changes"
+- "please commit"
+- "go ahead and commit"
+
+**When NOT to commit**: ALL OTHER TIMES, including:
+- "this looks good" (does NOT mean commit)
+- "that's perfect" (does NOT mean commit)
+- "ready to commit" in a summary (does NOT mean commit)
+- Completing work (does NOT mean commit)
+
+**STOP AND ASK CHECKLIST** - Before ANY `git commit` command:
+1. ⚠️ Did the user EXPLICITLY say to commit in THIS session?
+2. ⚠️ Did they use the word "commit" directly?
+3. ⚠️ If NO to either: STOP and ASK first
 
 **Example workflow:**
 ```bash
@@ -2394,14 +2611,29 @@ curl http://localhost:8080/api/media/movies | jq
 make test
 go build -o oxicleanarr
 
-# ❌ WRONG: Do not automatically commit
-# git add .
-# git commit -m "feat: add new feature"
-
-# ✅ CORRECT: Wait for user instruction
-# User: "This looks good, please commit it"
+# ✅ CORRECT: Report completion and ASK
+# You: "Changes complete. Tests passing. Should I commit these changes?"
+# User: "yes commit it"
 # Then: git add . && git commit -m "..."
+
+# ❌ WRONG: NEVER do this
+# git add .
+# git commit -m "feat: add new feature"  # NO! User didn't say to commit!
+
+# ❌ WRONG: NEVER assume from summary
+# Previous summary: "waiting for approval to commit"
+# git commit ...  # NO! Must ask in THIS session!
 ```
+
+**Rationale**: The user may want to:
+- Review changes first
+- Test manually
+- Group multiple changes into one commit
+- Amend an existing commit
+- Use a different commit message
+- Not commit at all
+
+**Violation of this policy is a critical failure.** User MUST have final control over ALL commits.
 
 ### When Debugging
 1. **Enable debug logging** (`LOG_LEVEL=debug`)
