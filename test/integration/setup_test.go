@@ -11,6 +11,57 @@ import (
 	"time"
 )
 
+// TestMain manages the Docker environment lifecycle for all integration tests
+func TestMain(m *testing.M) {
+	// Start Docker environment once for all tests
+	fmt.Println("========================================")
+	fmt.Println("TestMain: Starting Docker environment...")
+	fmt.Println("========================================")
+
+	assetsDir := filepath.Join("..", "assets")
+
+	// Stop any existing containers and cleanup
+	stopCmd := exec.Command("docker-compose", "down", "-v", "--remove-orphans")
+	stopCmd.Dir = assetsDir
+	stopCmd.Stdout = os.Stdout
+	stopCmd.Stderr = os.Stderr
+	_ = stopCmd.Run() // Ignore errors if nothing to stop
+
+	// Start fresh environment
+	startCmd := exec.Command("docker-compose", "up", "-d", "--build")
+	startCmd.Dir = assetsDir
+	startCmd.Stdout = os.Stdout
+	startCmd.Stderr = os.Stderr
+
+	if err := startCmd.Run(); err != nil {
+		fmt.Printf("FATAL: Failed to start docker-compose: %v\n", err)
+		os.Exit(1)
+	}
+
+	fmt.Println("✅ Docker environment started")
+	fmt.Println("Running all integration tests...")
+	fmt.Println()
+
+	// Run all tests
+	exitCode := m.Run()
+
+	// Cleanup after all tests
+	fmt.Println()
+	fmt.Println("========================================")
+	fmt.Println("TestMain: Cleaning up Docker environment...")
+	fmt.Println("========================================")
+
+	cleanupCmd := exec.Command("docker-compose", "down", "-v", "--remove-orphans")
+	cleanupCmd.Dir = assetsDir
+	cleanupCmd.Stdout = os.Stdout
+	cleanupCmd.Stderr = os.Stderr
+	_ = cleanupCmd.Run() // Best effort cleanup
+
+	fmt.Println("✅ Cleanup complete")
+
+	os.Exit(exitCode)
+}
+
 // TestInfrastructureSetup validates that the Docker environment can start reliably
 // Phase 1: Basic infrastructure validation (Jellyfin + Radarr + OxiCleanarr)
 // Phase 2 (later): Symlink lifecycle tests
@@ -29,10 +80,6 @@ func TestInfrastructureSetup(t *testing.T) {
 	// Step 3: Start docker-compose environment
 	t.Log("Step 3: Starting docker-compose environment...")
 	startDockerEnvironment(t)
-	defer func() {
-		t.Log("Cleanup: Stopping docker-compose environment...")
-		stopDockerEnvironment(t)
-	}()
 
 	// Step 4: Wait for Jellyfin to be ready
 	t.Log("Step 4: Waiting for Jellyfin to be ready...")
