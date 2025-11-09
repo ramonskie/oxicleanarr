@@ -1,0 +1,98 @@
+# Integration Test Docker Compose - Phase 1
+# Purpose: Test basic infrastructure (Jellyfin + Radarr + OxiCleanarr)
+# Phase 2 will add symlink lifecycle tests
+
+version: '3.8'
+
+services:
+  jellyfin:
+    image: jellyfin/jellyfin:latest
+    container_name: oxicleanarr-test-jellyfin
+    networks:
+      - oxicleanarr-test
+    ports:
+      - "8096:8096"
+    volumes:
+      - jellyfin-config:/config
+      - jellyfin-cache:/cache
+      - ./test-media/movies:/media/movies:ro
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=UTC
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8096/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  radarr:
+    image: linuxserver/radarr:latest
+    container_name: oxicleanarr-test-radarr
+    networks:
+      - oxicleanarr-test
+    ports:
+      - "7878:7878"
+    volumes:
+      - radarr-config:/config
+      - ./test-media/movies:/media/movies
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=UTC
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:7878/ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  oxicleanarr:
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+    image: oxicleanarr:test
+    container_name: oxicleanarr-test
+    networks:
+      - oxicleanarr-test
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./config:/app/config:z
+      - oxicleanarr-data:/app/data
+      - oxicleanarr-logs:/app/logs
+      - ./test-media/movies:/data/movies:ro
+      - ./leaving-soon:/app/leaving-soon:z
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=UTC
+      - LOG_LEVEL=debug
+    depends_on:
+      jellyfin:
+        condition: service_healthy
+      radarr:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+networks:
+  oxicleanarr-test:
+    name: oxicleanarr-test
+
+volumes:
+  jellyfin-config:
+    name: oxicleanarr-test-jellyfin-config
+  jellyfin-cache:
+    name: oxicleanarr-test-jellyfin-cache
+  radarr-config:
+    name: oxicleanarr-test-radarr-config
+  oxicleanarr-data:
+    name: oxicleanarr-test-data
+  oxicleanarr-logs:
+    name: oxicleanarr-test-logs
