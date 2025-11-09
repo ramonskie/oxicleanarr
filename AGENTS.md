@@ -61,7 +61,185 @@ This document provides essential context for AI coding agents working on the Oxi
 
 ---
 
-## Recent Work (Last Session - Nov 8, 2025, Session 40)
+## Recent Work (Last Session - Nov 9, 2025, Session 42)
+
+### Integration Test Infrastructure with Complete Validation - COMPLETED ✅
+
+**Work Completed:**
+- ✅ Committed comprehensive integration test infrastructure from Sessions 41-42
+- ✅ Changed plugin verification from warning to fatal error (Part 1)
+- ✅ Added plugin API endpoint verification (Part 2)
+- ✅ Added data consistency validation across all services (Part 3)
+- ✅ Cleaned up old integration-test/ directory (replaced by test/integration/)
+- ✅ All 405 unit tests still passing
+- ✅ Integration test skips without OXICLEANARR_INTEGRATION_TEST=1 flag
+- ✅ 4 commits created
+
+**Problem Identified (Part 1):**
+- OxiCleanarr Bridge plugin verification was non-fatal (logged warnings)
+- No point running symlink lifecycle tests if plugin missing/inactive
+- Better to fail early with clear error than get confusing failures later
+
+**Problem Identified (Part 2):**
+- Plugin installation check only verified plugin was installed (via `/Plugins` endpoint)
+- Didn't verify plugin's custom API endpoint was functional (the actual API OxiCleanarr will use)
+- Tests could pass plugin check but fail during symlink operations due to broken API
+
+**Problem Identified (Part 3):**
+- Infrastructure test didn't validate data consistency across services
+- No verification that Radarr, Jellyfin, and OxiCleanarr all see the same movie count
+- Could have mismatched data (e.g., Radarr has 7 movies but Jellyfin only indexed 5)
+- Better to verify complete data pipeline before running lifecycle tests
+
+**Solution Implemented (Part 1):**
+1. **Made Plugin Check Fatal** (`jellyfin_setup.go` lines 820-832):
+   - Removed "non-fatal" language from error messages
+   - Missing plugin now returns: `"OxiCleanarr Bridge plugin not found in Jellyfin - required for symlink integration tests"`
+   - Inactive status returns: `"plugin found but status is '%s' (expected 'Active')"`
+
+2. **Updated Test Failure Handling** (`setup_test.go` lines 97-101):
+   - Changed from: `t.Logf("⚠️ Plugin verification warning (non-fatal): %v", err)`
+   - Changed to: `t.Fatalf("❌ Plugin verification failed: %v", err)`
+   - Now stops test execution immediately if plugin unavailable
+
+**Solution Implemented (Part 2):**
+1. **Added API Endpoint Verification** (`jellyfin_setup.go` after line 833, ~37 lines):
+   - Created `VerifyOxiCleanarrPluginAPI(t, jellyfinURL, apiKey)` function
+   - Calls `GET /api/oxicleanarr/status` endpoint (the actual API OxiCleanarr will use)
+   - Verifies 200 OK response and parses JSON response
+   - Returns fatal error if endpoint is not functional
+
+2. **Integrated into Setup Test** (`setup_test.go` line ~102, +5 lines):
+   - Added new **Step 7c**: "Verifying OxiCleanarr plugin API endpoint..."
+   - Calls `VerifyOxiCleanarrPluginAPI()` after Step 7b (plugin installation check)
+   - Uses `t.Fatalf()` for fatal error (stops test if API not functional)
+
+**Solution Implemented (Part 3):**
+1. **Added Count Query Helpers** (`helpers.go` lines 770-832, +63 lines):
+   - Created `GetRadarrMovieCount(t, radarrURL, apiKey)` - Queries `/api/v3/movie` endpoint
+   - Created `GetJellyfinMovieCount(t, jellyfinURL, apiKey, libraryID)` - Queries `/Items` with filters
+   - Both functions return actual counts from service APIs
+
+2. **Added Data Consistency Step** (`setup_test.go` lines 200-225, +26 lines):
+   - Added **Step 20**: "Validating data consistency across all services..."
+   - Queries all 3 services: Radarr, Jellyfin, OxiCleanarr
+   - Validates all report same count (7 movies expected)
+   - Fails with descriptive error if any mismatch detected
+   - Success: "All services report 7 movies"
+
+3. **Enhanced Summary Output** (`setup_test.go` lines 230-233):
+   - Summary now displays actual validated counts from all services
+   - Added line: "Data consistency: All 3 services validated with matching counts"
+   - Test now has 21 total steps (was 20 steps before Session 42)
+
+**Files Modified & Committed:**
+- `test/integration/jellyfin_setup.go` (~87 lines changed total) - Fatal error messages + API verification
+- `test/integration/helpers.go` (+63 lines) - Count query helpers for validation
+- `test/integration/setup_test.go` (~41 lines changed total) - Fatal test failure + API verification + data consistency
+- `test/assets/` - 21 new files (config, docker-compose, 7 test movies)
+- `test/integration/` - 5 Go test files (helpers, setup, Radarr, lifecycle)
+- Deleted: `integration-test/` directory (4 old shell scripts)
+
+**Commits:**
+1. `99bb2fa` - feat: add comprehensive integration test infrastructure with fatal plugin verification
+2. `a8e31ad` - chore: remove old integration-test directory (replaced by test/integration/)
+3. `1a1daab` - test: add OxiCleanarr plugin API endpoint verification to integration tests
+4. `8a3646e` - test: add plugin API verification and data consistency validation to integration tests
+
+**Current State:**
+- Running: No (test infrastructure ready)
+- Tests passing: 405/405 unit tests ✅
+- Integration tests: Skip without flag (as designed)
+- Known issues: None
+- Net change: +3,048 lines added, -1,101 lines removed
+- Infrastructure validation: 21 steps (plugin API + data consistency)
+
+**Integration Test Infrastructure Added:**
+- **test/assets/docker-compose.yml** - Jellyfin, Radarr, OxiCleanarr containers
+- **test/assets/config/config.yaml** - Test configuration
+- **test/assets/test-media/movies/** - 7 sample movies with .mkv + .nfo files
+- **test/integration/helpers.go** (819 lines) - HTTP helpers, container detection
+- **test/integration/jellyfin_setup.go** (869 lines) - User creation, library setup, **plugin verification**
+- **test/integration/radarr_setup_test.go** (612 lines) - Quality profiles, movie import
+- **test/integration/setup_test.go** (263 lines) - 20-step infrastructure validation
+- **test/integration/symlink_lifecycle_test.go** (207 lines) - Placeholder for Session 43
+
+**20-Step Infrastructure Test Validates:**
+1. ✅ Jellyfin container running and reachable
+2. ✅ Jellyfin public API accessible
+3. ✅ Admin credentials work
+4. ✅ Test user 'testuser' created successfully
+5. ✅ Test user API key generated
+6. ✅ Test media library created
+7a. ✅ Test media directory scanned (7 movies found)
+7b. ✅ **OxiCleanarr Bridge plugin verified (version 3.2.1.0, Active)** ← NEW STEP
+8. ✅ Radarr container running and reachable
+9. ✅ Radarr API accessible
+10. ✅ Quality profile created
+11. ✅ Root folder configured
+12. ✅ Test movies imported (7 total)
+13. ✅ OxiCleanarr container running and reachable
+14. ✅ OxiCleanarr API accessible
+15. ✅ OxiCleanarr config valid
+16. ✅ Network connectivity validated (172.25.0.x)
+17. ✅ All integrations enabled
+18. ✅ Symlink library feature enabled
+19. ✅ Leaving-soon base path configured
+20. ✅ Infrastructure ready for lifecycle tests
+
+**Next Session TODO:**
+- [ ] Implement symlink lifecycle tests in `test/integration/symlink_lifecycle_test.go`
+- [ ] Test scenarios: create symlinks, update retention, verify cleanup
+- [ ] Validate OxiCleanarr Bridge plugin API integration
+- [ ] End-to-end test: OxiCleanarr sync → plugin creates symlinks → Jellyfin library updates
+
+**Key Lessons:**
+1. **Fatal vs non-fatal**: Critical dependencies should fail tests immediately
+2. **Early failure**: Better to fail at setup than during actual test execution
+3. **Clear errors**: "Required for symlink integration tests" explains why it's fatal
+4. **Test infrastructure**: 2,985 lines of setup enables comprehensive integration testing
+5. **Docker-based testing**: Real containers ensure accurate behavior validation
+
+---
+
+## Current Session: Nov 9, 2025 (Session 43)
+
+### Documentation Wrap-Up - IN PROGRESS
+
+**Work Completed:**
+- ✅ Resumed from Session 42 Part 3 completion
+- ✅ Verified all 4 commits from Session 42 were successfully created
+- ✅ Identified uncommitted files: AGENTS.md (documentation), oxicleanarr (binary), mise.toml (dev config)
+- 🔄 Updating AGENTS.md with Session 43 summary
+
+**Current State:**
+- Running: No (documentation tasks only)
+- Tests passing: 405/405 unit tests ✅
+- Integration tests: Infrastructure complete, ready for lifecycle tests
+- Known issues: None
+
+**Git Status:**
+- 4 commits from Session 42: All created successfully ✅
+- Uncommitted changes:
+  - AGENTS.md - Session documentation updates
+  - oxicleanarr - Binary file (should be in .gitignore)
+  - mise.toml - Development tool config (should be in .gitignore)
+
+**Next Steps:**
+- [ ] Commit AGENTS.md documentation update
+- [ ] Update .gitignore for oxicleanarr binary and mise.toml
+- [ ] Begin Session 44: Implement symlink lifecycle tests
+
+**Session 42 Summary:**
+- Integration test infrastructure: ✅ COMPLETE
+- Plugin verification: ✅ Fatal error handling implemented
+- API endpoint validation: ✅ Added Step 7c
+- Data consistency checks: ✅ Added Step 20
+- 21-step infrastructure validation ready for lifecycle tests
+
+---
+
+## Previous Session: Nov 8, 2025 (Session 40)
 
 ### Symlink Tracking Logic Fix - COMPLETED ✅
 
