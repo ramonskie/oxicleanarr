@@ -1,0 +1,57 @@
+# Test Configuration for Integration Tests
+# API keys are set dynamically by integration test helpers at runtime
+
+admin:
+  username: admin
+  password: testpass123
+  disable_auth: true  # Auth disabled for integration tests
+
+app:
+  dry_run: false  # Integration tests need real operations
+  enable_deletion: false  # Safety: manual deletion only
+  leaving_soon_days: 14
+
+sync:
+  full_interval: 3600
+  incremental_interval: 900
+  auto_start: false  # Manual sync control in tests
+
+rules:
+  movie_retention: 90d
+  tv_retention: 120d
+
+server:
+  host: 0.0.0.0
+  port: 8080
+
+integrations:
+  jellyfin:
+    enabled: true
+    url: http://localhost:8096
+    api_key: ""  # Set dynamically by integration tests
+    symlink_library:
+      enabled: true
+      base_path: /data/media/leaving-soon
+      movies_library_name: "Test - Leaving Soon Movies"
+      tv_library_name: "Test - Leaving Soon TV"
+      hide_when_empty: true
+  
+  radarr:
+    enabled: true
+    url: http://localhost:7878
+    api_key: ""  # Set dynamically by integration tests
+  
+  sonarr:
+    enabled: false  # Not used in current integration tests
+    url: http://localhost:8989
+    api_key: ""  # Set dynamically by integration tests
+  
+  jellyseerr:
+    enabled: false  # Not used in current integration tests
+    url: http://localhost:5055
+    api_key: ""  # Set dynamically by integration tests
+  
+  jellystat:
+    enabled: false  # Not used in current integration tests
+    url: http://localhost:3000
+    api_key: ""  # Set dynamically by integration tests
