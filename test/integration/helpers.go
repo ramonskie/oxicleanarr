@@ -339,6 +339,13 @@ func UpdateConfigAPIKeys(t *testing.T, configPath, jellyfinKey, radarrKey string
 			inRadarrSection = true
 			inJellyfinSection = false
 			continue
+		} else if strings.HasPrefix(trimmed, "sonarr:") ||
+			strings.HasPrefix(trimmed, "jellyseerr:") ||
+			strings.HasPrefix(trimmed, "jellystat:") {
+			// Exit both sections when hitting other integrations (siblings)
+			inJellyfinSection = false
+			inRadarrSection = false
+			continue
 		} else if strings.HasSuffix(trimmed, ":") && !strings.HasPrefix(line, " ") {
 			// New top-level section
 			inJellyfinSection = false
