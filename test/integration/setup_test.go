@@ -53,7 +53,7 @@ func TestMain(m *testing.M) {
 		fmt.Println("========================================")
 		fmt.Println("⚠️  Docker environment is still running for debugging")
 		fmt.Println("⚠️  To stop manually, run:")
-		fmt.Printf("    cd %s && docker-compose down -v --remove-orphans\n", assetsDir)
+		fmt.Printf("    cd %s /config/config.yml && docker-compose down -v --remove-orphans\n", assetsDir)
 		fmt.Println()
 	} else {
 		fmt.Println()

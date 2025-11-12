@@ -454,13 +454,51 @@ func (c *JellyfinClient) AddSymlinks(ctx context.Context, items []PluginSymlinkI
 	}
 	defer resp.Body.Close()
 
+	// Read response body for better error reporting
+	bodyBytes, readErr := io.ReadAll(resp.Body)
+	if readErr != nil {
+		return nil, fmt.Errorf("reading response body: %w", readErr)
+	}
+
+	// Log full response for debugging
+	log.Debug().
+		Int("status_code", resp.StatusCode).
+		Str("response_body", string(bodyBytes)).
+		Msg("Plugin AddSymlinks response")
+
+	// Check HTTP status code
+	if resp.StatusCode != http.StatusOK {
+		log.Error().
+			Int("status_code", resp.StatusCode).
+			Str("response_body", string(bodyBytes)).
+			Msg("Plugin returned non-200 status code")
+		return nil, fmt.Errorf("plugin returned status %d: %s", resp.StatusCode, string(bodyBytes))
+	}
+
 	var addResp PluginAddSymlinksResponse
-	if err := json.NewDecoder(resp.Body).Decode(&addResp); err != nil {
+	if err := json.Unmarshal(bodyBytes, &addResp); err != nil {
 		return nil, fmt.Errorf("decoding response: %w", err)
 	}
 
 	if !addResp.Success {
-		return &addResp, fmt.Errorf("plugin error: %s", addResp.ErrorMessage)
+		// Log full error details
+		log.Error().
+			Str("error_message", addResp.ErrorMessage).
+			Strs("details", addResp.Details).
+			Int("created", addResp.Created).
+			Int("skipped", addResp.Skipped).
+			Int("failed", addResp.Failed).
+			Msg("Plugin reported failure")
+
+		// Build detailed error message
+		errMsg := addResp.ErrorMessage
+		if errMsg == "" {
+			errMsg = "unknown error"
+		}
+		if len(addResp.Details) > 0 {
+			errMsg = fmt.Sprintf("%s: %v", errMsg, addResp.Details)
+		}
+		return &addResp, fmt.Errorf("plugin error: %s", errMsg)
 	}
 
 	log.Info().
@@ -514,13 +552,50 @@ func (c *JellyfinClient) RemoveSymlinks(ctx context.Context, paths []string, dry
 	}
 	defer resp.Body.Close()
 
+	// Read response body for better error reporting
+	respBody, readErr := io.ReadAll(resp.Body)
+	if readErr != nil {
+		return nil, fmt.Errorf("reading response body: %w", readErr)
+	}
+
+	// Log response for debugging
+	log.Debug().
+		Int("status_code", resp.StatusCode).
+		Str("response_body", string(respBody)).
+		Msg("Plugin RemoveSymlinks response")
+
+	// Check HTTP status code
+	if resp.StatusCode != http.StatusOK {
+		log.Error().
+			Int("status_code", resp.StatusCode).
+			Str("response_body", string(respBody)).
+			Msg("Plugin returned non-200 status code")
+		return nil, fmt.Errorf("plugin returned status %d: %s", resp.StatusCode, string(respBody))
+	}
+
 	var removeResp PluginRemoveSymlinksResponse
-	if err := json.NewDecoder(resp.Body).Decode(&removeResp); err != nil {
+	if err := json.Unmarshal(respBody, &removeResp); err != nil {
 		return nil, fmt.Errorf("decoding response: %w", err)
 	}
 
 	if !removeResp.Success {
-		return &removeResp, fmt.Errorf("plugin error: %s", removeResp.ErrorMessage)
+		// Log full error details
+		log.Error().
+			Str("error_message", removeResp.ErrorMessage).
+			Strs("details", removeResp.Details).
+			Int("removed", removeResp.Removed).
+			Int("failed", removeResp.Failed).
+			Msg("Plugin reported failure")
+
+		// Build detailed error message
+		errMsg := removeResp.ErrorMessage
+		if errMsg == "" {
+			errMsg = "unknown error"
+		}
+		if len(removeResp.Details) > 0 {
+			errMsg = fmt.Sprintf("%s: %v", errMsg, removeResp.Details)
+		}
+		return &removeResp, fmt.Errorf("plugin error: %s", errMsg)
 	}
 
 	log.Info().
@@ -551,13 +626,45 @@ func (c *JellyfinClient) ListSymlinks(ctx context.Context, directory string) (*P
 	}
 	defer resp.Body.Close()
 
+	// Read response body for better error reporting
+	respBody, readErr := io.ReadAll(resp.Body)
+	if readErr != nil {
+		return nil, fmt.Errorf("reading response body: %w", readErr)
+	}
+
+	// Log response for debugging
+	log.Debug().
+		Int("status_code", resp.StatusCode).
+		Str("response_body", string(respBody)).
+		Msg("Plugin ListSymlinks response")
+
+	// Check HTTP status code
+	if resp.StatusCode != http.StatusOK {
+		log.Error().
+			Int("status_code", resp.StatusCode).
+			Str("response_body", string(respBody)).
+			Msg("Plugin returned non-200 status code")
+		return nil, fmt.Errorf("plugin returned status %d: %s", resp.StatusCode, string(respBody))
+	}
+
 	var listResp PluginListSymlinksResponse
-	if err := json.NewDecoder(resp.Body).Decode(&listResp); err != nil {
+	if err := json.Unmarshal(respBody, &listResp); err != nil {
 		return nil, fmt.Errorf("decoding response: %w", err)
 	}
 
 	if !listResp.Success {
-		return &listResp, fmt.Errorf("plugin error: %s", listResp.ErrorMessage)
+		// Log full error details
+		log.Error().
+			Str("error_message", listResp.ErrorMessage).
+			Int("symlinks_count", len(listResp.Symlinks)).
+			Msg("Plugin reported failure")
+
+		// Build detailed error message
+		errMsg := listResp.ErrorMessage
+		if errMsg == "" {
+			errMsg = "unknown error"
+		}
+		return &listResp, fmt.Errorf("plugin error: %s", errMsg)
 	}
 
 	log.Debug().

@@ -53,3 +53,5 @@ integration-test/test-media/
 integration-test/*.db
 integration-test/*.log
 integration-test/.plugin-temp/
+AGENTS.md
+AGENTS.md.DO-NOT-USE

@@ -97,14 +97,14 @@ If the test fails, check the troubleshooting section below.
 You can run individual test components, but note that lifecycle tests depend on infrastructure being set up first:
 
 ```bash
-# Run only infrastructure setup (standalone)
-go test -v ./test/integration/ -run TestInfrastructure
+# Run only infrastructure setup (as a subtest)
+go test -v ./test/integration/ -run TestIntegrationSuite/InfrastructureSetup
 
 # Run lifecycle tests (requires infrastructure to be already set up)
-go test -v ./test/integration/ -run TestIntegrationSuite/symlink_lifecycle
+go test -v ./test/integration/ -run TestIntegrationSuite/SymlinkLifecycle
 ```
 
-**⚠️ Important**: Running `TestIntegrationSuite/symlink_lifecycle` standalone will fail because it depends on infrastructure being set up first. Always run the full suite with `TestIntegrationSuite` for reliable results.
+**⚠️ Important**: Running `TestIntegrationSuite/SymlinkLifecycle` standalone will fail because it depends on infrastructure being set up first. Always run the full suite with `TestIntegrationSuite` for reliable results.
 
 ---
 
@@ -193,7 +193,7 @@ The `TestInfrastructureSetup` function performs these 21 validation steps:
 Example:
 ```bash
 TEST_JELLYFIN_URL=http://localhost:8096 \
-go test -v ./test/integration/ -run TestInfrastructure
+go test -v ./test/integration/ -run TestIntegrationSuite/InfrastructureSetup
 ```
 
 ---
@@ -366,13 +366,13 @@ go test -v ./test/integration/
 
 ### Run Specific Test
 ```bash
-go test -v ./test/integration/ -run TestInfrastructure
-go test -v ./test/integration/ -run TestSymlinkLifecycle
+go test -v ./test/integration/ -run TestIntegrationSuite/InfrastructureSetup
+go test -v ./test/integration/ -run TestIntegrationSuite/SymlinkLifecycle
 ```
 
 ### Run with Verbose Output
 ```bash
-go test -v ./test/integration/ -run TestInfrastructure 2>&1 | tee test-output.log
+go test -v ./test/integration/ -run TestIntegrationSuite/InfrastructureSetup 2>&1 | tee test-output.log
 ```
 
 ### Run with Race Detection
