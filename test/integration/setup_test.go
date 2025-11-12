@@ -80,7 +80,7 @@ func TestIntegrationSuite(t *testing.T) {
 	t.Run("InfrastructureSetup", testInfrastructureSetup)
 
 	// Run symlink lifecycle tests second (uses existing environment)
-	t.Run("SymlinkLifecycle", testSymlinkLifecycle)
+	t.Run("SymlinkLifecycle", TestSymlinkLifecycle)
 }
 
 // testInfrastructureSetup validates that the Docker environment can start reliably

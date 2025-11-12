@@ -15,11 +15,12 @@ const (
 	Phase1Expected = 7 // Expected symlinks with 7d retention
 )
 
-// testSymlinkLifecycle tests the complete symlink library lifecycle
+// TestSymlinkLifecycle tests the complete symlink library lifecycle
 // Phase 1: Create symlinks with 7d retention
 // Phase 2: Cleanup symlinks with 0d retention
-// This is called by TestIntegrationSuite after testInfrastructureSetup
-func testSymlinkLifecycle(t *testing.T) {
+// NOTE: This test assumes infrastructure is already running from TestInfrastructure
+// Run TestInfrastructure first to set up the environment
+func TestSymlinkLifecycle(t *testing.T) {
 	// Validate paths exist
 	absConfigPath, err := filepath.Abs(ConfigPath)
 	require.NoError(t, err)

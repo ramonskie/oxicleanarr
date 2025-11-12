@@ -277,3 +277,30 @@ type PluginStatusResponse struct {
 	Version string `json:"version,omitempty"`
 	Message string `json:"message,omitempty"`
 }
+
+// PluginCreateDirectoryRequest represents the request to create a directory
+type PluginCreateDirectoryRequest struct {
+	Directory string `json:"directory"`
+}
+
+// PluginCreateDirectoryResponse represents the response from directory creation
+type PluginCreateDirectoryResponse struct {
+	Success   bool   `json:"success"`
+	Directory string `json:"directory,omitempty"`
+	Created   bool   `json:"created,omitempty"`
+	Message   string `json:"message,omitempty"`
+}
+
+// PluginDeleteDirectoryRequest represents the request to delete a directory
+type PluginDeleteDirectoryRequest struct {
+	Directory string `json:"directory"`
+	Force     bool   `json:"force,omitempty"`
+}
+
+// PluginDeleteDirectoryResponse represents the response from directory deletion
+type PluginDeleteDirectoryResponse struct {
+	Success   bool   `json:"success"`
+	Directory string `json:"directory,omitempty"`
+	Deleted   bool   `json:"deleted,omitempty"`
+	Message   string `json:"message,omitempty"`
+}

@@ -288,7 +288,38 @@ func (m *SymlinkLibraryManager) syncLibrary(ctx context.Context, libraryName, co
 
 // ensureVirtualFolder ensures the Jellyfin virtual folder exists
 func (m *SymlinkLibraryManager) ensureVirtualFolder(ctx context.Context, name, collectionType, path string, dryRun bool) error {
-	// Check if virtual folder already exists
+	// Step 1: Ensure the directory exists via plugin before creating Virtual Folder
+	// This is required because Jellyfin's CreateVirtualFolder returns 400 Bad Request if the path doesn't exist
+	log.Debug().
+		Str("path", path).
+		Bool("dry_run", dryRun).
+		Msg("Ensuring directory exists before creating Virtual Folder")
+
+	// Cast to get access to CreateDirectory method
+	type directoryClient interface {
+		CreateDirectory(ctx context.Context, path string, dryRun bool) (*clients.PluginCreateDirectoryResponse, error)
+	}
+
+	if dirClient, ok := m.jellyfinClient.(directoryClient); ok {
+		dirResp, err := dirClient.CreateDirectory(ctx, path, dryRun)
+		if err != nil {
+			log.Warn().
+				Err(err).
+				Str("path", path).
+				Msg("Failed to create directory via plugin, continuing anyway")
+			// Continue - directory might already exist or plugin might not be available
+		} else {
+			log.Info().
+				Str("path", path).
+				Bool("created", dirResp.Created).
+				Str("message", dirResp.Message).
+				Msg("Directory ensured via plugin")
+		}
+	} else {
+		log.Debug().Msg("Client doesn't support CreateDirectory, skipping directory creation")
+	}
+
+	// Step 2: Check if virtual folder already exists
 	folders, err := m.jellyfinClient.GetVirtualFolders(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to get virtual folders: %w", err)
@@ -328,7 +359,7 @@ func (m *SymlinkLibraryManager) ensureVirtualFolder(ctx context.Context, name, c
 		}
 	}
 
-	// Create new virtual folder
+	// Step 3: Create new virtual folder (directory already exists from Step 1)
 	log.Info().
 		Str("name", name).
 		Str("collection_type", collectionType).

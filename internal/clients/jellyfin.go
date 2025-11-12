@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"time"
@@ -565,4 +566,175 @@ func (c *JellyfinClient) ListSymlinks(ctx context.Context, directory string) (*P
 		Msg("Symlinks listed successfully via plugin")
 
 	return &listResp, nil
+}
+
+// CreateDirectory creates a directory via the OxiCleanarr plugin
+func (c *JellyfinClient) CreateDirectory(ctx context.Context, path string, dryRun bool) (*PluginCreateDirectoryResponse, error) {
+	log := log.With().Str("client", "jellyfin").Str("operation", "create_directory").Logger()
+
+	if dryRun {
+		log.Info().Str("path", path).Msg("DRY RUN: Would create directory via plugin")
+		return &PluginCreateDirectoryResponse{
+			Success:   true,
+			Directory: path,
+			Created:   false,
+			Message:   "dry-run mode",
+		}, nil
+	}
+
+	// Prepare request
+	reqBody := PluginCreateDirectoryRequest{
+		Directory: path,
+	}
+
+	reqBytes, err := json.Marshal(reqBody)
+	if err != nil {
+		log.Error().Err(err).Msg("Failed to marshal create directory request")
+		return nil, fmt.Errorf("marshal request: %w", err)
+	}
+
+	// Build URL
+	pluginURL := fmt.Sprintf("%s/api/oxicleanarr/directories/create", c.baseURL)
+
+	// Create request
+	req, err := http.NewRequestWithContext(ctx, "POST", pluginURL, bytes.NewReader(reqBytes))
+	if err != nil {
+		log.Error().Err(err).Msg("Failed to create directory request")
+		return nil, fmt.Errorf("create request: %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Emby-Token", c.apiKey)
+
+	log.Debug().Str("url", pluginURL).Str("path", path).Msg("Creating directory via plugin")
+
+	// Execute request
+	resp, err := c.client.Do(req)
+	if err != nil {
+		log.Error().Err(err).Msg("Failed to create directory via plugin")
+		return nil, fmt.Errorf("execute request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	// Read response
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		log.Error().Err(err).Msg("Failed to read create directory response")
+		return nil, fmt.Errorf("read response: %w", err)
+	}
+
+	// Check status code
+	if resp.StatusCode != http.StatusOK {
+		log.Error().
+			Int("status_code", resp.StatusCode).
+			Str("response", string(body)).
+			Msg("Plugin returned error status for directory creation")
+		return nil, fmt.Errorf("plugin returned status %d: %s", resp.StatusCode, string(body))
+	}
+
+	// Parse response
+	var createResp PluginCreateDirectoryResponse
+	if err := json.Unmarshal(body, &createResp); err != nil {
+		log.Error().Err(err).Str("body", string(body)).Msg("Failed to parse create directory response")
+		return nil, fmt.Errorf("unmarshal response: %w", err)
+	}
+
+	if !createResp.Success {
+		log.Error().Str("message", createResp.Message).Msg("Plugin reported failure for directory creation")
+		return nil, fmt.Errorf("plugin failed to create directory: %s", createResp.Message)
+	}
+
+	log.Info().
+		Str("path", path).
+		Bool("created", createResp.Created).
+		Str("message", createResp.Message).
+		Msg("Directory created successfully via plugin")
+
+	return &createResp, nil
+}
+
+// DeleteDirectory deletes a directory via the OxiCleanarr plugin
+func (c *JellyfinClient) DeleteDirectory(ctx context.Context, path string, force bool, dryRun bool) (*PluginDeleteDirectoryResponse, error) {
+	log := log.With().Str("client", "jellyfin").Str("operation", "delete_directory").Logger()
+
+	if dryRun {
+		log.Info().Str("path", path).Bool("force", force).Msg("DRY RUN: Would delete directory via plugin")
+		return &PluginDeleteDirectoryResponse{
+			Success:   true,
+			Directory: path,
+			Deleted:   false,
+			Message:   "dry-run mode",
+		}, nil
+	}
+
+	// Prepare request
+	reqBody := PluginDeleteDirectoryRequest{
+		Directory: path,
+		Force:     force,
+	}
+
+	reqBytes, err := json.Marshal(reqBody)
+	if err != nil {
+		log.Error().Err(err).Msg("Failed to marshal delete directory request")
+		return nil, fmt.Errorf("marshal request: %w", err)
+	}
+
+	// Build URL
+	pluginURL := fmt.Sprintf("%s/api/oxicleanarr/directories/remove", c.baseURL)
+
+	// Create request
+	req, err := http.NewRequestWithContext(ctx, "DELETE", pluginURL, bytes.NewReader(reqBytes))
+	if err != nil {
+		log.Error().Err(err).Msg("Failed to create delete directory request")
+		return nil, fmt.Errorf("create request: %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Emby-Token", c.apiKey)
+
+	log.Debug().Str("url", pluginURL).Str("path", path).Bool("force", force).Msg("Deleting directory via plugin")
+
+	// Execute request
+	resp, err := c.client.Do(req)
+	if err != nil {
+		log.Error().Err(err).Msg("Failed to delete directory via plugin")
+		return nil, fmt.Errorf("execute request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	// Read response
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		log.Error().Err(err).Msg("Failed to read delete directory response")
+		return nil, fmt.Errorf("read response: %w", err)
+	}
+
+	// Check status code
+	if resp.StatusCode != http.StatusOK {
+		log.Error().
+			Int("status_code", resp.StatusCode).
+			Str("response", string(body)).
+			Msg("Plugin returned error status for directory deletion")
+		return nil, fmt.Errorf("plugin returned status %d: %s", resp.StatusCode, string(body))
+	}
+
+	// Parse response
+	var deleteResp PluginDeleteDirectoryResponse
+	if err := json.Unmarshal(body, &deleteResp); err != nil {
+		log.Error().Err(err).Str("body", string(body)).Msg("Failed to parse delete directory response")
+		return nil, fmt.Errorf("unmarshal response: %w", err)
+	}
+
+	if !deleteResp.Success {
+		log.Error().Str("message", deleteResp.Message).Msg("Plugin reported failure for directory deletion")
+		return nil, fmt.Errorf("plugin failed to delete directory: %s", deleteResp.Message)
+	}
+
+	log.Info().
+		Str("path", path).
+		Bool("deleted", deleteResp.Deleted).
+		Str("message", deleteResp.Message).
+		Msg("Directory deleted successfully via plugin")
+
+	return &deleteResp, nil
 }
