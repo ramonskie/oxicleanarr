@@ -443,7 +443,7 @@ func (e *SyncEngine) syncRadarr(ctx context.Context) ([]models.Media, error) {
 			Title:    rm.Title,
 			Year:     rm.Year,
 			AddedAt:  rm.Added,
-			FilePath: rm.Path,
+			FilePath: rm.Path, // Default to directory path
 			FileSize: rm.SizeOnDisk,
 			RadarrID: rm.ID,
 			TMDBID:   rm.TmdbId,
@@ -451,6 +451,10 @@ func (e *SyncEngine) syncRadarr(ctx context.Context) ([]models.Media, error) {
 
 		if rm.MovieFile != nil {
 			media.QualityTag = rm.MovieFile.Quality.Quality.Name
+			// Use actual file path if available
+			if rm.MovieFile.Path != "" {
+				media.FilePath = rm.MovieFile.Path
+			}
 		}
 
 		// Convert tag IDs to tag names

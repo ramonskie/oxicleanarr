@@ -109,32 +109,58 @@ func (m *SymlinkLibraryManager) filterScheduledMedia(mediaLibrary map[string]mod
 	tvShows := make([]models.Media, 0)
 	now := time.Now()
 
+	skippedExcluded := 0
+	skippedNoDeleteDate := 0
+	skippedPastDeletion := 0
+	skippedNoJellyfinID := 0
+
 	for _, media := range mediaLibrary {
 		// Skip excluded items
 		if media.IsExcluded {
+			skippedExcluded++
 			continue
 		}
 
 		// Skip items without deletion dates
 		if media.DeleteAfter.IsZero() {
+			skippedNoDeleteDate++
+			continue
+		}
+
+		// Only include future deletions (leaving soon items)
+		if !media.DeleteAfter.After(now) {
+			skippedPastDeletion++
 			continue
 		}
 
 		// Skip items without Jellyfin ID (can't create symlinks without mapping)
 		if media.JellyfinID == "" {
+			log.Debug().
+				Str("title", media.Title).
+				Str("media_id", media.ID).
+				Str("match_status", media.JellyfinMatchStatus).
+				Msg("Skipping media without Jellyfin ID - cannot create symlink without Jellyfin mapping")
+			skippedNoJellyfinID++
 			continue
 		}
 
-		// Only include future deletions (leaving soon items)
-		if media.DeleteAfter.After(now) {
-			switch media.Type {
-			case models.MediaTypeMovie:
-				movies = append(movies, media)
-			case models.MediaTypeTVShow:
-				tvShows = append(tvShows, media)
-			}
+		// Add to appropriate list based on media type
+		switch media.Type {
+		case models.MediaTypeMovie:
+			movies = append(movies, media)
+		case models.MediaTypeTVShow:
+			tvShows = append(tvShows, media)
 		}
 	}
+
+	log.Info().
+		Int("movies", len(movies)).
+		Int("tv_shows", len(tvShows)).
+		Int("skipped_excluded", skippedExcluded).
+		Int("skipped_no_delete_date", skippedNoDeleteDate).
+		Int("skipped_past_deletion", skippedPastDeletion).
+		Int("skipped_no_jellyfin_id", skippedNoJellyfinID).
+		Msg("Filtered scheduled media for symlink library")
 
 	return movies, tvShows
 }
@@ -379,6 +405,12 @@ func (m *SymlinkLibraryManager) createSymlinks(symlinkDir string, items []models
 	ctx := context.Background()
 	currentSymlinks := make(map[string]bool)
 
+	log.Info().
+		Str("directory", symlinkDir).
+		Int("items_to_process", len(items)).
+		Bool("dry_run", dryRun).
+		Msg("Starting symlink creation")
+
 	// Get existing symlinks from plugin to check what needs updating
 	listResp, err := m.jellyfinClient.ListSymlinks(ctx, symlinkDir)
 	if err != nil {
@@ -387,6 +419,11 @@ func (m *SymlinkLibraryManager) createSymlinks(symlinkDir string, items []models
 			Str("directory", symlinkDir).
 			Msg("Failed to list existing symlinks, will create all")
 		listResp = &clients.PluginListSymlinksResponse{Symlinks: []clients.PluginSymlinkInfo{}}
+	} else {
+		log.Info().
+			Int("existing_count", len(listResp.Symlinks)).
+			Str("directory", symlinkDir).
+			Msg("Found existing symlinks")
 	}
 
 	// Build map of existing symlinks for quick lookup
@@ -443,14 +480,21 @@ func (m *SymlinkLibraryManager) createSymlinks(symlinkDir string, items []models
 			Msg("Preparing symlink for creation")
 
 		symlinkItems = append(symlinkItems, clients.PluginSymlinkItem{
-			Path:            symlinkPath,
-			TargetDirectory: filepath.Dir(media.FilePath),
+			SourcePath:      media.FilePath,
+			TargetDirectory: symlinkDir,
 		})
 
 		// Store mapping for later tracking (after successful creation)
 		// Map from symlinkPath to symlinkName for tracking
 		pendingSymlinks[symlinkPath] = symlinkName
 	}
+
+	// Log summary of what we're about to do
+	log.Info().
+		Int("symlinks_to_create", len(symlinkItems)).
+		Int("stale_to_remove", len(staleSymlinks)).
+		Int("already_correct", len(currentSymlinks)).
+		Msg("Symlink creation summary")
 
 	// Remove stale symlinks first (if any)
 	if len(staleSymlinks) > 0 {
@@ -533,7 +577,17 @@ func (m *SymlinkLibraryManager) createSymlinks(symlinkDir string, items []models
 				}
 			}
 		}
+	} else {
+		log.Info().
+			Str("directory", symlinkDir).
+			Int("items_processed", len(items)).
+			Msg("No symlinks need to be created (all already exist or no items with file paths)")
 	}
+
+	log.Info().
+		Str("directory", symlinkDir).
+		Int("final_count", len(currentSymlinks)).
+		Msg("Symlink creation completed")
 
 	return currentSymlinks, nil
 }
