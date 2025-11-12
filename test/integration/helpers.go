@@ -20,10 +20,17 @@ import (
 const (
 	OxiCleanarrURL = "http://localhost:8080"
 	JellyfinURL    = "http://localhost:8096"
-	AdminUsername  = "admin"
-	AdminPassword  = "admin123"
-	MaxSyncWait    = 60 * time.Second
-	PollInterval   = 1 * time.Second
+
+	// OxiCleanarr admin credentials (configured in test config.yaml)
+	AdminUsername = "admin"
+	AdminPassword = "adminpassword"
+
+	// Jellyfin admin credentials (Jellyfin defaults for initial setup)
+	JellyfinAdminUser = "admin"
+	JellyfinAdminPass = "adminpassword"
+
+	MaxSyncWait  = 60 * time.Second
+	PollInterval = 1 * time.Second
 )
 
 // TestClient wraps HTTP operations for integration tests
@@ -422,6 +429,71 @@ func RestartOxiCleanarr(t *testing.T, composeFile string) {
 			}
 		}
 	}
+}
+
+// WaitForConfigValue waits for a specific config value to be loaded via hot-reload
+func WaitForConfigValue(t *testing.T, client *TestClient, fieldPath string, expectedValue string) {
+	t.Logf("Waiting for config field '%s' to have value '%s'...", fieldPath, expectedValue)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	ticker := time.NewTicker(500 * time.Millisecond)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			require.Failf(t, "Config value timeout", "Config field '%s' did not reach expected value '%s' within 10 seconds", fieldPath, expectedValue)
+		case <-ticker.C:
+			// Query config endpoint
+			resp, err := client.Get("/api/config")
+			if err != nil {
+				t.Logf("Error fetching config: %v", err)
+				continue
+			}
+
+			var config map[string]interface{}
+			err = json.NewDecoder(resp.Body).Decode(&config)
+			resp.Body.Close()
+			if err != nil {
+				t.Logf("Error decoding config: %v", err)
+				continue
+			}
+
+			// Parse field path (e.g., "movie_retention" or "app.dry_run")
+			value := getNestedValue(config, fieldPath)
+			if value == expectedValue {
+				t.Logf("Config field '%s' has expected value '%s'", fieldPath, expectedValue)
+				return
+			}
+			t.Logf("Current value: %v (waiting for: %s)", value, expectedValue)
+		}
+	}
+}
+
+// getNestedValue extracts a value from a nested map using dot notation
+func getNestedValue(data map[string]interface{}, path string) string {
+	parts := strings.Split(path, ".")
+	current := data
+
+	for i, part := range parts {
+		if i == len(parts)-1 {
+			// Last part - extract value
+			if val, ok := current[part]; ok {
+				return fmt.Sprintf("%v", val)
+			}
+			return ""
+		}
+
+		// Navigate deeper
+		if next, ok := current[part].(map[string]interface{}); ok {
+			current = next
+		} else {
+			return ""
+		}
+	}
+	return ""
 }
 
 // CheckSymlinks verifies the symlink directory state

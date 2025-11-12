@@ -166,8 +166,11 @@ func (m *mockJellyfinClientForSymlink) ListSymlinks(ctx context.Context, directo
 	if err != nil {
 		// Directory doesn't exist - return empty list
 		return &clients.PluginListSymlinksResponse{
-			Success:  true,
-			Symlinks: []clients.PluginSymlinkInfo{},
+			Success:      true,
+			Symlinks:     []clients.PluginSymlinkInfo{},
+			Count:        0,
+			SymlinkNames: []string{},
+			Message:      "No symlinks found",
 		}, nil
 	}
 
@@ -182,15 +185,31 @@ func (m *mockJellyfinClientForSymlink) ListSymlinks(ctx context.Context, directo
 		if fileInfo.Mode()&os.ModeSymlink != 0 {
 			target, _ := os.Readlink(fullPath)
 			symlinks = append(symlinks, clients.PluginSymlinkInfo{
+				Name:   entry.Name(),
 				Path:   fullPath,
 				Target: target,
 			})
 		}
 	}
 
+	// Build symlink names array
+	symlinkNames := make([]string, len(symlinks))
+	for i, symlink := range symlinks {
+		symlinkNames[i] = symlink.Name
+	}
+
+	// Generate appropriate message
+	message := "No symlinks found"
+	if len(symlinks) > 0 {
+		message = fmt.Sprintf("Found %d symlink(s)", len(symlinks))
+	}
+
 	return &clients.PluginListSymlinksResponse{
-		Success:  true,
-		Symlinks: symlinks,
+		Success:      true,
+		Symlinks:     symlinks,
+		Count:        len(symlinks),
+		SymlinkNames: symlinkNames,
+		Message:      message,
 	}, nil
 }
 

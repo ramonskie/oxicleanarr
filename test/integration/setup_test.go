@@ -45,27 +45,47 @@ func TestMain(m *testing.M) {
 	// Run all tests
 	exitCode := m.Run()
 
-	// Cleanup after all tests
-	fmt.Println()
-	fmt.Println("========================================")
-	fmt.Println("TestMain: Cleaning up Docker environment...")
-	fmt.Println("========================================")
+	// Cleanup after all tests (unless KEEP_TEST_ENV is set)
+	if os.Getenv("KEEP_TEST_ENV") != "" {
+		fmt.Println()
+		fmt.Println("========================================")
+		fmt.Println("TestMain: KEEP_TEST_ENV is set - skipping cleanup")
+		fmt.Println("========================================")
+		fmt.Println("⚠️  Docker environment is still running for debugging")
+		fmt.Println("⚠️  To stop manually, run:")
+		fmt.Printf("    cd %s && docker-compose down -v --remove-orphans\n", assetsDir)
+		fmt.Println()
+	} else {
+		fmt.Println()
+		fmt.Println("========================================")
+		fmt.Println("TestMain: Cleaning up Docker environment...")
+		fmt.Println("========================================")
 
-	cleanupCmd := exec.Command("docker-compose", "down", "-v", "--remove-orphans")
-	cleanupCmd.Dir = assetsDir
-	cleanupCmd.Stdout = os.Stdout
-	cleanupCmd.Stderr = os.Stderr
-	_ = cleanupCmd.Run() // Best effort cleanup
+		cleanupCmd := exec.Command("docker-compose", "down", "-v", "--remove-orphans")
+		cleanupCmd.Dir = assetsDir
+		cleanupCmd.Stdout = os.Stdout
+		cleanupCmd.Stderr = os.Stderr
+		_ = cleanupCmd.Run() // Best effort cleanup
 
-	fmt.Println("✅ Cleanup complete")
+		fmt.Println("✅ Cleanup complete")
+	}
 
 	os.Exit(exitCode)
 }
 
-// TestInfrastructureSetup validates that the Docker environment can start reliably
-// Phase 1: Basic infrastructure validation (Jellyfin + Radarr + OxiCleanarr)
-// Phase 2 (later): Symlink lifecycle tests
-func TestInfrastructureSetup(t *testing.T) {
+// TestIntegrationSuite runs all integration tests in order with shared infrastructure
+// This ensures TestSymlinkLifecycle has the required environment built by TestInfrastructureSetup
+func TestIntegrationSuite(t *testing.T) {
+	// Run infrastructure setup first (builds environment, imports 7 movies)
+	t.Run("InfrastructureSetup", testInfrastructureSetup)
+
+	// Run symlink lifecycle tests second (uses existing environment)
+	t.Run("SymlinkLifecycle", testSymlinkLifecycle)
+}
+
+// testInfrastructureSetup validates that the Docker environment can start reliably
+// This is the actual test implementation, called by TestIntegrationSuite or standalone
+func testInfrastructureSetup(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
 
@@ -108,7 +128,7 @@ func TestInfrastructureSetup(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to resolve compose file path: %v", err)
 	}
-	jellyfinUserID, jellyfinAPIKey, err := SetupJellyfinForTest(t, jellyfinURL, "admin", "adminpassword", absComposeFile)
+	jellyfinUserID, jellyfinAPIKey, err := SetupJellyfinForTest(t, jellyfinURL, JellyfinAdminUser, JellyfinAdminPass, absComposeFile)
 	if err != nil {
 		t.Fatalf("Failed to initialize Jellyfin: %v", err)
 	}
@@ -220,7 +240,7 @@ func TestInfrastructureSetup(t *testing.T) {
 	// Step 16: Create OxiCleanarr test client and authenticate
 	t.Log("Step 16: Authenticating with OxiCleanarr...")
 	client := NewTestClient(t, oxicleanURL)
-	client.Authenticate("admin", "adminpassword")
+	client.Authenticate(AdminUsername, AdminPassword)
 	t.Log("✅ Authenticated with OxiCleanarr")
 
 	// Step 17: Trigger OxiCleanarr full sync

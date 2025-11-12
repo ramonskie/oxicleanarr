@@ -77,28 +77,34 @@ docker-compose ps
 # All containers should show "Up" status
 ```
 
-### 3. Run Infrastructure Validation Test
+### 3. Run Integration Test Suite
 
-This test validates that all services are configured correctly:
+The tests now use a **Test Suite Pattern** where both infrastructure and lifecycle tests run together as subtests. This ensures proper environment sharing and cleanup:
 
 ```bash
-# From project root
-go test -v ./test/integration/ -run TestInfrastructure
+# From project root - Run complete test suite (recommended)
+go test -v ./test/integration/ -run TestIntegrationSuite
 ```
 
-**Expected Output**: All 21 validation steps should pass ✅
+**Expected Output**: 
+- ✅ Infrastructure setup (21 validation steps)
+- ✅ Symlink lifecycle tests (Phase 1 & Phase 2)
 
 If the test fails, check the troubleshooting section below.
 
-### 4. Run Symlink Lifecycle Tests
+### 4. Run Individual Tests (Advanced)
 
-Once infrastructure validation passes:
+You can run individual test components, but note that lifecycle tests depend on infrastructure being set up first:
 
 ```bash
-go test -v ./test/integration/ -run TestSymlinkLifecycle
+# Run only infrastructure setup (standalone)
+go test -v ./test/integration/ -run TestInfrastructure
+
+# Run lifecycle tests (requires infrastructure to be already set up)
+go test -v ./test/integration/ -run TestIntegrationSuite/symlink_lifecycle
 ```
 
-*(Note: These tests are currently placeholders and will be implemented in future sessions)*
+**⚠️ Important**: Running `TestIntegrationSuite/symlink_lifecycle` standalone will fail because it depends on infrastructure being set up first. Always run the full suite with `TestIntegrationSuite` for reliable results.
 
 ---
 

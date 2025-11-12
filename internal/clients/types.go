@@ -258,12 +258,16 @@ type PluginSymlinkInfo struct {
 	Path   string `json:"path"`
 	Target string `json:"target"`
 	Valid  bool   `json:"valid"`
+	Name   string `json:"name"` // Added in plugin API update
 }
 
 // PluginListSymlinksResponse represents the response from listing symlinks
 type PluginListSymlinksResponse struct {
 	Success      bool                `json:"success"`
 	Symlinks     []PluginSymlinkInfo `json:"symlinks"`
+	Count        int                 `json:"count"`        // Total number of symlinks
+	SymlinkNames []string            `json:"symlinkNames"` // Array of just filenames
+	Message      string              `json:"message"`      // Human-readable status
 	ErrorMessage string              `json:"error_message,omitempty"`
 }
 

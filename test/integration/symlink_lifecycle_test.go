@@ -15,10 +15,11 @@ const (
 	Phase1Expected = 7 // Expected symlinks with 7d retention
 )
 
-// TestSymlinkLifecycle tests the complete symlink library lifecycle
+// testSymlinkLifecycle tests the complete symlink library lifecycle
 // Phase 1: Create symlinks with 7d retention
 // Phase 2: Cleanup symlinks with 0d retention
-func TestSymlinkLifecycle(t *testing.T) {
+// This is called by TestIntegrationSuite after testInfrastructureSetup
+func testSymlinkLifecycle(t *testing.T) {
 	// Validate paths exist
 	absConfigPath, err := filepath.Abs(ConfigPath)
 	require.NoError(t, err)
@@ -69,6 +70,11 @@ func TestSymlinkLifecycle(t *testing.T) {
 
 		// Step 4: Re-authenticate after restart
 		client.Authenticate(AdminUsername, AdminPassword)
+
+		// Step 4a: Wait for config hot-reload to complete
+		t.Logf("⏳ Waiting for config hot-reload to complete (movie_retention=7d)...")
+		WaitForConfigValue(t, client, "rules.movie_retention", "7d")
+		t.Logf("✅ Config hot-reload verified")
 
 		// Step 5: Trigger full sync to populate library
 		client.TriggerSync()

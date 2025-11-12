@@ -1,9 +1,6 @@
 # Integration Test Docker Compose - Phase 1
 # Purpose: Test basic infrastructure (Jellyfin + Radarr + OxiCleanarr)
 # Phase 2 will add symlink lifecycle tests
-
-version: '3.8'
-
 services:
   jellyfin:
     image: jellyfin/jellyfin:latest
@@ -16,6 +13,7 @@ services:
       - jellyfin-config:/config
       - jellyfin-cache:/cache
       - ./test-media/movies:/media/movies:ro
+      - ./leaving-soon:/app/leaving-soon:ro
     environment:
       - PUID=1000
       - PGID=1000
