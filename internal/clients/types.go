@@ -218,8 +218,8 @@ type JellystatHistoryItem struct {
 
 // PluginSymlinkItem represents a symlink to be created by the plugin
 type PluginSymlinkItem struct {
-	Path            string `json:"path"`             // Full path where symlink should be created
-	TargetDirectory string `json:"target_directory"` // Directory containing the actual media file
+	SourcePath      string `json:"sourcePath"`      // Full path to the actual media file
+	TargetDirectory string `json:"targetDirectory"` // Directory where symlink should be created
 }
 
 // PluginAddSymlinksRequest represents the request to add symlinks
