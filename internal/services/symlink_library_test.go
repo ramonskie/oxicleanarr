@@ -23,6 +23,8 @@ type mockJellyfinClientForSymlink struct {
 	addPathCalled     int
 	refreshCalled     int
 	lastCreatedFolder *clients.JellyfinVirtualFolder
+	// In-memory symlink tracking (simulates plugin's filesystem state)
+	symlinks map[string]clients.PluginSymlinkInfo // key: symlink path
 }
 
 func (m *mockJellyfinClientForSymlink) GetVirtualFolders(ctx context.Context) ([]clients.JellyfinVirtualFolder, error) {
@@ -95,33 +97,58 @@ func (m *mockJellyfinClientForSymlink) CheckPluginStatus(ctx context.Context) (*
 }
 
 func (m *mockJellyfinClientForSymlink) AddSymlinks(ctx context.Context, items []clients.PluginSymlinkItem, dryRun bool) (*clients.PluginAddSymlinksResponse, error) {
+	// Mock simulates plugin behavior by creating real symlinks for testing
+	// In real scenario, the Jellyfin plugin handles directory creation and symlink creation
 	created := 0
 	skipped := 0
-	failed := 0
 
 	if !dryRun {
-		// Actually create the symlinks in non-dry-run mode
+		// Simulate plugin behavior: create actual symlinks
 		for _, item := range items {
-			// Find media files in TargetDirectory
-			files, err := filepath.Glob(filepath.Join(item.TargetDirectory, "*"))
-			if err != nil || len(files) == 0 {
+			// Check if target directory exists
+			if _, err := os.Stat(item.TargetDirectory); os.IsNotExist(err) {
+				// Plugin would skip items with missing source directories
 				skipped++
 				continue
 			}
 
-			// Use first media file found as target
-			targetFile := files[0]
-
-			// Ensure directory exists for symlink
-			dir := filepath.Dir(item.Path)
-			if err := os.MkdirAll(dir, 0755); err != nil {
-				failed++
+			// Find media files in the target directory (like real plugin would)
+			pattern := filepath.Join(item.TargetDirectory, "*")
+			mediaFiles, err := filepath.Glob(pattern)
+			if err != nil || len(mediaFiles) == 0 {
+				skipped++
 				continue
 			}
 
-			// Create symlink: item.Path -> targetFile
+			// Create symlink to first media file found (simplified for testing)
+			targetFile := mediaFiles[0]
+
+			// Ensure symlink directory exists
+			symlinkDir := filepath.Dir(item.Path)
+			if err := os.MkdirAll(symlinkDir, 0755); err != nil {
+				skipped++
+				continue
+			}
+
+			// Create the symlink
 			if err := os.Symlink(targetFile, item.Path); err != nil {
-				failed++
+				skipped++
+				continue
+			}
+
+			// Track in memory map
+			created++
+			m.symlinks[item.Path] = clients.PluginSymlinkInfo{
+				Name:   filepath.Base(item.Path),
+				Path:   item.Path,
+				Target: targetFile,
+			}
+		}
+	} else {
+		// Dry-run: just count what would be created
+		for _, item := range items {
+			if _, err := os.Stat(item.TargetDirectory); os.IsNotExist(err) {
+				skipped++
 			} else {
 				created++
 			}
@@ -132,7 +159,7 @@ func (m *mockJellyfinClientForSymlink) AddSymlinks(ctx context.Context, items []
 		Success: true,
 		Created: created,
 		Skipped: skipped,
-		Failed:  failed,
+		Failed:  0,
 	}, nil
 }
 
@@ -141,12 +168,31 @@ func (m *mockJellyfinClientForSymlink) RemoveSymlinks(ctx context.Context, paths
 	failed := 0
 
 	if !dryRun {
-		// Actually remove the symlinks in non-dry-run mode
+		// Remove actual symlinks from filesystem in non-dry-run mode
 		for _, path := range paths {
+			// Try to remove the symlink from filesystem
 			if err := os.Remove(path); err != nil {
-				failed++
+				if os.IsNotExist(err) {
+					// Symlink doesn't exist - still count as failure
+					failed++
+				} else {
+					// Other error occurred
+					failed++
+				}
 			} else {
+				// Successfully removed symlink
 				removed++
+				// Also remove from in-memory tracking
+				delete(m.symlinks, path)
+			}
+		}
+	} else {
+		// Dry-run: just count what would be removed
+		for _, path := range paths {
+			if _, exists := m.symlinks[path]; exists {
+				removed++
+			} else {
+				failed++
 			}
 		}
 	}
@@ -159,43 +205,48 @@ func (m *mockJellyfinClientForSymlink) RemoveSymlinks(ctx context.Context, paths
 }
 
 func (m *mockJellyfinClientForSymlink) ListSymlinks(ctx context.Context, directory string) (*clients.PluginListSymlinksResponse, error) {
-	// In tests, scan the actual directory to match plugin behavior
+	// Scan the actual filesystem directory for symlinks (realistic behavior)
 	var symlinks []clients.PluginSymlinkInfo
+	var symlinkNames []string
 
-	entries, err := os.ReadDir(directory)
-	if err != nil {
-		// Directory doesn't exist - return empty list
+	// Check if directory exists
+	if _, err := os.Stat(directory); os.IsNotExist(err) {
 		return &clients.PluginListSymlinksResponse{
-			Success:      true,
-			Symlinks:     []clients.PluginSymlinkInfo{},
-			Count:        0,
-			SymlinkNames: []string{},
-			Message:      "No symlinks found",
+			Success: true,
+			Message: "No symlinks found",
 		}, nil
 	}
 
+	// Read directory contents
+	entries, err := os.ReadDir(directory)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read directory: %w", err)
+	}
+
+	// Filter for symlinks only
 	for _, entry := range entries {
 		fullPath := filepath.Join(directory, entry.Name())
-		fileInfo, err := os.Lstat(fullPath)
+
+		// Use Lstat to check if it's a symlink
+		info, err := os.Lstat(fullPath)
 		if err != nil {
 			continue
 		}
 
-		// Only include symlinks
-		if fileInfo.Mode()&os.ModeSymlink != 0 {
-			target, _ := os.Readlink(fullPath)
+		if info.Mode()&os.ModeSymlink != 0 {
+			// Read symlink target
+			target, err := os.Readlink(fullPath)
+			if err != nil {
+				continue
+			}
+
 			symlinks = append(symlinks, clients.PluginSymlinkInfo{
 				Name:   entry.Name(),
 				Path:   fullPath,
 				Target: target,
 			})
+			symlinkNames = append(symlinkNames, entry.Name())
 		}
-	}
-
-	// Build symlink names array
-	symlinkNames := make([]string, len(symlinks))
-	for i, symlink := range symlinks {
-		symlinkNames[i] = symlink.Name
 	}
 
 	// Generate appropriate message
@@ -247,7 +298,9 @@ func TestNewSymlinkLibraryManager(t *testing.T) {
 		},
 	}
 
-	mockClient := &mockJellyfinClientForSymlink{}
+	mockClient := &mockJellyfinClientForSymlink{
+		symlinks: make(map[string]clients.PluginSymlinkInfo),
+	}
 	manager := NewSymlinkLibraryManager(mockClient, cfg)
 
 	assert.NotNil(t, manager)
@@ -270,7 +323,9 @@ func TestFilterScheduledMedia(t *testing.T) {
 		},
 	}
 
-	mockClient := &mockJellyfinClientForSymlink{}
+	mockClient := &mockJellyfinClientForSymlink{
+		symlinks: make(map[string]clients.PluginSymlinkInfo),
+	}
 	manager := NewSymlinkLibraryManager(mockClient, cfg)
 
 	now := time.Now()
@@ -380,7 +435,9 @@ func TestGenerateSymlinkName(t *testing.T) {
 		},
 	}
 
-	mockClient := &mockJellyfinClientForSymlink{}
+	mockClient := &mockJellyfinClientForSymlink{
+		symlinks: make(map[string]clients.PluginSymlinkInfo),
+	}
 	manager := NewSymlinkLibraryManager(mockClient, cfg)
 
 	tests := []struct {
@@ -440,7 +497,9 @@ func TestCreateSymlinks(t *testing.T) {
 		},
 	}
 
-	mockClient := &mockJellyfinClientForSymlink{}
+	mockClient := &mockJellyfinClientForSymlink{
+		symlinks: make(map[string]clients.PluginSymlinkInfo),
+	}
 	manager := NewSymlinkLibraryManager(mockClient, cfg)
 
 	t.Run("creates symlinks successfully", func(t *testing.T) {
@@ -547,7 +606,9 @@ func TestCleanupSymlinks(t *testing.T) {
 		},
 	}
 
-	mockClient := &mockJellyfinClientForSymlink{}
+	mockClient := &mockJellyfinClientForSymlink{
+		symlinks: make(map[string]clients.PluginSymlinkInfo),
+	}
 	manager := NewSymlinkLibraryManager(mockClient, cfg)
 	ctx := context.Background()
 
@@ -600,6 +661,7 @@ func TestEnsureVirtualFolder(t *testing.T) {
 	t.Run("creates new virtual folder", func(t *testing.T) {
 		mockClient := &mockJellyfinClientForSymlink{
 			virtualFolders: []clients.JellyfinVirtualFolder{},
+			symlinks:       make(map[string]clients.PluginSymlinkInfo),
 		}
 		manager := NewSymlinkLibraryManager(mockClient, cfg)
 
@@ -624,6 +686,7 @@ func TestEnsureVirtualFolder(t *testing.T) {
 					Locations:      []string{existingPath},
 				},
 			},
+			symlinks: make(map[string]clients.PluginSymlinkInfo),
 		}
 		manager := NewSymlinkLibraryManager(mockClient, cfg)
 
@@ -646,6 +709,7 @@ func TestEnsureVirtualFolder(t *testing.T) {
 					Locations:      []string{libraryPath},
 				},
 			},
+			symlinks: make(map[string]clients.PluginSymlinkInfo),
 		}
 		manager := NewSymlinkLibraryManager(mockClient, cfg)
 
@@ -659,10 +723,12 @@ func TestEnsureVirtualFolder(t *testing.T) {
 	})
 
 	t.Run("dry-run mode prevents modifications", func(t *testing.T) {
+		dryRunCfg := &config.Config{App: config.AppConfig{DryRun: true}}
 		mockClient := &mockJellyfinClientForSymlink{
 			virtualFolders: []clients.JellyfinVirtualFolder{},
+			symlinks:       make(map[string]clients.PluginSymlinkInfo),
 		}
-		manager := NewSymlinkLibraryManager(mockClient, cfg)
+		manager := NewSymlinkLibraryManager(mockClient, dryRunCfg)
 
 		libraryPath := filepath.Join(tmpDir, "movies-dryrun")
 		err := manager.ensureVirtualFolder(context.Background(), "Movies Leaving", "movies", libraryPath, true)
@@ -702,6 +768,7 @@ func TestSyncLibraries_Integration(t *testing.T) {
 
 	mockClient := &mockJellyfinClientForSymlink{
 		virtualFolders: []clients.JellyfinVirtualFolder{},
+		symlinks:       make(map[string]clients.PluginSymlinkInfo),
 	}
 	manager := NewSymlinkLibraryManager(mockClient, cfg)
 
@@ -774,6 +841,7 @@ func TestSyncLibrary_HideWhenEmpty_True(t *testing.T) {
 				Locations:      []string{filepath.Join(symlinkBase, "movies")},
 			},
 		},
+		symlinks: make(map[string]clients.PluginSymlinkInfo),
 	}
 	manager := NewSymlinkLibraryManager(mockClient, cfg)
 
@@ -813,6 +881,7 @@ func TestSyncLibrary_HideWhenEmpty_False(t *testing.T) {
 
 	mockClient := &mockJellyfinClientForSymlink{
 		virtualFolders: []clients.JellyfinVirtualFolder{},
+		symlinks:       make(map[string]clients.PluginSymlinkInfo),
 	}
 	manager := NewSymlinkLibraryManager(mockClient, cfg)
 
@@ -856,6 +925,7 @@ func TestSyncLibrary_HideWhenEmpty_Transition(t *testing.T) {
 
 	mockClient := &mockJellyfinClientForSymlink{
 		virtualFolders: []clients.JellyfinVirtualFolder{},
+		symlinks:       make(map[string]clients.PluginSymlinkInfo),
 	}
 	manager := NewSymlinkLibraryManager(mockClient, cfg)
 
@@ -918,6 +988,7 @@ func TestSyncLibrary_HideWhenEmpty_DryRun(t *testing.T) {
 				Locations:      []string{filepath.Join(symlinkBase, "movies")},
 			},
 		},
+		symlinks: make(map[string]clients.PluginSymlinkInfo),
 	}
 	manager := NewSymlinkLibraryManager(mockClient, cfg)
 
@@ -955,6 +1026,7 @@ func TestSyncLibrary_HideWhenEmpty_NoExistingLibrary(t *testing.T) {
 	// Create mock client with NO existing virtual folders
 	mockClient := &mockJellyfinClientForSymlink{
 		virtualFolders: []clients.JellyfinVirtualFolder{},
+		symlinks:       make(map[string]clients.PluginSymlinkInfo),
 	}
 	manager := NewSymlinkLibraryManager(mockClient, cfg)
 
