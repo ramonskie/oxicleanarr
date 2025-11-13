@@ -73,14 +73,28 @@ func TestMain(m *testing.M) {
 	os.Exit(exitCode)
 }
 
+// infrastructureReady tracks if infrastructure has been set up in this test run
+var infrastructureReady = false
+
 // TestIntegrationSuite runs all integration tests in order with shared infrastructure
 // This ensures TestSymlinkLifecycle has the required environment built by TestInfrastructureSetup
 func TestIntegrationSuite(t *testing.T) {
 	// Run infrastructure setup first (builds environment, imports 7 movies)
-	t.Run("InfrastructureSetup", testInfrastructureSetup)
+	t.Run("InfrastructureSetup", func(t *testing.T) {
+		testInfrastructureSetup(t)
+		infrastructureReady = true
+	})
 
 	// Run symlink lifecycle tests second (uses existing environment)
-	t.Run("SymlinkLifecycle", TestSymlinkLifecycle)
+	t.Run("SymlinkLifecycle", func(t *testing.T) {
+		// If infrastructure wasn't set up (due to -run filter), set it up now
+		if !infrastructureReady {
+			t.Log("⚠️  Infrastructure not ready (filtered by -run), setting up now...")
+			testInfrastructureSetup(t)
+			infrastructureReady = true
+		}
+		TestSymlinkLifecycle(t)
+	})
 }
 
 // testInfrastructureSetup validates that the Docker environment can start reliably

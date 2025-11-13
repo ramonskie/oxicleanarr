@@ -94,17 +94,21 @@ If the test fails, check the troubleshooting section below.
 
 ### 4. Run Individual Tests (Advanced)
 
-You can run individual test components, but note that lifecycle tests depend on infrastructure being set up first:
+You can run individual test components. The suite automatically handles infrastructure setup:
 
 ```bash
 # Run only infrastructure setup (as a subtest)
 go test -v ./test/integration/ -run TestIntegrationSuite/InfrastructureSetup
 
-# Run lifecycle tests (requires infrastructure to be already set up)
+# Run lifecycle tests (auto-runs setup if needed)
 go test -v ./test/integration/ -run TestIntegrationSuite/SymlinkLifecycle
 ```
 
-**⚠️ Important**: Running `TestIntegrationSuite/SymlinkLifecycle` standalone will fail because it depends on infrastructure being set up first. Always run the full suite with `TestIntegrationSuite` for reliable results.
+**How Auto-Setup Works**:
+- When running the full suite, infrastructure is set up once and shared across all subtests
+- When running a filtered subtest (e.g., `-run TestIntegrationSuite/SymlinkLifecycle`), the suite detects that infrastructure setup was skipped and automatically runs it before executing the test
+- This uses an `infrastructureReady` flag to track whether setup has completed in the current test session
+- **Result**: You can run individual subtests without manual setup, while maintaining efficiency when running the full suite
 
 ---
 
@@ -143,6 +147,14 @@ go test -v ./test/integration/ -run TestIntegrationSuite/SymlinkLifecycle
    - Test Jellyfin library creation/deletion via plugin API
    - Test edge cases: missing files, permission errors, concurrent syncs
 
+5. **Auto-Setup for Filtered Tests**:
+   - When running the full suite, infrastructure is set up once and shared
+   - When running a filtered subtest (e.g., `-run TestIntegrationSuite/SymlinkLifecycle`), the suite automatically detects that infrastructure setup was skipped by Go's test runner
+   - Implementation uses `infrastructureReady` flag (package-level variable)
+   - Full suite: `InfrastructureSetup` sets flag to `true` → subsequent tests skip setup
+   - Filtered run: Flag stays `false` → test wrapper runs setup automatically
+   - This allows running individual tests without manual setup while maintaining efficiency
+
 ---
 
 ## Infrastructure Validation Steps
@@ -179,6 +191,85 @@ The `TestInfrastructureSetup` function performs these 21 validation steps:
 19. ✅ Leaving-soon base path configured
 20. ✅ Data consistency validated (all services report 7 movies)
 21. ✅ Infrastructure ready for lifecycle tests
+
+---
+
+## Technical Details: Test Suite Architecture
+
+### The Problem with Go's `-run` Filter
+
+When you run `go test -run TestIntegrationSuite/SymlinkLifecycle`, Go's test runner:
+1. Matches `TestIntegrationSuite` function and enters it
+2. Evaluates subtest filter `/SymlinkLifecycle`
+3. **Skips** `t.Run("InfrastructureSetup", ...)` - doesn't match filter
+4. **Runs** `t.Run("SymlinkLifecycle", ...)` - matches filter
+
+This causes SymlinkLifecycle to run without infrastructure being set up first.
+
+### The Solution: Auto-Setup Detection
+
+The suite uses a package-level `infrastructureReady` flag to track setup state:
+
+```go
+// Package-level flag (shared across test functions)
+var infrastructureReady = false
+
+func TestIntegrationSuite(t *testing.T) {
+    // Infrastructure subtest
+    t.Run("InfrastructureSetup", func(t *testing.T) {
+        testInfrastructureSetup(t)
+        infrastructureReady = true  // Mark as ready
+    })
+
+    // Lifecycle subtest with auto-setup
+    t.Run("SymlinkLifecycle", func(t *testing.T) {
+        // Check if setup was skipped by Go's -run filter
+        if !infrastructureReady {
+            t.Log("⚠️ Infrastructure not ready (filtered by -run), setting up now...")
+            testInfrastructureSetup(t)
+            infrastructureReady = true
+        }
+        TestSymlinkLifecycle(t)  // Now safe to run
+    })
+}
+```
+
+### Behavior in Different Scenarios
+
+**Scenario 1: Full Suite** (`-run TestIntegrationSuite`)
+```
+1. InfrastructureSetup runs → sets infrastructureReady = true
+2. SymlinkLifecycle checks flag → sees true → skips setup → uses existing infra
+```
+✅ Infrastructure built once, shared across all subtests
+
+**Scenario 2: Filtered Subtest** (`-run TestIntegrationSuite/SymlinkLifecycle`)
+```
+1. InfrastructureSetup skipped by Go (doesn't match filter)
+2. SymlinkLifecycle checks flag → sees false → runs setup → then runs tests
+```
+✅ Tests work correctly even when run individually
+
+**Scenario 3: Infrastructure Only** (`-run TestIntegrationSuite/InfrastructureSetup`)
+```
+1. InfrastructureSetup runs → sets infrastructureReady = true
+2. SymlinkLifecycle skipped by Go (doesn't match filter)
+```
+✅ Only infrastructure validation runs
+
+### Why This Works
+
+- **Package-level scope**: The `infrastructureReady` flag persists across subtests within the same test session
+- **Go's test runner behavior**: When a parent test function runs, all subtest wrappers execute (even if skipped), allowing our check to run
+- **No environment variables**: Pure in-process state management
+- **No TestMain complexity**: TestMain still manages Docker lifecycle, suite manages test dependencies
+
+### Benefits
+
+1. ✅ **Developer convenience**: Run any subtest directly without setup ceremony
+2. ✅ **CI/CD efficiency**: Full suite shares infrastructure (no redundant rebuilds)
+3. ✅ **Test isolation**: Each scenario gets the infrastructure it needs
+4. ✅ **Maintainability**: Simple flag-based logic, easy to understand and debug
 
 ---
 
