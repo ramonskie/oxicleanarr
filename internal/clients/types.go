@@ -230,27 +230,23 @@ type PluginAddSymlinksRequest struct {
 
 // PluginAddSymlinksResponse represents the response from adding symlinks
 type PluginAddSymlinksResponse struct {
-	Success      bool     `json:"success"`
-	Created      int      `json:"created"`
-	Skipped      int      `json:"skipped"`
-	Failed       int      `json:"failed"`
-	ErrorMessage string   `json:"error_message,omitempty"`
-	Details      []string `json:"details,omitempty"`
+	Success         bool     `json:"Success"`         // Plugin uses PascalCase
+	CreatedSymlinks []string `json:"CreatedSymlinks"` // Plugin returns array of created paths
+	Errors          []string `json:"Errors"`          // Plugin returns array of error messages
+	ErrorMessage    string   `json:"error_message,omitempty"`
 }
 
 // PluginRemoveSymlinksRequest represents the request to remove symlinks
 type PluginRemoveSymlinksRequest struct {
-	Paths  []string `json:"paths"`
+	Paths  []string `json:"symlinkPaths"` // Plugin expects camelCase "symlinkPaths"
 	DryRun bool     `json:"dry_run,omitempty"`
 }
 
 // PluginRemoveSymlinksResponse represents the response from removing symlinks
 type PluginRemoveSymlinksResponse struct {
-	Success      bool     `json:"success"`
-	Removed      int      `json:"removed"`
-	Failed       int      `json:"failed"`
-	ErrorMessage string   `json:"error_message,omitempty"`
-	Details      []string `json:"details,omitempty"`
+	Success         bool     `json:"Success"`         // Plugin uses PascalCase
+	RemovedSymlinks []string `json:"RemovedSymlinks"` // Plugin returns array of removed paths
+	Errors          []string `json:"Errors"`          // Plugin returns array of error messages
 }
 
 // PluginSymlinkInfo represents information about a symlink

@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"path/filepath"
 	"time"
 
 	"github.com/ramonskie/oxicleanarr/internal/config"
@@ -417,11 +418,15 @@ func (c *JellyfinClient) AddSymlinks(ctx context.Context, items []PluginSymlinkI
 		log.Info().
 			Int("count", len(items)).
 			Msg("[DRY-RUN] Would create symlinks via plugin")
+		// Simulate successful creation for all items in dry-run
+		createdPaths := make([]string, len(items))
+		for i, item := range items {
+			createdPaths[i] = filepath.Join(item.TargetDirectory, filepath.Base(item.SourcePath))
+		}
 		return &PluginAddSymlinksResponse{
-			Success: true,
-			Created: len(items),
-			Skipped: 0,
-			Failed:  0,
+			Success:         true,
+			CreatedSymlinks: createdPaths,
+			Errors:          []string{},
 		}, nil
 	}
 
@@ -480,32 +485,24 @@ func (c *JellyfinClient) AddSymlinks(ctx context.Context, items []PluginSymlinkI
 		return nil, fmt.Errorf("decoding response: %w", err)
 	}
 
-	if !addResp.Success {
-		// Log full error details
-		log.Error().
-			Str("error_message", addResp.ErrorMessage).
-			Strs("details", addResp.Details).
-			Int("created", addResp.Created).
-			Int("skipped", addResp.Skipped).
-			Int("failed", addResp.Failed).
-			Msg("Plugin reported failure")
-
-		// Build detailed error message
-		errMsg := addResp.ErrorMessage
-		if errMsg == "" {
-			errMsg = "unknown error"
-		}
-		if len(addResp.Details) > 0 {
-			errMsg = fmt.Sprintf("%s: %v", errMsg, addResp.Details)
-		}
-		return &addResp, fmt.Errorf("plugin error: %s", errMsg)
-	}
+	// HTTP 200 + valid JSON = success
+	created := len(addResp.CreatedSymlinks)
+	failed := len(addResp.Errors)
 
 	log.Info().
-		Int("created", addResp.Created).
-		Int("skipped", addResp.Skipped).
-		Int("failed", addResp.Failed).
-		Msg("Symlinks created successfully via plugin")
+		Bool("success", addResp.Success).
+		Int("created", created).
+		Int("failed", failed).
+		Msg("Symlinks created via plugin")
+
+	// Log individual errors if any
+	if failed > 0 {
+		for _, errMsg := range addResp.Errors {
+			log.Warn().
+				Str("error", errMsg).
+				Msg("Symlink creation failed")
+		}
+	}
 
 	return &addResp, nil
 }
@@ -517,9 +514,9 @@ func (c *JellyfinClient) RemoveSymlinks(ctx context.Context, paths []string, dry
 			Int("count", len(paths)).
 			Msg("[DRY-RUN] Would remove symlinks via plugin")
 		return &PluginRemoveSymlinksResponse{
-			Success: true,
-			Removed: len(paths),
-			Failed:  0,
+			Success:         true,
+			RemovedSymlinks: paths,
+			Errors:          []string{},
 		}, nil
 	}
 
@@ -541,6 +538,10 @@ func (c *JellyfinClient) RemoveSymlinks(ctx context.Context, paths []string, dry
 	}
 
 	req.Header.Set("Content-Type", "application/json")
+
+	log.Debug().
+		Str("request_body", string(bodyBytes)).
+		Msg("RemoveSymlinks request body")
 
 	log.Info().
 		Int("count", len(paths)).
@@ -578,30 +579,24 @@ func (c *JellyfinClient) RemoveSymlinks(ctx context.Context, paths []string, dry
 		return nil, fmt.Errorf("decoding response: %w", err)
 	}
 
-	if !removeResp.Success {
-		// Log full error details
-		log.Error().
-			Str("error_message", removeResp.ErrorMessage).
-			Strs("details", removeResp.Details).
-			Int("removed", removeResp.Removed).
-			Int("failed", removeResp.Failed).
-			Msg("Plugin reported failure")
-
-		// Build detailed error message
-		errMsg := removeResp.ErrorMessage
-		if errMsg == "" {
-			errMsg = "unknown error"
-		}
-		if len(removeResp.Details) > 0 {
-			errMsg = fmt.Sprintf("%s: %v", errMsg, removeResp.Details)
-		}
-		return &removeResp, fmt.Errorf("plugin error: %s", errMsg)
-	}
+	// HTTP 200 + valid JSON = success
+	removed := len(removeResp.RemovedSymlinks)
+	failed := len(removeResp.Errors)
 
 	log.Info().
-		Int("removed", removeResp.Removed).
-		Int("failed", removeResp.Failed).
-		Msg("Symlinks removed successfully via plugin")
+		Bool("success", removeResp.Success).
+		Int("removed", removed).
+		Int("failed", failed).
+		Msg("Symlinks removed via plugin")
+
+	// Log individual errors if any
+	if failed > 0 {
+		for _, errMsg := range removeResp.Errors {
+			log.Warn().
+				Str("error", errMsg).
+				Msg("Symlink removal failed")
+		}
+	}
 
 	return &removeResp, nil
 }
@@ -652,20 +647,7 @@ func (c *JellyfinClient) ListSymlinks(ctx context.Context, directory string) (*P
 		return nil, fmt.Errorf("decoding response: %w", err)
 	}
 
-	if !listResp.Success {
-		// Log full error details
-		log.Error().
-			Str("error_message", listResp.ErrorMessage).
-			Int("symlinks_count", len(listResp.Symlinks)).
-			Msg("Plugin reported failure")
-
-		// Build detailed error message
-		errMsg := listResp.ErrorMessage
-		if errMsg == "" {
-			errMsg = "unknown error"
-		}
-		return &listResp, fmt.Errorf("plugin error: %s", errMsg)
-	}
+	// HTTP 200 + valid JSON = success. Plugin may omit Success field.
 
 	log.Debug().
 		Int("count", len(listResp.Symlinks)).
@@ -746,10 +728,7 @@ func (c *JellyfinClient) CreateDirectory(ctx context.Context, path string, dryRu
 		return nil, fmt.Errorf("unmarshal response: %w", err)
 	}
 
-	if !createResp.Success {
-		log.Error().Str("message", createResp.Message).Msg("Plugin reported failure for directory creation")
-		return nil, fmt.Errorf("plugin failed to create directory: %s", createResp.Message)
-	}
+	// HTTP 200 + valid JSON = success. Plugin may omit Success field.
 
 	log.Info().
 		Str("path", path).
@@ -832,10 +811,7 @@ func (c *JellyfinClient) DeleteDirectory(ctx context.Context, path string, force
 		return nil, fmt.Errorf("unmarshal response: %w", err)
 	}
 
-	if !deleteResp.Success {
-		log.Error().Str("message", deleteResp.Message).Msg("Plugin reported failure for directory deletion")
-		return nil, fmt.Errorf("plugin failed to delete directory: %s", deleteResp.Message)
-	}
+	// HTTP 200 + valid JSON = success. Plugin may omit Success field.
 
 	log.Info().
 		Str("path", path).

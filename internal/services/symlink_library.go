@@ -154,6 +154,7 @@ func (m *SymlinkLibraryManager) filterScheduledMedia(mediaLibrary map[string]mod
 	}
 
 	log.Info().
+		Int("total_media", len(mediaLibrary)).
 		Int("movies", len(movies)).
 		Int("tv_shows", len(tvShows)).
 		Int("skipped_excluded", skippedExcluded).
@@ -185,6 +186,7 @@ func (m *SymlinkLibraryManager) syncLibrary(ctx context.Context, libraryName, co
 		log.Info().
 			Str("library", libraryName).
 			Bool("dry_run", dryRun).
+			Bool("hide_when_empty", cfg.Integrations.Jellyfin.SymlinkLibrary.HideWhenEmpty).
 			Msg("Library is empty and hide_when_empty is true, removing library from Jellyfin")
 
 		// Step 1: Clean up any existing symlinks first
@@ -270,6 +272,13 @@ func (m *SymlinkLibraryManager) syncLibrary(ctx context.Context, libraryName, co
 
 		return nil
 	}
+
+	// Normal sync path: items exist or hide_when_empty is false
+	log.Info().
+		Str("library", libraryName).
+		Int("item_count", len(items)).
+		Bool("hide_when_empty", cfg.Integrations.Jellyfin.SymlinkLibrary.HideWhenEmpty).
+		Msg("Taking normal sync path (items exist or library should remain visible when empty)")
 
 	// Step 1: Ensure virtual folder exists in Jellyfin
 	if err := m.ensureVirtualFolder(ctx, libraryName, collectionType, symlinkDir, dryRun); err != nil {
@@ -512,8 +521,8 @@ func (m *SymlinkLibraryManager) createSymlinks(symlinkDir string, items []models
 			// Continue anyway - we'll try to create new ones
 		} else {
 			log.Info().
-				Int("removed", removeResp.Removed).
-				Int("failed", removeResp.Failed).
+				Int("removed", len(removeResp.RemovedSymlinks)).
+				Int("failed", len(removeResp.Errors)).
 				Msg("Stale symlinks removed")
 		}
 	}
@@ -530,17 +539,19 @@ func (m *SymlinkLibraryManager) createSymlinks(symlinkDir string, items []models
 			return nil, fmt.Errorf("failed to create symlinks via plugin: %w", err)
 		}
 
+		created := len(addResp.CreatedSymlinks)
+		failed := len(addResp.Errors)
+
 		log.Info().
-			Int("created", addResp.Created).
-			Int("skipped", addResp.Skipped).
-			Int("failed", addResp.Failed).
+			Int("created", created).
+			Int("failed", failed).
 			Msg("Symlinks created via plugin")
 
 		// Log individual failures if any
-		if addResp.Failed > 0 && len(addResp.Details) > 0 {
-			for _, detail := range addResp.Details {
+		if failed > 0 {
+			for _, errMsg := range addResp.Errors {
 				log.Warn().
-					Str("detail", detail).
+					Str("error", errMsg).
 					Msg("Symlink creation issue")
 			}
 		}
@@ -551,7 +562,7 @@ func (m *SymlinkLibraryManager) createSymlinks(symlinkDir string, items []models
 			for _, name := range pendingSymlinks {
 				currentSymlinks[name] = true
 			}
-		} else if addResp.Created > 0 {
+		} else if created > 0 {
 			// In live mode, verify which symlinks actually exist
 			// We need to verify since plugin only returns counts, not which items succeeded
 			verifyResp, err := m.jellyfinClient.ListSymlinks(ctx, symlinkDir)
@@ -630,16 +641,19 @@ func (m *SymlinkLibraryManager) cleanupSymlinks(ctx context.Context, symlinkDir 
 			return fmt.Errorf("failed to remove stale symlinks via plugin: %w", err)
 		}
 
+		removed := len(removeResp.RemovedSymlinks)
+		failed := len(removeResp.Errors)
+
 		log.Info().
-			Int("removed", removeResp.Removed).
-			Int("failed", removeResp.Failed).
+			Int("removed", removed).
+			Int("failed", failed).
 			Msg("Stale symlinks removed")
 
 		// Log details if any failures
-		if removeResp.Failed > 0 && len(removeResp.Details) > 0 {
-			for _, detail := range removeResp.Details {
+		if failed > 0 {
+			for _, errMsg := range removeResp.Errors {
 				log.Warn().
-					Str("detail", detail).
+					Str("error", errMsg).
 					Msg("Symlink removal issue")
 			}
 		}
