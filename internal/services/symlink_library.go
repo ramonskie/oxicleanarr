@@ -262,17 +262,45 @@ func (m *SymlinkLibraryManager) syncLibrary(ctx context.Context, libraryName, co
 			}
 		}
 
-		// Step 4: Trigger library scan to refresh Jellyfin's dashboard/UI
+		// Step 4: Trigger DOUBLE global library refresh after deletion
+		// Jellyfin has a known behavior where the first refresh after library deletion
+		// doesn't fully update the user view cache (/Users/{userId}/Views).
+		// Testing confirmed: even with a 30-second delay before the first refresh,
+		// Jellyfin still requires TWO refresh calls to properly update user views.
+		// This is not a race condition - it's how Jellyfin's internal cache works.
 		if libraryDeleted {
 			log.Info().
 				Str("library", libraryName).
-				Msg("Triggering Jellyfin library refresh to update dashboard after deletion")
+				Msg("Triggering double global library refresh to update user view cache (Jellyfin requires two refreshes after deletion)")
 
+			// First refresh - initiates cache rebuild
 			if err := m.jellyfinClient.RefreshLibrary(ctx, dryRun); err != nil {
 				log.Warn().
 					Err(err).
 					Str("library", libraryName).
-					Msg("Failed to trigger library refresh after deletion, dashboard may not update immediately")
+					Msg("First refresh failed after library deletion")
+			} else {
+				log.Debug().Msg("First refresh completed")
+			}
+
+			// Wait for first scan to complete its background processing
+			// Testing shows Jellyfin needs this second refresh regardless of delay,
+			// but we give it time to finish the first scan's internal tasks
+			if !dryRun {
+				log.Debug().Msg("Waiting 5 seconds before second refresh")
+				time.Sleep(5 * time.Second)
+			}
+
+			// Second refresh - completes user view cache update
+			if err := m.jellyfinClient.RefreshLibrary(ctx, dryRun); err != nil {
+				log.Warn().
+					Err(err).
+					Str("library", libraryName).
+					Msg("Second refresh failed after library deletion, user views may show stale data")
+			} else {
+				log.Info().
+					Str("library", libraryName).
+					Msg("Library deleted and user views updated successfully after double refresh")
 			}
 		} else {
 			log.Debug().

@@ -143,9 +143,18 @@ func TestSymlinkLifecycle(t *testing.T) {
 		if hideWhenEmpty {
 			t.Logf("Expecting library to be deleted (hide_when_empty: true)")
 			CheckJellyfinLibrary(t, jellyfinAPIKey, moviesLibraryName, false)
+
+			// Step 9: CRITICAL TEST - Verify library is also removed from user views (dashboard)
+			// This is the bug we're fixing - library deletion must update user view cache
+			t.Logf("Verifying library removed from user views (dashboard) - this tests the double-refresh fix")
+			CheckJellyfinUserViews(t, JellyfinURL, jellyfinAPIKey, moviesLibraryName, false)
 		} else {
 			t.Logf("Expecting library to still exist (hide_when_empty: false)")
 			CheckJellyfinLibrary(t, jellyfinAPIKey, moviesLibraryName, true)
+
+			// Also verify it still appears in user views
+			t.Logf("Verifying library still appears in user views")
+			CheckJellyfinUserViews(t, JellyfinURL, jellyfinAPIKey, moviesLibraryName, true)
 		}
 
 		t.Logf("=== Phase 2 Complete ===")

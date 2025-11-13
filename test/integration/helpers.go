@@ -634,10 +634,17 @@ func GetJellyfinAPIKey(t *testing.T, configPath string) string {
 		}
 
 		if inJellyfinSection && strings.HasPrefix(trimmed, "api_key:") {
-			// Extract value between quotes
-			parts := strings.Split(trimmed, "\"")
-			if len(parts) >= 2 {
-				return parts[1]
+			// Extract value (handles both quoted and unquoted)
+			value := strings.TrimPrefix(trimmed, "api_key:")
+			value = strings.TrimSpace(value)
+
+			// Remove quotes if present
+			if strings.HasPrefix(value, "\"") && strings.HasSuffix(value, "\"") {
+				value = strings.Trim(value, "\"")
+			}
+
+			if value != "" {
+				return value
 			}
 		}
 
@@ -1022,4 +1029,123 @@ func GetJellyfinMovieCount(t *testing.T, jellyfinURL, apiKey, libraryID string) 
 	}
 
 	return result.TotalRecordCount, nil
+}
+
+// GetJellyfinUserID gets the first user ID from Jellyfin (used for user views queries)
+func GetJellyfinUserID(t *testing.T, jellyfinURL, apiKey string) (string, error) {
+	t.Helper()
+
+	client := &http.Client{Timeout: 10 * time.Second}
+	req, err := http.NewRequest(http.MethodGet, jellyfinURL+"/Users", nil)
+	if err != nil {
+		return "", fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("X-MediaBrowser-Token", apiKey)
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("failed to query Jellyfin users: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("unexpected status code %d from Jellyfin", resp.StatusCode)
+	}
+
+	var users []struct {
+		Name string `json:"Name"`
+		ID   string `json:"Id"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&users); err != nil {
+		return "", fmt.Errorf("failed to decode Jellyfin users: %w", err)
+	}
+
+	if len(users) == 0 {
+		return "", fmt.Errorf("no users found in Jellyfin")
+	}
+
+	return users[0].ID, nil
+}
+
+// CheckJellyfinUserViews verifies that a library appears (or doesn't appear) in user views (dashboard)
+// This is the critical test for the double-refresh fix - user views must update after library deletion
+// Uses retry logic with timeout since Jellyfin may need time to update its user view cache
+func CheckJellyfinUserViews(t *testing.T, jellyfinURL, apiKey, libraryName string, expectedExists bool) {
+	t.Helper()
+	t.Logf("Checking Jellyfin user views for library: %s (expected exists: %v)", libraryName, expectedExists)
+
+	// Get user ID first
+	userID, err := GetJellyfinUserID(t, jellyfinURL, apiKey)
+	require.NoError(t, err, "Failed to get Jellyfin user ID")
+	t.Logf("Using user ID: %s", userID)
+
+	// Retry with timeout - Jellyfin needs time to update user view cache after library changes
+	maxRetries := 10
+	retryDelay := 1 * time.Second
+
+	var libraryExists bool
+	var lastItems []string
+
+	for attempt := 0; attempt < maxRetries; attempt++ {
+		if attempt > 0 {
+			t.Logf("Retry %d/%d: Waiting %v for user view cache to update...", attempt, maxRetries-1, retryDelay)
+			time.Sleep(retryDelay)
+		}
+
+		client := &http.Client{Timeout: 10 * time.Second}
+		url := fmt.Sprintf("%s/Users/%s/Views", jellyfinURL, userID)
+		req, err := http.NewRequest(http.MethodGet, url, nil)
+		require.NoError(t, err)
+
+		req.Header.Set("X-MediaBrowser-Token", apiKey)
+
+		resp, err := client.Do(req)
+		require.NoError(t, err)
+
+		require.Equal(t, http.StatusOK, resp.StatusCode, "Failed to query Jellyfin user views")
+
+		var result struct {
+			Items []struct {
+				Name           string `json:"Name"`
+				CollectionType string `json:"CollectionType"`
+				ID             string `json:"Id"`
+			} `json:"Items"`
+		}
+		err = json.NewDecoder(resp.Body).Decode(&result)
+		resp.Body.Close()
+		require.NoError(t, err)
+
+		// Check if library exists in user views
+		libraryExists = false
+		lastItems = make([]string, 0, len(result.Items))
+		for _, item := range result.Items {
+			lastItems = append(lastItems, item.Name)
+			if item.Name == libraryName {
+				libraryExists = true
+			}
+		}
+
+		// If we got the expected result, success!
+		if libraryExists == expectedExists {
+			t.Logf("✅ User view cache state matches expectation after %d attempts", attempt+1)
+			break
+		}
+
+		// Log current state for debugging
+		if attempt == 0 {
+			t.Logf("Initial user views: %v", lastItems)
+		}
+	}
+
+	// Log final state
+	t.Logf("Final user views: %v", lastItems)
+
+	if expectedExists {
+		require.True(t, libraryExists, "Library '%s' does not appear in user views (dashboard) after %d retries - expected to exist", libraryName, maxRetries)
+		t.Logf("✅ Library '%s' appears in user views (expected)", libraryName)
+	} else {
+		require.False(t, libraryExists, "Library '%s' still appears in user views (dashboard) after %d retries - expected to be deleted", libraryName, maxRetries)
+		t.Logf("✅ Library '%s' does not appear in user views (expected - deletion successful)", libraryName)
+	}
 }
