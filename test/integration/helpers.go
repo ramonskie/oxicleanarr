@@ -1149,3 +1149,116 @@ func CheckJellyfinUserViews(t *testing.T, jellyfinURL, apiKey, libraryName strin
 		t.Logf("✅ Library '%s' does not appear in user views (expected - deletion successful)", libraryName)
 	}
 }
+
+// GetMediaByTitle searches for a media item by title and returns its ID
+func (tc *TestClient) GetMediaByTitle(title string) (string, error) {
+	tc.t.Helper()
+	tc.t.Logf("Searching for media with title: %s", title)
+
+	resp, err := tc.Get("/api/media/movies")
+	if err != nil {
+		return "", fmt.Errorf("failed to get movies: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("unexpected status code %d", resp.StatusCode)
+	}
+
+	var result struct {
+		Items []struct {
+			ID    string `json:"id"`
+			Title string `json:"title"`
+		} `json:"items"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return "", fmt.Errorf("failed to decode response: %w", err)
+	}
+
+	for _, item := range result.Items {
+		if item.Title == title {
+			tc.t.Logf("Found media ID: %s for title: %s", item.ID, title)
+			return item.ID, nil
+		}
+	}
+
+	return "", fmt.Errorf("media not found with title: %s", title)
+}
+
+// ExcludeMedia adds an exclusion for a media item
+func (tc *TestClient) ExcludeMedia(mediaID, reason string) error {
+	tc.t.Helper()
+	tc.t.Logf("Excluding media ID: %s with reason: %s", mediaID, reason)
+
+	body := map[string]string{
+		"reason": reason,
+	}
+
+	resp, err := tc.Post(fmt.Sprintf("/api/media/%s/exclude", mediaID), body)
+	if err != nil {
+		return fmt.Errorf("failed to exclude media: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		bodyBytes, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("unexpected status code %d: %s", resp.StatusCode, string(bodyBytes))
+	}
+
+	tc.t.Logf("Successfully excluded media ID: %s", mediaID)
+	return nil
+}
+
+// RemoveExclusion removes an exclusion for a media item
+func (tc *TestClient) RemoveExclusion(mediaID string) error {
+	tc.t.Helper()
+	tc.t.Logf("Removing exclusion for media ID: %s", mediaID)
+
+	req, err := http.NewRequest(http.MethodDelete, tc.baseURL+fmt.Sprintf("/api/media/%s/exclude", mediaID), nil)
+	if err != nil {
+		return fmt.Errorf("failed to create request: %w", err)
+	}
+
+	if tc.token != "" {
+		req.Header.Set("Authorization", "Bearer "+tc.token)
+	}
+
+	resp, err := tc.client.Do(req)
+	if err != nil {
+		return fmt.Errorf("failed to remove exclusion: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		bodyBytes, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("unexpected status code %d: %s", resp.StatusCode, string(bodyBytes))
+	}
+
+	tc.t.Logf("Successfully removed exclusion for media ID: %s", mediaID)
+	return nil
+}
+
+// GetMediaDetails retrieves details for a specific media item
+func (tc *TestClient) GetMediaDetails(mediaID string) (map[string]interface{}, error) {
+	tc.t.Helper()
+	tc.t.Logf("Getting media details for ID: %s", mediaID)
+
+	resp, err := tc.Get(fmt.Sprintf("/api/media/%s", mediaID))
+	if err != nil {
+		return nil, fmt.Errorf("failed to get media details: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		bodyBytes, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("unexpected status code %d: %s", resp.StatusCode, string(bodyBytes))
+	}
+
+	var details map[string]interface{}
+	if err := json.NewDecoder(resp.Body).Decode(&details); err != nil {
+		return nil, fmt.Errorf("failed to decode response: %w", err)
+	}
+
+	tc.t.Logf("Retrieved media details for ID: %s", mediaID)
+	return details, nil
+}

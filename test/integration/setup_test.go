@@ -93,7 +93,18 @@ func TestIntegrationSuite(t *testing.T) {
 			testInfrastructureSetup(t)
 			infrastructureReady = true
 		}
-		TestSymlinkLifecycle(t)
+		testSymlinkLifecycle(t)
+	})
+
+	// Run exclusion lifecycle tests third (uses existing environment)
+	t.Run("ExclusionLifecycle", func(t *testing.T) {
+		// If infrastructure wasn't set up (due to -run filter), set it up now
+		if !infrastructureReady {
+			t.Log("⚠️  Infrastructure not ready (filtered by -run), setting up now...")
+			testInfrastructureSetup(t)
+			infrastructureReady = true
+		}
+		testExclusionLifecycle(t)
 	})
 }
 
