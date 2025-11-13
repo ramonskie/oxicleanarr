@@ -555,9 +555,8 @@ func CheckSymlinks(t *testing.T, jellyfinAPIKey string, symlinkDir string, expec
 }
 
 // CheckJellyfinLibrary verifies Jellyfin virtual folder state
-func CheckJellyfinLibrary(t *testing.T, apiKey string, expectedExists bool) {
-	libraryName := "Leaving Soon - Movies"
-	t.Logf("Checking Jellyfin virtual folders...")
+func CheckJellyfinLibrary(t *testing.T, apiKey string, libraryName string, expectedExists bool) {
+	t.Logf("Checking Jellyfin virtual folders for library: %s", libraryName)
 
 	client := &http.Client{Timeout: 10 * time.Second}
 	req, err := http.NewRequest(http.MethodGet, JellyfinURL+"/Library/VirtualFolders", nil)
@@ -678,6 +677,40 @@ func GetHideWhenEmpty(t *testing.T, configPath string) bool {
 
 	// Default to true if not specified
 	return true
+}
+
+// GetMoviesLibraryName extracts the movies_library_name from the config file
+func GetMoviesLibraryName(t *testing.T, configPath string) string {
+	content, err := os.ReadFile(configPath)
+	require.NoError(t, err)
+
+	lines := strings.Split(string(content), "\n")
+	inSymlinkSection := false
+
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+
+		if strings.HasPrefix(trimmed, "symlink_library:") {
+			inSymlinkSection = true
+			continue
+		}
+
+		if inSymlinkSection && strings.HasPrefix(trimmed, "movies_library_name:") {
+			// Extract value between quotes
+			parts := strings.Split(trimmed, "\"")
+			if len(parts) >= 2 {
+				return parts[1]
+			}
+		}
+
+		// Exit section if we hit another sibling key (not nested)
+		if inSymlinkSection && !strings.HasPrefix(line, "      ") && strings.HasSuffix(trimmed, ":") {
+			break
+		}
+	}
+
+	// Default fallback
+	return "Leaving Soon - Movies"
 }
 
 // execCommand executes a shell command

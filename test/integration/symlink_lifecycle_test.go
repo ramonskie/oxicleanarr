@@ -53,8 +53,10 @@ func TestSymlinkLifecycle(t *testing.T) {
 	hideWhenEmpty := GetHideWhenEmpty(t, absConfigPath)
 	t.Logf("hide_when_empty setting: %v", hideWhenEmpty)
 
-	// Extract Jellyfin API key for library verification
+	// Extract Jellyfin API key and library name for library verification
 	jellyfinAPIKey := GetJellyfinAPIKey(t, absConfigPath)
+	moviesLibraryName := GetMoviesLibraryName(t, absConfigPath)
+	t.Logf("Movies library name: %s", moviesLibraryName)
 
 	// Phase 1: Create Symlinks (7d retention)
 	t.Run("Phase1_CreateSymlinks", func(t *testing.T) {
@@ -99,7 +101,7 @@ func TestSymlinkLifecycle(t *testing.T) {
 		CheckSymlinks(t, jellyfinAPIKey, SymlinkDir, Phase1Expected)
 
 		// Step 10: Verify Jellyfin library was created
-		CheckJellyfinLibrary(t, jellyfinAPIKey, true)
+		CheckJellyfinLibrary(t, jellyfinAPIKey, moviesLibraryName, true)
 
 		t.Logf("=== Phase 1 Complete ===")
 	})
@@ -140,10 +142,10 @@ func TestSymlinkLifecycle(t *testing.T) {
 		// Step 8: Verify Jellyfin library state based on hide_when_empty
 		if hideWhenEmpty {
 			t.Logf("Expecting library to be deleted (hide_when_empty: true)")
-			CheckJellyfinLibrary(t, jellyfinAPIKey, false)
+			CheckJellyfinLibrary(t, jellyfinAPIKey, moviesLibraryName, false)
 		} else {
 			t.Logf("Expecting library to still exist (hide_when_empty: false)")
-			CheckJellyfinLibrary(t, jellyfinAPIKey, true)
+			CheckJellyfinLibrary(t, jellyfinAPIKey, moviesLibraryName, true)
 		}
 
 		t.Logf("=== Phase 2 Complete ===")
