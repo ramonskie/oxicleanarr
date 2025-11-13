@@ -20,6 +20,7 @@ type JellyfinVirtualFolderClient interface {
 	DeleteVirtualFolder(ctx context.Context, name string, dryRun bool) error
 	AddPathToVirtualFolder(ctx context.Context, name, path string, dryRun bool) error
 	RefreshLibrary(ctx context.Context, dryRun bool) error
+	RefreshLibraryByID(ctx context.Context, libraryID string, dryRun bool) error
 
 	// Plugin methods for symlink management
 	CheckPluginStatus(ctx context.Context) (*clients.PluginStatusResponse, error)
@@ -181,6 +182,15 @@ func (m *SymlinkLibraryManager) syncLibrary(ctx context.Context, libraryName, co
 		Bool("dry_run", dryRun).
 		Msg("Syncing symlink library")
 
+	// Get library ID for targeted refresh operations
+	libraryID, err := m.getLibraryID(ctx, libraryName)
+	if err != nil {
+		log.Debug().
+			Err(err).
+			Str("library", libraryName).
+			Msg("Could not get library ID, will use global refresh as fallback")
+	}
+
 	// Check if library should be hidden when empty
 	if len(items) == 0 && cfg.Integrations.Jellyfin.SymlinkLibrary.HideWhenEmpty {
 		log.Info().
@@ -196,7 +206,7 @@ func (m *SymlinkLibraryManager) syncLibrary(ctx context.Context, libraryName, co
 			Msg("Cleaning up symlinks before removing empty library")
 
 		emptySymlinks := make(map[string]bool) // Empty map = remove all symlinks
-		if err := m.cleanupSymlinks(ctx, symlinkDir, emptySymlinks, dryRun); err != nil {
+		if _, err := m.cleanupSymlinks(ctx, symlinkDir, emptySymlinks, dryRun); err != nil {
 			log.Warn().
 				Err(err).
 				Str("library", libraryName).
@@ -291,24 +301,46 @@ func (m *SymlinkLibraryManager) syncLibrary(ctx context.Context, libraryName, co
 		return fmt.Errorf("failed to create symlinks: %w", err)
 	}
 
-	// Step 3: Clean up stale symlinks
-	if err := m.cleanupSymlinks(ctx, symlinkDir, currentSymlinks, dryRun); err != nil {
+	// Step 3: Clean up stale symlinks and track if any were removed
+	staleRemoved, err := m.cleanupSymlinks(ctx, symlinkDir, currentSymlinks, dryRun)
+	if err != nil {
 		return fmt.Errorf("failed to cleanup symlinks: %w", err)
 	}
 
-	// Step 4: Trigger Jellyfin library scan to discover new content
-	if len(items) > 0 || len(currentSymlinks) > 0 {
+	// Step 4: Trigger Jellyfin library scan to discover new content or reflect removed content
+	needsRefresh := len(items) > 0 || len(currentSymlinks) > 0 || staleRemoved > 0
+	if needsRefresh {
 		log.Info().
 			Str("library", libraryName).
-			Int("symlinks", len(currentSymlinks)).
-			Msg("Triggering Jellyfin library refresh to scan new content")
+			Int("symlinks_created", len(currentSymlinks)).
+			Int("symlinks_removed", staleRemoved).
+			Msg("Triggering Jellyfin library refresh to update content")
 
-		if err := m.jellyfinClient.RefreshLibrary(ctx, dryRun); err != nil {
-			// Log warning but don't fail entire sync - library will scan eventually
-			log.Warn().
-				Err(err).
-				Str("library", libraryName).
-				Msg("Failed to trigger library refresh, content may not appear immediately")
+		// Try library-specific refresh first (faster), fall back to global refresh
+		if libraryID != "" {
+			if err := m.jellyfinClient.RefreshLibraryByID(ctx, libraryID, dryRun); err != nil {
+				log.Warn().
+					Err(err).
+					Str("library", libraryName).
+					Str("library_id", libraryID).
+					Msg("Failed to trigger library-specific refresh, falling back to global refresh")
+
+				// Fallback to global refresh
+				if err := m.jellyfinClient.RefreshLibrary(ctx, dryRun); err != nil {
+					log.Warn().
+						Err(err).
+						Str("library", libraryName).
+						Msg("Failed to trigger global library refresh, content may not appear immediately")
+				}
+			}
+		} else {
+			// No library ID available, use global refresh
+			if err := m.jellyfinClient.RefreshLibrary(ctx, dryRun); err != nil {
+				log.Warn().
+					Err(err).
+					Str("library", libraryName).
+					Msg("Failed to trigger library refresh, content may not appear immediately")
+			}
 		}
 	}
 
@@ -603,8 +635,8 @@ func (m *SymlinkLibraryManager) createSymlinks(symlinkDir string, items []models
 	return currentSymlinks, nil
 }
 
-// cleanupSymlinks removes symlinks that are no longer needed
-func (m *SymlinkLibraryManager) cleanupSymlinks(ctx context.Context, symlinkDir string, currentSymlinks map[string]bool, dryRun bool) error {
+// cleanupSymlinks removes symlinks that are no longer needed and returns the count of removed symlinks
+func (m *SymlinkLibraryManager) cleanupSymlinks(ctx context.Context, symlinkDir string, currentSymlinks map[string]bool, dryRun bool) (int, error) {
 	// List existing symlinks via plugin API
 	listResp, err := m.jellyfinClient.ListSymlinks(ctx, symlinkDir)
 	if err != nil {
@@ -613,7 +645,7 @@ func (m *SymlinkLibraryManager) cleanupSymlinks(ctx context.Context, symlinkDir 
 			Err(err).
 			Str("path", symlinkDir).
 			Msg("Cannot list symlinks (directory may not exist)")
-		return nil
+		return 0, nil
 	}
 
 	// Find symlinks not in current set
@@ -638,7 +670,7 @@ func (m *SymlinkLibraryManager) cleanupSymlinks(ctx context.Context, symlinkDir 
 
 		removeResp, err := m.jellyfinClient.RemoveSymlinks(ctx, staleSymlinks, dryRun)
 		if err != nil {
-			return fmt.Errorf("failed to remove stale symlinks via plugin: %w", err)
+			return 0, fmt.Errorf("failed to remove stale symlinks via plugin: %w", err)
 		}
 
 		removed := len(removeResp.RemovedSymlinks)
@@ -657,9 +689,11 @@ func (m *SymlinkLibraryManager) cleanupSymlinks(ctx context.Context, symlinkDir 
 					Msg("Symlink removal issue")
 			}
 		}
+
+		return removed, nil
 	}
 
-	return nil
+	return 0, nil
 }
 
 // generateSymlinkName creates a safe filename for the symlink
@@ -693,4 +727,27 @@ func (m *SymlinkLibraryManager) generateSymlinkName(media models.Media) string {
 	name = strings.ReplaceAll(name, "|", "-")
 
 	return name
+}
+
+// getLibraryID fetches the library ID for a given library name
+func (m *SymlinkLibraryManager) getLibraryID(ctx context.Context, libraryName string) (string, error) {
+	folders, err := m.jellyfinClient.GetVirtualFolders(ctx)
+	if err != nil {
+		return "", fmt.Errorf("failed to get virtual folders: %w", err)
+	}
+
+	for _, folder := range folders {
+		if folder.Name == libraryName {
+			if folder.ItemId != "" {
+				log.Debug().
+					Str("library", libraryName).
+					Str("library_id", folder.ItemId).
+					Msg("Found library ID")
+				return folder.ItemId, nil
+			}
+			return "", fmt.Errorf("library '%s' exists but has no ItemId", libraryName)
+		}
+	}
+
+	return "", fmt.Errorf("library '%s' not found", libraryName)
 }

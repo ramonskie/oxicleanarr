@@ -696,10 +696,17 @@ func GetMoviesLibraryName(t *testing.T, configPath string) string {
 		}
 
 		if inSymlinkSection && strings.HasPrefix(trimmed, "movies_library_name:") {
-			// Extract value between quotes
-			parts := strings.Split(trimmed, "\"")
-			if len(parts) >= 2 {
-				return parts[1]
+			// Extract value (handles both quoted and unquoted)
+			value := strings.TrimPrefix(trimmed, "movies_library_name:")
+			value = strings.TrimSpace(value)
+
+			// Remove quotes if present
+			if strings.HasPrefix(value, "\"") && strings.HasSuffix(value, "\"") {
+				value = strings.Trim(value, "\"")
+			}
+
+			if value != "" {
+				return value
 			}
 		}
 
@@ -850,38 +857,55 @@ func GetJellyfinLibraryID(t *testing.T, jellyfinURL, apiKey, libraryName string)
 	t.Helper()
 
 	client := &http.Client{Timeout: 10 * time.Second}
-	req, err := http.NewRequest(http.MethodGet, jellyfinURL+"/Library/VirtualFolders", nil)
-	if err != nil {
-		return "", err
-	}
 
-	req.Header.Set("X-MediaBrowser-Token", apiKey)
+	// Retry up to 10 times with 1 second delay (Jellyfin may take a moment to populate ItemId after library creation)
+	maxRetries := 10
+	for attempt := 0; attempt < maxRetries; attempt++ {
+		if attempt > 0 {
+			time.Sleep(1 * time.Second)
+			t.Logf("Retrying GetJellyfinLibraryID (attempt %d/%d)...", attempt+1, maxRetries)
+		}
 
-	resp, err := client.Do(req)
-	if err != nil {
-		return "", fmt.Errorf("failed to query virtual folders: %w", err)
-	}
-	defer resp.Body.Close()
+		req, err := http.NewRequest(http.MethodGet, jellyfinURL+"/Library/VirtualFolders", nil)
+		if err != nil {
+			return "", err
+		}
 
-	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("failed to get virtual folders (HTTP %d)", resp.StatusCode)
-	}
+		req.Header.Set("X-MediaBrowser-Token", apiKey)
 
-	var folders []struct {
-		Name   string `json:"Name"`
-		ItemId string `json:"ItemId"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&folders); err != nil {
-		return "", fmt.Errorf("failed to decode virtual folders: %w", err)
-	}
+		resp, err := client.Do(req)
+		if err != nil {
+			return "", fmt.Errorf("failed to query virtual folders: %w", err)
+		}
 
-	for _, folder := range folders {
-		if folder.Name == libraryName {
-			return folder.ItemId, nil
+		if resp.StatusCode != http.StatusOK {
+			resp.Body.Close()
+			return "", fmt.Errorf("failed to get virtual folders (HTTP %d)", resp.StatusCode)
+		}
+
+		var folders []struct {
+			Name   string `json:"Name"`
+			ItemId string `json:"ItemId"`
+		}
+		if err := json.NewDecoder(resp.Body).Decode(&folders); err != nil {
+			resp.Body.Close()
+			return "", fmt.Errorf("failed to decode virtual folders: %w", err)
+		}
+		resp.Body.Close()
+
+		for _, folder := range folders {
+			if folder.Name == libraryName {
+				if folder.ItemId != "" {
+					return folder.ItemId, nil
+				}
+				// Library found but ItemId not populated yet, retry
+				t.Logf("Library '%s' found but ItemId not populated yet", libraryName)
+				break
+			}
 		}
 	}
 
-	return "", fmt.Errorf("library '%s' not found", libraryName)
+	return "", fmt.Errorf("library '%s' not found or ItemId not populated after %d attempts", libraryName, maxRetries)
 }
 
 // WaitForJellyfinMovies waits until Jellyfin has matched the expected number of movies

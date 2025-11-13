@@ -375,6 +375,44 @@ func (c *JellyfinClient) RefreshLibrary(ctx context.Context, dryRun bool) error 
 	return nil
 }
 
+// RefreshLibraryByID triggers a library scan for a specific library in Jellyfin
+// This is more efficient than a full library refresh when updating a single library
+func (c *JellyfinClient) RefreshLibraryByID(ctx context.Context, libraryID string, dryRun bool) error {
+	if dryRun {
+		log.Info().
+			Str("library_id", libraryID).
+			Msg("[DRY-RUN] Would trigger library-specific refresh in Jellyfin")
+		return nil
+	}
+
+	reqURL := fmt.Sprintf("%s/Items/%s/Refresh?Recursive=true&api_key=%s", c.baseURL, libraryID, c.apiKey)
+
+	req, err := http.NewRequestWithContext(ctx, "POST", reqURL, nil)
+	if err != nil {
+		return fmt.Errorf("creating request: %w", err)
+	}
+
+	log.Info().
+		Str("library_id", libraryID).
+		Msg("Triggering library-specific refresh in Jellyfin")
+
+	resp, err := c.client.Do(req)
+	if err != nil {
+		return fmt.Errorf("making request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusNoContent {
+		return fmt.Errorf("unexpected status code: %d", resp.StatusCode)
+	}
+
+	log.Info().
+		Str("library_id", libraryID).
+		Msg("Library-specific refresh triggered successfully in Jellyfin")
+
+	return nil
+}
+
 // OxiCleanarr Bridge Plugin Methods
 // These methods communicate with the Jellyfin OxiCleanarr Bridge Plugin
 // for managing symlinks without direct filesystem access

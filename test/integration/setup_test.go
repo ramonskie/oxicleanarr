@@ -251,27 +251,8 @@ func testInfrastructureSetup(t *testing.T) {
 	}
 	t.Log("✅ OxiCleanarr ready after restart")
 
-	// Step 16: Create OxiCleanarr test client and authenticate
-	t.Log("Step 16: Authenticating with OxiCleanarr...")
-	client := NewTestClient(t, oxicleanURL)
-	client.Authenticate(AdminUsername, AdminPassword)
-	t.Log("✅ Authenticated with OxiCleanarr")
-
-	// Step 17: Trigger OxiCleanarr full sync
-	t.Log("Step 17: Triggering OxiCleanarr full sync...")
-	client.TriggerSync()
-	t.Log("✅ Full sync triggered")
-
-	// Step 18: Verify OxiCleanarr synced movies from Radarr
-	t.Log("Step 18: Verifying OxiCleanarr synced movies...")
-	syncedMovieCount := client.GetMovieCount()
-	if syncedMovieCount != movieCount {
-		t.Fatalf("OxiCleanarr movie count mismatch: expected %d, got %d", movieCount, syncedMovieCount)
-	}
-	t.Logf("✅ OxiCleanarr synced %d movies from Radarr", syncedMovieCount)
-
-	// Step 19: Validate data consistency across all services
-	t.Log("Step 19: Validating data consistency across services...")
+	// Step 16: Validate data consistency BEFORE OxiCleanarr sync (which will create symlink libraries)
+	t.Log("Step 16: Validating data consistency across services (before sync)...")
 	radarrCount, err := GetRadarrMovieCount(t, radarrURL, radarrAPIKey)
 	if err != nil {
 		t.Fatalf("Failed to get Radarr movie count: %v", err)
@@ -281,8 +262,7 @@ func testInfrastructureSetup(t *testing.T) {
 		t.Fatalf("Failed to get Jellyfin movie count: %v", err)
 	}
 
-	t.Logf("Data consistency check: Radarr=%d, Jellyfin=%d, OxiCleanarr=%d",
-		radarrCount, jellyfinCount, syncedMovieCount)
+	t.Logf("Data consistency check (pre-sync): Radarr=%d, Jellyfin=%d", radarrCount, jellyfinCount)
 
 	if radarrCount != movieCount {
 		t.Fatalf("Radarr count mismatch: expected %d, got %d", movieCount, radarrCount)
@@ -290,10 +270,27 @@ func testInfrastructureSetup(t *testing.T) {
 	if jellyfinCount != movieCount {
 		t.Fatalf("Jellyfin count mismatch: expected %d, got %d", movieCount, jellyfinCount)
 	}
+	t.Log("✅ Data consistency validated: Radarr and Jellyfin both report 7 movies")
+
+	// Step 17: Create OxiCleanarr test client and authenticate
+	t.Log("Step 17: Authenticating with OxiCleanarr...")
+	client := NewTestClient(t, oxicleanURL)
+	client.Authenticate(AdminUsername, AdminPassword)
+	t.Log("✅ Authenticated with OxiCleanarr")
+
+	// Step 18: Trigger OxiCleanarr full sync (this will create "Leaving Soon" libraries)
+	t.Log("Step 18: Triggering OxiCleanarr full sync...")
+	client.TriggerSync()
+	t.Log("✅ Full sync triggered")
+
+	// Step 19: Verify OxiCleanarr synced movies from Radarr
+	syncedMovieCount := client.GetMovieCount()
+	t.Logf("✅ OxiCleanarr synced %d movies from Radarr", syncedMovieCount)
+
 	if syncedMovieCount != movieCount {
 		t.Fatalf("OxiCleanarr count mismatch: expected %d, got %d", movieCount, syncedMovieCount)
 	}
-	t.Log("✅ Data consistency validated: All services report 7 movies")
+	t.Log("✅ OxiCleanarr validation complete: 7 movies synced")
 
 	// Infrastructure Setup Complete
 	t.Log("\n========================================")

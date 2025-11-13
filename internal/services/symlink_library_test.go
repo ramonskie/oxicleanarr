@@ -75,6 +75,11 @@ func (m *mockJellyfinClientForSymlink) RefreshLibrary(ctx context.Context, dryRu
 	return nil
 }
 
+func (m *mockJellyfinClientForSymlink) RefreshLibraryByID(ctx context.Context, libraryID string, dryRun bool) error {
+	m.refreshCalled++
+	return nil
+}
+
 // Ping is required by JellyfinClient interface but not used in tests
 func (m *mockJellyfinClientForSymlink) Ping(ctx context.Context) error {
 	return nil
@@ -99,73 +104,63 @@ func (m *mockJellyfinClientForSymlink) CheckPluginStatus(ctx context.Context) (*
 func (m *mockJellyfinClientForSymlink) AddSymlinks(ctx context.Context, items []clients.PluginSymlinkItem, dryRun bool) (*clients.PluginAddSymlinksResponse, error) {
 	// Mock simulates plugin behavior by creating real symlinks for testing
 	// In real scenario, the Jellyfin plugin handles directory creation and symlink creation
-	created := 0
-	skipped := 0
+	var createdSymlinks []string
+	var errors []string
 
 	if !dryRun {
 		// Simulate plugin behavior: create actual symlinks
 		for _, item := range items {
-			// Check if target directory exists
-			if _, err := os.Stat(item.TargetDirectory); os.IsNotExist(err) {
-				// Plugin would skip items with missing source directories
-				skipped++
+			// Check if source file exists
+			if _, err := os.Stat(item.SourcePath); os.IsNotExist(err) {
+				errors = append(errors, fmt.Sprintf("source file not found: %s", item.SourcePath))
 				continue
 			}
-
-			// Find media files in the target directory (like real plugin would)
-			pattern := filepath.Join(item.TargetDirectory, "*")
-			mediaFiles, err := filepath.Glob(pattern)
-			if err != nil || len(mediaFiles) == 0 {
-				skipped++
-				continue
-			}
-
-			// Create symlink to first media file found (simplified for testing)
-			targetFile := mediaFiles[0]
 
 			// Ensure symlink directory exists
-			symlinkDir := filepath.Dir(item.Path)
-			if err := os.MkdirAll(symlinkDir, 0755); err != nil {
-				skipped++
+			if err := os.MkdirAll(item.TargetDirectory, 0755); err != nil {
+				errors = append(errors, fmt.Sprintf("failed to create directory: %s", err))
 				continue
 			}
 
+			// Generate symlink path
+			symlinkPath := filepath.Join(item.TargetDirectory, filepath.Base(item.SourcePath))
+
 			// Create the symlink
-			if err := os.Symlink(targetFile, item.Path); err != nil {
-				skipped++
+			if err := os.Symlink(item.SourcePath, symlinkPath); err != nil {
+				errors = append(errors, fmt.Sprintf("failed to create symlink: %s", err))
 				continue
 			}
 
 			// Track in memory map
-			created++
-			m.symlinks[item.Path] = clients.PluginSymlinkInfo{
-				Name:   filepath.Base(item.Path),
-				Path:   item.Path,
-				Target: targetFile,
+			createdSymlinks = append(createdSymlinks, symlinkPath)
+			m.symlinks[symlinkPath] = clients.PluginSymlinkInfo{
+				Name:   filepath.Base(symlinkPath),
+				Path:   symlinkPath,
+				Target: item.SourcePath,
 			}
 		}
 	} else {
 		// Dry-run: just count what would be created
 		for _, item := range items {
-			if _, err := os.Stat(item.TargetDirectory); os.IsNotExist(err) {
-				skipped++
+			symlinkPath := filepath.Join(item.TargetDirectory, filepath.Base(item.SourcePath))
+			if _, err := os.Stat(item.SourcePath); os.IsNotExist(err) {
+				errors = append(errors, fmt.Sprintf("source file not found: %s", item.SourcePath))
 			} else {
-				created++
+				createdSymlinks = append(createdSymlinks, symlinkPath)
 			}
 		}
 	}
 
 	return &clients.PluginAddSymlinksResponse{
-		Success: true,
-		Created: created,
-		Skipped: skipped,
-		Failed:  0,
+		Success:         len(errors) == 0,
+		CreatedSymlinks: createdSymlinks,
+		Errors:          errors,
 	}, nil
 }
 
 func (m *mockJellyfinClientForSymlink) RemoveSymlinks(ctx context.Context, paths []string, dryRun bool) (*clients.PluginRemoveSymlinksResponse, error) {
-	removed := 0
-	failed := 0
+	var removedSymlinks []string
+	var errors []string
 
 	if !dryRun {
 		// Remove actual symlinks from filesystem in non-dry-run mode
@@ -173,15 +168,13 @@ func (m *mockJellyfinClientForSymlink) RemoveSymlinks(ctx context.Context, paths
 			// Try to remove the symlink from filesystem
 			if err := os.Remove(path); err != nil {
 				if os.IsNotExist(err) {
-					// Symlink doesn't exist - still count as failure
-					failed++
+					errors = append(errors, fmt.Sprintf("symlink not found: %s", path))
 				} else {
-					// Other error occurred
-					failed++
+					errors = append(errors, fmt.Sprintf("failed to remove: %s", err))
 				}
 			} else {
 				// Successfully removed symlink
-				removed++
+				removedSymlinks = append(removedSymlinks, path)
 				// Also remove from in-memory tracking
 				delete(m.symlinks, path)
 			}
@@ -190,17 +183,17 @@ func (m *mockJellyfinClientForSymlink) RemoveSymlinks(ctx context.Context, paths
 		// Dry-run: just count what would be removed
 		for _, path := range paths {
 			if _, exists := m.symlinks[path]; exists {
-				removed++
+				removedSymlinks = append(removedSymlinks, path)
 			} else {
-				failed++
+				errors = append(errors, fmt.Sprintf("symlink not found: %s", path))
 			}
 		}
 	}
 
 	return &clients.PluginRemoveSymlinksResponse{
-		Success: true,
-		Removed: removed,
-		Failed:  failed,
+		Success:         len(errors) == 0,
+		RemovedSymlinks: removedSymlinks,
+		Errors:          errors,
 	}, nil
 }
 
@@ -617,8 +610,9 @@ func TestCleanupSymlinks(t *testing.T) {
 			"Keep This (2023).mkv": true,
 		}
 
-		err := manager.cleanupSymlinks(ctx, symlinkDir, expectedSymlinks, false)
+		removed, err := manager.cleanupSymlinks(ctx, symlinkDir, expectedSymlinks, false)
 		require.NoError(t, err)
+		assert.Equal(t, 1, removed, "should have removed 1 stale symlink")
 
 		// symlink1 should still exist
 		_, err = os.Lstat(symlink1)
@@ -633,8 +627,9 @@ func TestCleanupSymlinks(t *testing.T) {
 		// Recreate symlink2 for this test
 		require.NoError(t, os.Symlink(targetFile, symlink2))
 
-		err := manager.cleanupSymlinks(ctx, symlinkDir, map[string]bool{}, true)
+		removed, err := manager.cleanupSymlinks(ctx, symlinkDir, map[string]bool{}, true)
 		require.NoError(t, err)
+		assert.Equal(t, 0, removed, "dry-run should not remove symlinks")
 
 		// Both symlinks should still exist in dry-run
 		_, err = os.Lstat(symlink1)
