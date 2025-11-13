@@ -6,7 +6,7 @@ admin:
   password: adminpassword
 
 app:
-  dry_run: false  # Integration tests need real operations
+  dry_run: false
   enable_deletion: false  # Safety: manual deletion only
   leaving_soon_days: 14
 
@@ -16,7 +16,7 @@ sync:
   auto_start: false  # Manual sync control in tests
 
 rules:
-  movie_retention: 90d
+  movie_retention: 7d
   tv_retention: 120d
 
 server:
@@ -27,7 +27,7 @@ integrations:
   jellyfin:
     enabled: true
     url: http://oxicleanarr-test-jellyfin:8096  # Docker container name for inter-container communication
-    api_key: ""  # Set dynamically by integration tests
+    api_key: "59888a1a7ae544aaac55e7b982b8052f"
     symlink_library:
       enabled: true
       base_path: /data/media/leaving-soon
@@ -38,7 +38,7 @@ integrations:
   radarr:
     enabled: true
     url: http://oxicleanarr-test-radarr:7878  # Docker container name for inter-container communication
-    api_key: ""  # Set dynamically by integration tests
+    api_key: 107b8dc4d9e0493c8f7d54bd62642037
   
   sonarr:
     enabled: false  # Not used in current integration tests

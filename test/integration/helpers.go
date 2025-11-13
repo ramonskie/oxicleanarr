@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -496,41 +497,47 @@ func getNestedValue(data map[string]interface{}, path string) string {
 	return ""
 }
 
-// CheckSymlinks verifies the symlink directory state
-func CheckSymlinks(t *testing.T, symlinkDir string, expectedCount int) {
+// CheckSymlinks verifies the symlink directory state via Jellyfin plugin API
+func CheckSymlinks(t *testing.T, jellyfinAPIKey string, symlinkDir string, expectedCount int) {
 	movieDir := filepath.Join(symlinkDir, "movies")
 
-	// Check if directory exists
-	if _, err := os.Stat(movieDir); os.IsNotExist(err) {
-		if expectedCount == 0 {
-			t.Logf("Symlink directory does not exist (expected: 0 symlinks)")
-			return
-		}
-		require.Failf(t, "Symlink directory missing", "Symlink directory does not exist but expected %d symlinks", expectedCount)
+	// Query Jellyfin plugin API to list symlinks
+	reqURL := fmt.Sprintf("%s/api/oxicleanarr/symlinks/list?directory=%s&api_key=%s",
+		JellyfinURL, url.QueryEscape(movieDir), jellyfinAPIKey)
+
+	resp, err := http.Get(reqURL)
+	require.NoError(t, err, "Failed to query Jellyfin plugin API")
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	require.NoError(t, err, "Failed to read plugin response")
+
+	// Response structure based on plugin API spec
+	type SymlinkInfo struct {
+		Path   string `json:"Path"`
+		Target string `json:"Target"`
+		Name   string `json:"Name"`
 	}
 
-	// Count symlinks
-	entries, err := os.ReadDir(movieDir)
-	require.NoError(t, err)
-
-	actualCount := 0
-	symlinks := []string{}
-	for _, entry := range entries {
-		fullPath := filepath.Join(movieDir, entry.Name())
-		info, err := os.Lstat(fullPath)
-		if err == nil && info.Mode()&os.ModeSymlink != 0 {
-			actualCount++
-			// Get symlink target
-			target, _ := os.Readlink(fullPath)
-			symlinks = append(symlinks, fmt.Sprintf("%s -> %s", entry.Name(), target))
-		}
+	var listResp struct {
+		Success      bool          `json:"Success"`
+		Symlinks     []SymlinkInfo `json:"Symlinks"`
+		Count        int           `json:"Count"`
+		SymlinkNames []string      `json:"SymlinkNames"`
+		Message      string        `json:"Message"`
+		ErrorMessage string        `json:"ErrorMessage"`
 	}
+
+	err = json.Unmarshal(body, &listResp)
+	require.NoError(t, err, "Failed to parse plugin response")
+
+	actualCount := listResp.Count
 
 	if actualCount == expectedCount {
 		t.Logf("Symlink count correct: %d (expected: %d)", actualCount, expectedCount)
 		if actualCount > 0 {
 			t.Logf("Symlinks found:")
-			for _, link := range symlinks {
+			for _, link := range listResp.SymlinkNames {
 				t.Logf("  %s", link)
 			}
 		}
@@ -539,7 +546,7 @@ func CheckSymlinks(t *testing.T, symlinkDir string, expectedCount int) {
 
 	if actualCount > 0 {
 		t.Logf("Symlinks found:")
-		for _, link := range symlinks {
+		for _, link := range listResp.SymlinkNames {
 			t.Logf("  %s", link)
 		}
 	}

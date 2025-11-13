@@ -10,7 +10,7 @@ import (
 
 const (
 	ConfigPath     = "../assets/config/config.yaml"
-	SymlinkDir     = "../assets/leaving-soon"
+	SymlinkDir     = "/data/media/leaving-soon" // Container path where symlinks are created
 	ComposeFile    = "../assets/docker-compose.yml"
 	Phase1Expected = 7 // Expected symlinks with 7d retention
 )
@@ -94,9 +94,9 @@ func TestSymlinkLifecycle(t *testing.T) {
 		t.Logf("Waiting 5 seconds for symlink creation...")
 		time.Sleep(5 * time.Second)
 
-		// Step 9: Verify symlinks were created
-		t.Logf("Checking symlinks in: %s", absSymlinkDir)
-		CheckSymlinks(t, absSymlinkDir, Phase1Expected)
+		// Step 9: Verify symlinks were created via Jellyfin plugin API
+		t.Logf("Checking symlinks in: %s", SymlinkDir)
+		CheckSymlinks(t, jellyfinAPIKey, SymlinkDir, Phase1Expected)
 
 		// Step 10: Verify Jellyfin library was created
 		CheckJellyfinLibrary(t, jellyfinAPIKey, true)
@@ -133,9 +133,9 @@ func TestSymlinkLifecycle(t *testing.T) {
 		t.Logf("Waiting 5 seconds for cleanup...")
 		time.Sleep(5 * time.Second)
 
-		// Step 7: Verify symlinks were removed
-		t.Logf("Checking symlinks in: %s", absSymlinkDir)
-		CheckSymlinks(t, absSymlinkDir, 0)
+		// Step 7: Verify symlinks were removed via Jellyfin plugin API
+		t.Logf("Checking symlinks in: %s", SymlinkDir)
+		CheckSymlinks(t, jellyfinAPIKey, SymlinkDir, 0)
 
 		// Step 8: Verify Jellyfin library state based on hide_when_empty
 		if hideWhenEmpty {
