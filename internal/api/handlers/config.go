@@ -60,14 +60,11 @@ type SanitizedBaseIntegrationConfig struct {
 
 // SanitizedJellyfinConfig holds sanitized Jellyfin config
 type SanitizedJellyfinConfig struct {
-	Enabled         bool                        `json:"enabled"`
-	URL             string                      `json:"url"`
-	HasAPIKey       bool                        `json:"has_api_key"`
-	Timeout         string                      `json:"timeout"`
-	Username        string                      `json:"username"`
-	HasPassword     bool                        `json:"has_password"`
-	LeavingSoonType string                      `json:"leaving_soon_type"`
-	SymlinkLibrary  config.SymlinkLibraryConfig `json:"symlink_library"`
+	Enabled        bool                        `json:"enabled"`
+	URL            string                      `json:"url"`
+	HasAPIKey      bool                        `json:"has_api_key"`
+	Timeout        string                      `json:"timeout"`
+	SymlinkLibrary config.SymlinkLibraryConfig `json:"symlink_library"`
 }
 
 // GetConfig handles GET /api/config
@@ -94,14 +91,11 @@ func (h *ConfigHandler) GetConfig(w http.ResponseWriter, r *http.Request) {
 		AdvancedRules: cfg.AdvancedRules,
 		Integrations: SanitizedIntegrationsConfig{
 			Jellyfin: SanitizedJellyfinConfig{
-				Enabled:         cfg.Integrations.Jellyfin.Enabled,
-				URL:             cfg.Integrations.Jellyfin.URL,
-				HasAPIKey:       cfg.Integrations.Jellyfin.APIKey != "",
-				Timeout:         cfg.Integrations.Jellyfin.Timeout,
-				Username:        cfg.Integrations.Jellyfin.Username,
-				HasPassword:     cfg.Integrations.Jellyfin.Password != "",
-				LeavingSoonType: cfg.Integrations.Jellyfin.LeavingSoonType,
-				SymlinkLibrary:  cfg.Integrations.Jellyfin.SymlinkLibrary,
+				Enabled:        cfg.Integrations.Jellyfin.Enabled,
+				URL:            cfg.Integrations.Jellyfin.URL,
+				HasAPIKey:      cfg.Integrations.Jellyfin.APIKey != "",
+				Timeout:        cfg.Integrations.Jellyfin.Timeout,
+				SymlinkLibrary: cfg.Integrations.Jellyfin.SymlinkLibrary,
 			},
 			Radarr: SanitizedBaseIntegrationConfig{
 				Enabled:   cfg.Integrations.Radarr.Enabled,
@@ -256,15 +250,6 @@ func (h *ConfigHandler) UpdateConfig(w http.ResponseWriter, r *http.Request) {
 			}
 			if req.Integrations.Jellyfin.Timeout != nil {
 				newCfg.Integrations.Jellyfin.Timeout = *req.Integrations.Jellyfin.Timeout
-			}
-			if req.Integrations.Jellyfin.Username != nil {
-				newCfg.Integrations.Jellyfin.Username = *req.Integrations.Jellyfin.Username
-			}
-			if req.Integrations.Jellyfin.Password != nil {
-				newCfg.Integrations.Jellyfin.Password = *req.Integrations.Jellyfin.Password
-			}
-			if req.Integrations.Jellyfin.LeavingSoonType != nil {
-				newCfg.Integrations.Jellyfin.LeavingSoonType = *req.Integrations.Jellyfin.LeavingSoonType
 			}
 			if req.Integrations.Jellyfin.SymlinkLibrary != nil {
 				newCfg.Integrations.Jellyfin.SymlinkLibrary = *req.Integrations.Jellyfin.SymlinkLibrary

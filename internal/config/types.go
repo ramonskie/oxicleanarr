@@ -64,9 +64,6 @@ type BaseIntegrationConfig struct {
 // JellyfinConfig holds Jellyfin integration settings
 type JellyfinConfig struct {
 	BaseIntegrationConfig `mapstructure:",squash" yaml:",inline" json:",inline"`
-	Username              string               `mapstructure:"username" yaml:"username" json:"username"`
-	Password              string               `mapstructure:"password" yaml:"password" json:"password"`
-	LeavingSoonType       string               `mapstructure:"leaving_soon_type" yaml:"leaving_soon_type" json:"leaving_soon_type"`
 	SymlinkLibrary        SymlinkLibraryConfig `mapstructure:"symlink_library" yaml:"symlink_library" json:"symlink_library"`
 }
 

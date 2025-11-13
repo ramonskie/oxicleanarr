@@ -21,11 +21,6 @@ func DefaultConfig() *Config {
 			Host: "0.0.0.0",
 			Port: 8080,
 		},
-		Integrations: IntegrationsConfig{
-			Jellyfin: JellyfinConfig{
-				LeavingSoonType: "MOVIES_AND_TV",
-			},
-		},
 	}
 }
 
@@ -60,11 +55,6 @@ func SetDefaults(cfg *Config) {
 	}
 	if cfg.Server.Port == 0 {
 		cfg.Server.Port = defaults.Server.Port
-	}
-
-	// Jellyfin defaults
-	if cfg.Integrations.Jellyfin.LeavingSoonType == "" {
-		cfg.Integrations.Jellyfin.LeavingSoonType = defaults.Integrations.Jellyfin.LeavingSoonType
 	}
 
 	// Symlink Library defaults (only applied when enabled)

@@ -27,7 +27,7 @@ integrations:
   jellyfin:
     enabled: true
     url: http://oxicleanarr-test-jellyfin:8096  # Docker container name for inter-container communication
-    api_key: "59888a1a7ae544aaac55e7b982b8052f"
+    api_key: "3d91f58a9b2041778c7488fb0b6c6976"
     symlink_library:
       enabled: true
       base_path: /data/media/leaving-soon
@@ -38,7 +38,7 @@ integrations:
   radarr:
     enabled: true
     url: http://oxicleanarr-test-radarr:7878  # Docker container name for inter-container communication
-    api_key: 107b8dc4d9e0493c8f7d54bd62642037
+    api_key: aa1790cb3bb344b0abec47499eff0558
   
   sonarr:
     enabled: false  # Not used in current integration tests
