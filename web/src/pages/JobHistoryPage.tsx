@@ -439,6 +439,79 @@ export default function JobHistoryPage() {
                       </Card>
                     )}
 
+                  {/* Actual Deletions */}
+                  {selectedJob.summary?.deleted_count && 
+                   selectedJob.summary.deleted_count > 0 &&
+                   selectedJob.summary?.deleted_items &&
+                   selectedJob.summary.deleted_items.length > 0 && (
+                      <Card className="border-red-500/50 bg-red-500/5">
+                        <CardHeader>
+                          <CardTitle className="text-base flex items-center gap-2">
+                            <XCircle className="h-5 w-5 text-red-600" />
+                            Deleted {selectedJob.summary.deleted_count} Items
+                          </CardTitle>
+                        </CardHeader>
+                        <CardContent>
+                          <p className="text-sm text-muted-foreground mb-4">
+                            The following items were permanently deleted:
+                          </p>
+                          <div className="space-y-2 max-h-96 overflow-y-auto">
+                            {selectedJob.summary.deleted_items.map(
+                              (item: DeletionCandidate) => (
+                                <div
+                                  key={item.id}
+                                  className="border rounded-lg p-3 bg-background space-y-2"
+                                >
+                                  <div className="flex items-start justify-between">
+                                    <div className="space-y-1">
+                                      <div className="flex items-center gap-2">
+                                        <Badge
+                                          variant={
+                                            item.type === 'movie' ? 'default' : 'secondary'
+                                          }
+                                        >
+                                          {item.type === 'movie' ? (
+                                            <Film className="h-3 w-3 mr-1" />
+                                          ) : (
+                                            <Tv className="h-3 w-3 mr-1" />
+                                          )}
+                                          {item.type}
+                                        </Badge>
+                                        <span className="font-medium">
+                                          {item.title}
+                                          {item.year && (
+                                            <span className="text-muted-foreground ml-1">
+                                              ({item.year})
+                                            </span>
+                                          )}
+                                        </span>
+                                      </div>
+                                      {item.reason && (
+                                        <p className="text-sm text-muted-foreground">
+                                          {item.reason}
+                                        </p>
+                                      )}
+                                    </div>
+                                    <div className="text-right text-sm space-y-1">
+                                      {item.file_size && (
+                                        <div className="flex items-center gap-1 text-muted-foreground">
+                                          <HardDrive className="h-3 w-3" />
+                                          {formatFileSize(item.file_size)}
+                                        </div>
+                                      )}
+                                      <div className="text-red-600 font-medium">
+                                        {item.days_overdue} days overdue
+                                      </div>
+                                    </div>
+                                  </div>
+                                </div>
+                              )
+                            )}
+                          </div>
+                        </CardContent>
+                      </Card>
+                    )}
+
                   {/* Error */}
                   {selectedJob.error && (
                     <Card className="border-red-500/50 bg-red-500/5">
