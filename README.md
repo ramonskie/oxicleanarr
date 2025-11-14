@@ -17,6 +17,37 @@
 - **RESTful API**: Complete HTTP API with JWT authentication
 - **Structured Logging**: JSON-formatted logs for easy parsing and monitoring
 
+## Screenshots
+
+<details>
+<summary>Click to view screenshots</summary>
+
+### Dashboard
+![Dashboard](docs/screenshots/dashboard.png)
+*Overview of your media cleanup status with key metrics and recent activity*
+
+### Timeline View
+![Timeline](docs/screenshots/timeline.png)
+*Visual timeline showing when media items are scheduled for deletion*
+
+### Library Management
+![Library](docs/screenshots/library.png)
+*Browse and manage your entire media library with filtering and sorting*
+
+### Scheduled Deletions
+![Scheduled Deletions](docs/screenshots/scheduled-deletions.png)
+*Review items scheduled for deletion and manage exclusions*
+
+### Job History
+![Job History](docs/screenshots/job-history.png)
+*Track all sync operations and cleanup jobs with detailed history*
+
+### Job Details
+![Job Details](docs/screenshots/job-details.png)
+*Detailed view of job execution with statistics and timing information*
+
+</details>
+
 ## Quick Start
 
 ### Prerequisites
