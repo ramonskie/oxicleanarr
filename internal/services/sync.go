@@ -1015,26 +1015,53 @@ func (e *SyncEngine) DeleteMedia(ctx context.Context, mediaID string, dryRun boo
 		return nil
 	}
 
-	// Delete from appropriate service
+	// Step 1: Delete from Radarr/Sonarr (which also deletes the actual files)
+	deletedFromService := false
 	if media.RadarrID > 0 && e.radarrClient != nil {
 		if err := e.radarrClient.DeleteMovie(ctx, media.RadarrID, true); err != nil {
 			return fmt.Errorf("deleting from Radarr: %w", err)
 		}
+		deletedFromService = true
+		log.Info().
+			Str("media_id", mediaID).
+			Str("title", media.Title).
+			Int("radarr_id", media.RadarrID).
+			Msg("Deleted movie from Radarr")
 	}
 
 	if media.SonarrID > 0 && e.sonarrClient != nil {
 		if err := e.sonarrClient.DeleteSeries(ctx, media.SonarrID, true); err != nil {
 			return fmt.Errorf("deleting from Sonarr: %w", err)
 		}
+		deletedFromService = true
+		log.Info().
+			Str("media_id", mediaID).
+			Str("title", media.Title).
+			Int("sonarr_id", media.SonarrID).
+			Msg("Deleted series from Sonarr")
 	}
 
-	if media.JellyfinID != "" && e.jellyfinClient != nil {
-		if err := e.jellyfinClient.DeleteItem(ctx, media.JellyfinID); err != nil {
-			return fmt.Errorf("deleting from Jellyfin: %w", err)
+	// Step 2: Trigger Jellyfin library refresh to detect file removal
+	// NOTE: We do NOT call jellyfinClient.DeleteItem() because Jellyfin should
+	// automatically detect the file is gone when we scan the library.
+	// Radarr/Sonarr are responsible for file deletion.
+	if deletedFromService && e.jellyfinClient != nil {
+		if err := e.jellyfinClient.RefreshLibrary(ctx, false); err != nil {
+			log.Warn().
+				Err(err).
+				Str("media_id", mediaID).
+				Str("title", media.Title).
+				Msg("Failed to trigger Jellyfin library refresh after deletion (non-fatal)")
+			// Don't return error - the files are deleted, Jellyfin will catch up eventually
+		} else {
+			log.Info().
+				Str("media_id", mediaID).
+				Str("title", media.Title).
+				Msg("Triggered Jellyfin library refresh after deletion")
 		}
 	}
 
-	// Remove from library
+	// Step 3: Remove from internal media library
 	e.mediaLibraryLock.Lock()
 	delete(e.mediaLibrary, mediaID)
 	e.mediaLibraryLock.Unlock()
