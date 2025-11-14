@@ -7,7 +7,7 @@ app:
     leaving_soon_days: 14
 integrations:
     jellyfin:
-        api_key: bb1088c0775c4fd68d33e91c49754c0e
+        api_key: placeholder-will-be-set-by-test
         enabled: true
         symlink_library:
             base_path: /data/media/leaving-soon
@@ -17,15 +17,15 @@ integrations:
             tv_library_name: Test - Leaving Soon TV
         url: http://oxicleanarr-test-jellyfin:8096
     jellyseerr:
-        api_key: ""
+        api_key: mock-api-key
         enabled: false
-        url: http://oxicleanarr-test-jellyseerr:5055
+        url: http://mock-server-url-set-at-runtime
     jellystat:
-        api_key: ""
+        api_key: mock-api-key
         enabled: false
-        url: http://oxicleanarr-test-jellystat:3000
+        url: http://mock-server-url-set-at-runtime
     radarr:
-        api_key: 0b1e31a0186349168b227f2ccb3f2fca
+        api_key: placeholder-will-be-set-by-test
         enabled: true
         url: http://oxicleanarr-test-radarr:7878
     sonarr:
