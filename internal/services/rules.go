@@ -67,6 +67,14 @@ func (e *RulesEngine) EvaluateMedia(media *models.Media) (shouldDelete bool, del
 		// If no user rule matched, fall through to standard retention rules
 	}
 
+	// Check watched-based rules (higher priority than standard rules)
+	{
+		matched, shouldDel, delAfter, watchedReason := e.evaluateWatchedRules(media)
+		if matched {
+			return shouldDel, delAfter, watchedReason
+		}
+	}
+
 	// Get latest config for hot-reload support
 	cfg := e.getConfig()
 
@@ -322,6 +330,87 @@ func (e *RulesEngine) evaluateTagBasedRules(media *models.Media) (matched bool, 
 	return false, false, time.Time{}, ""
 }
 
+// evaluateWatchedRules checks if media matches watched-based advanced rules
+func (e *RulesEngine) evaluateWatchedRules(media *models.Media) (matched bool, shouldDelete bool, deleteAfter time.Time, reason string) {
+	// Get latest config for hot-reload support
+	cfg := e.getConfig()
+
+	// No advanced rules configured
+	if len(cfg.AdvancedRules) == 0 {
+		return false, false, time.Time{}, ""
+	}
+
+	// Find watched-based rules
+	for _, rule := range cfg.AdvancedRules {
+		if !rule.Enabled || rule.Type != "watched" {
+			continue
+		}
+
+		// Media matches this watched rule
+		log.Debug().
+			Str("media_id", media.ID).
+			Str("title", media.Title).
+			Str("rule_name", rule.Name).
+			Msg("Media matched watched-based rule")
+
+		// Parse retention period for this rule
+		retentionDuration, err := parseDuration(rule.Retention)
+		if err != nil {
+			log.Warn().
+				Err(err).
+				Str("media_id", media.ID).
+				Str("rule_name", rule.Name).
+				Str("retention", rule.Retention).
+				Msg("Failed to parse watched rule retention duration")
+			return true, false, time.Time{}, "invalid watched rule retention"
+		}
+
+		// Check require_watched flag (at rule level)
+		if rule.RequireWatched && media.WatchCount == 0 {
+			log.Debug().
+				Str("media_id", media.ID).
+				Str("rule_name", rule.Name).
+				Int("watch_count", media.WatchCount).
+				Msg("Watched rule requires watched, but media not watched - skipping deletion")
+			return true, false, time.Time{}, "watched rule: not watched yet"
+		}
+
+		// Calculate deletion time based on last watched or added date
+		var baseTime time.Time
+		if !media.LastWatched.IsZero() {
+			baseTime = media.LastWatched
+		} else {
+			baseTime = media.AddedAt
+		}
+
+		deleteAfter = baseTime.Add(retentionDuration)
+
+		// Check if due for deletion
+		if time.Now().After(deleteAfter) {
+			reason = fmt.Sprintf("watched rule '%s' retention expired (%s)", rule.Name, rule.Retention)
+			log.Info().
+				Str("media_id", media.ID).
+				Str("title", media.Title).
+				Str("rule_name", rule.Name).
+				Str("retention", rule.Retention).
+				Time("delete_after", deleteAfter).
+				Msg("Media matched watched-based rule for deletion")
+			return true, true, deleteAfter, reason
+		}
+
+		// Within retention period
+		reason = fmt.Sprintf("watched rule '%s' within retention (%s)", rule.Name, rule.Retention)
+		log.Debug().
+			Str("media_id", media.ID).
+			Str("rule_name", rule.Name).
+			Time("delete_after", deleteAfter).
+			Msg("Media matched watched rule but within retention period")
+		return true, false, deleteAfter, reason
+	}
+
+	return false, false, time.Time{}, ""
+}
+
 // equalsCaseInsensitive compares two strings case-insensitively
 func equalsCaseInsensitive(a, b string) bool {
 	if len(a) != len(b) {
@@ -538,6 +627,61 @@ func (e *RulesEngine) GenerateDeletionReason(media *models.Media, deleteAfter ti
 			} else {
 				// Item is leaving soon (within retention but will be deleted)
 				return fmt.Sprintf("This %s was %s %d days ago. It matches the '%s' user rule with %s retention, meaning it will be deleted after that period of inactivity.",
+					mediaType, baseEvent, daysSinceBase, ruleName, retention)
+			}
+		}
+
+		// Fallback if parsing fails
+		return fmt.Sprintf("This %s was %s %d days ago. %s.",
+			mediaType, baseEvent, daysSinceBase, reason)
+	}
+
+	// Check if this is a watched-based rule (reason contains "watched rule")
+	if len(reason) > 13 && reason[:12] == "watched rule" {
+		// Extract rule name and retention from reason like:
+		// - "watched rule 'Auto Clean' retention expired (30d)" -> overdue
+		// - "watched rule 'Auto Clean' within retention (30d)" -> leaving soon
+
+		// Find the rule name between single quotes
+		start := -1
+		end := -1
+		for i := 13; i < len(reason); i++ {
+			if reason[i] == '\'' {
+				if start == -1 {
+					start = i + 1
+				} else {
+					end = i
+					break
+				}
+			}
+		}
+
+		// Find retention period in parentheses
+		retentionStart := -1
+		retentionEnd := -1
+		for i := 0; i < len(reason); i++ {
+			if reason[i] == '(' {
+				retentionStart = i + 1
+			} else if reason[i] == ')' {
+				retentionEnd = i
+				break
+			}
+		}
+
+		if start != -1 && end != -1 && retentionStart != -1 && retentionEnd != -1 {
+			ruleName := reason[start:end]
+			retention := reason[retentionStart:retentionEnd]
+
+			// Check if this is an expired rule or within retention
+			isExpired := strings.Contains(reason, "retention expired")
+
+			if isExpired {
+				// Item is overdue for deletion
+				return fmt.Sprintf("This %s was %s %d days ago. It matched the '%s' watched rule with %s retention and is now scheduled for deletion.",
+					mediaType, baseEvent, daysSinceBase, ruleName, retention)
+			} else {
+				// Item is leaving soon (within retention but will be deleted)
+				return fmt.Sprintf("This %s was %s %d days ago. It matches the '%s' watched rule with %s retention, meaning it will be deleted after that period of inactivity.",
 					mediaType, baseEvent, daysSinceBase, ruleName, retention)
 			}
 		}
