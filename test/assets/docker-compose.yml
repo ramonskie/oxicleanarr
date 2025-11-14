@@ -2,6 +2,17 @@
 # Purpose: Test basic infrastructure (Jellyfin + Radarr + OxiCleanarr)
 # Phase 2 will add symlink lifecycle tests
 services:
+  # Init container to populate test-media volume from git-tracked files
+  test-media-init:
+    image: alpine:latest
+    container_name: oxicleanarr-test-media-init
+    volumes:
+      - ./test-media:/source:ro
+      - test-media:/target
+    command: sh -c "echo 'Copying test media to volume...'; rm -rf /target/movies; cp -r /source/movies /target/; chown -R 1000:1000 /target; chmod -R 755 /target; echo 'Test media copied successfully'; ls -la /target/movies"
+    networks:
+      - oxicleanarr-test
+
   jellyfin:
     image: jellyfin/jellyfin:latest
     container_name: oxicleanarr-test-jellyfin
@@ -12,7 +23,7 @@ services:
     volumes:
       - jellyfin-config:/config
       - jellyfin-cache:/cache
-      - ./test-media/movies:/media/movies:ro
+      - test-media:/media:rw
       - ./leaving-soon:/app/leaving-soon
     environment:
       - PUID=1000
@@ -24,6 +35,9 @@ services:
       timeout: 5s
       retries: 5
       start_period: 30s
+    depends_on:
+      test-media-init:
+        condition: service_completed_successfully
 
   radarr:
     image: linuxserver/radarr:latest
@@ -34,7 +48,7 @@ services:
       - "7878:7878"
     volumes:
       - radarr-config:/config
-      - ./test-media/movies:/media/movies
+      - test-media:/media:rw
     environment:
       - PUID=1000
       - PGID=1000
@@ -45,6 +59,9 @@ services:
       timeout: 5s
       retries: 5
       start_period: 30s
+    depends_on:
+      test-media-init:
+        condition: service_completed_successfully
 
   oxicleanarr:
     build:
@@ -82,6 +99,8 @@ networks:
     name: oxicleanarr-test
 
 volumes:
+  test-media:
+    name: oxicleanarr-test-media
   jellyfin-config:
     name: oxicleanarr-test-jellyfin-config
   jellyfin-cache:
