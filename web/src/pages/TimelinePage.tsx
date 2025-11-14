@@ -1,14 +1,13 @@
 import { useMemo } from 'react';
-import { useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiClient } from '@/lib/api';
-import { useAuthStore } from '@/store/auth';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Film, Tv, Clock, LogOut, Shield, ShieldOff, Calendar } from 'lucide-react';
+import { Film, Tv, Clock, Shield, ShieldOff, Calendar } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import type { MediaItem } from '@/lib/types';
+import AppHeader from '@/components/AppHeader';
 
 interface GroupedMedia {
   date: string;
@@ -16,20 +15,12 @@ interface GroupedMedia {
 }
 
 export default function TimelinePage() {
-  const navigate = useNavigate();
-  const logout = useAuthStore((state) => state.logout);
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
   const { data: leavingSoon, isLoading } = useQuery({
     queryKey: ['leaving-soon-all'],
     queryFn: () => apiClient.listLeavingSoon({ limit: 1000 }), // Get all leaving soon items
-  });
-
-  const { data: syncStatus } = useQuery({
-    queryKey: ['sync-status'],
-    queryFn: () => apiClient.getSyncStatus(),
-    refetchInterval: 5000,
   });
 
   // Group media items by deletion date
@@ -94,11 +85,6 @@ export default function TimelinePage() {
     },
   });
 
-  const handleLogout = () => {
-    logout();
-    navigate('/login');
-  };
-
   const formatDate = (dateString: string) => {
     const date = new Date(dateString);
     
@@ -151,43 +137,7 @@ export default function TimelinePage() {
 
   return (
     <div className="min-h-screen bg-background">
-      {/* Header */}
-      <header className="border-b">
-        <div className="container mx-auto px-4 py-4 flex items-center justify-between">
-          <div className="flex items-center gap-6">
-            <h1 className="text-2xl font-bold">OxiCleanarr</h1>
-            <nav className="flex gap-4">
-              <Button variant="ghost" onClick={() => navigate('/')}>
-                Dashboard
-              </Button>
-              <Button variant="ghost" className="bg-accent">
-                Timeline
-              </Button>
-              <Button variant="ghost" onClick={() => navigate('/library')}>
-                Library
-              </Button>
-              <Button variant="ghost" onClick={() => navigate('/scheduled-deletions')}>
-                Scheduled Deletions
-              </Button>
-              <Button variant="ghost" onClick={() => navigate('/job-history')}>
-                Job History
-              </Button>
-            </nav>
-          </div>
-          <div className="flex items-center gap-4">
-            {syncStatus?.in_progress && (
-              <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                <Clock className="h-4 w-4 animate-spin" />
-                Syncing...
-              </div>
-            )}
-            <Button variant="ghost" size="sm" onClick={handleLogout}>
-              <LogOut className="h-4 w-4 mr-2" />
-              Logout
-            </Button>
-          </div>
-        </div>
-      </header>
+      <AppHeader />
 
       {/* Main Content */}
       <main className="container mx-auto px-4 py-8">

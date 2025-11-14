@@ -1,18 +1,17 @@
 import { useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiClient } from '@/lib/api';
-import { useAuthStore } from '@/store/auth';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
-import { LogOut, Save, Settings } from 'lucide-react';
+import { Save, Settings, Clock } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { useState, useEffect } from 'react';
 import type { Config, UpdateConfigRequest } from '@/lib/types';
+import AppHeader from '@/components/AppHeader';
 
 export default function ConfigurationPage() {
   const navigate = useNavigate();
-  const logout = useAuthStore((state) => state.logout);
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
@@ -55,11 +54,6 @@ export default function ConfigurationPage() {
     },
   });
 
-  const handleLogout = () => {
-    logout();
-    navigate('/login');
-  };
-
   const handleSave = () => {
     if (!formData) return;
     
@@ -84,28 +78,29 @@ export default function ConfigurationPage() {
 
   if (isLoading) {
     return (
-      <div className="min-h-screen bg-gray-50">
-        <header className="bg-white shadow">
-          <div className="mx-auto px-4 sm:px-6 lg:px-8 py-6 flex justify-between items-center">
-            <h1 className="text-3xl font-bold text-gray-900">Configuration</h1>
+      <div className="min-h-screen bg-background">
+        <AppHeader />
+        <main className="container mx-auto px-4 py-8">
+          <div className="flex items-center justify-center">
+            <Clock className="h-8 w-8 animate-spin text-muted-foreground" />
+            <span className="ml-2">Loading configuration...</span>
           </div>
-        </header>
-        <main className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-8">
-          <div className="text-center">Loading configuration...</div>
         </main>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <header className="bg-white shadow">
-        <div className="mx-auto px-4 sm:px-6 lg:px-8 py-6 flex justify-between items-center">
+    <div className="min-h-screen bg-background">
+      <AppHeader />
+      
+      <div className="container mx-auto px-4 py-6">
+        <div className="flex justify-between items-center mb-6">
           <div className="flex items-center gap-4">
             <Button variant="ghost" onClick={() => navigate('/')}>
               ← Back
             </Button>
-            <h1 className="text-3xl font-bold text-gray-900">Configuration</h1>
+            <h1 className="text-3xl font-bold">Configuration</h1>
           </div>
           <div className="flex gap-2">
             <Button onClick={() => navigate('/rules')} variant="outline">
@@ -119,15 +114,11 @@ export default function ConfigurationPage() {
               <Save className="h-4 w-4 mr-2" />
               {updateConfigMutation.isPending ? 'Saving...' : 'Save Configuration'}
             </Button>
-            <Button onClick={handleLogout} variant="outline">
-              <LogOut className="h-4 w-4 mr-2" />
-              Logout
-            </Button>
           </div>
         </div>
-      </header>
+      </div>
 
-      <main className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-8">
+      <main className="container mx-auto px-4 pb-8">
         <div className="space-y-6">
           {/* App Settings */}
           <Card>

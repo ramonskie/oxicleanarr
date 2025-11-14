@@ -1,8 +1,6 @@
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { apiClient } from '@/lib/api';
-import { useAuthStore } from '@/store/auth';
 import type { Job, DeletionCandidate } from '@/lib/types';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -26,8 +24,8 @@ import {
   Calendar,
   HardDrive,
   Info,
-  LogOut,
 } from 'lucide-react';
+import AppHeader from '@/components/AppHeader';
 
 export default function JobHistoryPage() {
   const [selectedJob, setSelectedJob] = useState<Job | null>(null);
@@ -109,59 +107,9 @@ export default function JobHistoryPage() {
     return `${gb.toFixed(2)} GB`;
   };
 
-  const navigate = useNavigate();
-  const logout = useAuthStore((state) => state.logout);
-
-  const { data: syncStatus } = useQuery({
-    queryKey: ['sync-status'],
-    queryFn: () => apiClient.getSyncStatus(),
-    refetchInterval: 5000,
-  });
-
-  const handleLogout = () => {
-    logout();
-    navigate('/login');
-  };
-
   return (
     <div className="min-h-screen bg-background">
-      {/* Header */}
-      <header className="border-b">
-        <div className="container mx-auto px-4 py-4 flex items-center justify-between">
-          <div className="flex items-center gap-6">
-            <h1 className="text-2xl font-bold">OxiCleanarr</h1>
-            <nav className="flex gap-4">
-              <Button variant="ghost" onClick={() => navigate('/')}>
-                Dashboard
-              </Button>
-              <Button variant="ghost" onClick={() => navigate('/timeline')}>
-                Timeline
-              </Button>
-              <Button variant="ghost" onClick={() => navigate('/library')}>
-                Library
-              </Button>
-              <Button variant="ghost" onClick={() => navigate('/scheduled-deletions')}>
-                Scheduled Deletions
-              </Button>
-              <Button variant="ghost" className="bg-accent">
-                Job History
-              </Button>
-            </nav>
-          </div>
-          <div className="flex items-center gap-4">
-            {syncStatus?.in_progress && (
-              <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                <Clock className="h-4 w-4 animate-spin" />
-                Syncing...
-              </div>
-            )}
-            <Button variant="ghost" size="sm" onClick={handleLogout}>
-              <LogOut className="h-4 w-4 mr-2" />
-              Logout
-            </Button>
-          </div>
-        </div>
-      </header>
+      <AppHeader />
 
       {/* Main Content */}
       <main className="container mx-auto px-4 py-8">

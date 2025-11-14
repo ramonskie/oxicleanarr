@@ -1,20 +1,19 @@
 import { useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiClient } from '@/lib/api';
-import { useAuthStore } from '@/store/auth';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Badge } from '@/components/ui/badge';
-import { LogOut, Plus, Edit2, Trash2, Settings } from 'lucide-react';
+import { Plus, Edit2, Trash2, Settings } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { useState } from 'react';
 import type { AdvancedRule, UserRule } from '@/lib/types';
+import AppHeader from '@/components/AppHeader';
 
 export default function RulesPage() {
   const navigate = useNavigate();
-  const logout = useAuthStore((state) => state.logout);
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
@@ -132,11 +131,6 @@ export default function RulesPage() {
     },
   });
 
-  const handleLogout = () => {
-    logout();
-    navigate('/login');
-  };
-
   const handleAddRule = () => {
     setEditingRule(null);
     setIsDialogOpen(true);
@@ -164,11 +158,7 @@ export default function RulesPage() {
   if (isLoading) {
     return (
       <div className="min-h-screen bg-gray-50">
-        <header className="bg-white shadow">
-          <div className="mx-auto px-4 sm:px-6 lg:px-8 py-6 flex justify-between items-center">
-            <h1 className="text-3xl font-bold text-gray-900">Advanced Rules</h1>
-          </div>
-        </header>
+        <AppHeader />
         <main className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-8">
           <div className="text-center">Loading rules...</div>
         </main>
@@ -178,7 +168,9 @@ export default function RulesPage() {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      <header className="bg-white shadow">
+      <AppHeader />
+      
+      <div className="bg-white shadow">
         <div className="mx-auto px-4 sm:px-6 lg:px-8 py-6 flex justify-between items-center">
           <div className="flex items-center gap-4">
             <Button variant="ghost" onClick={() => navigate('/configuration')}>
@@ -191,13 +183,9 @@ export default function RulesPage() {
               <Plus className="h-4 w-4 mr-2" />
               Add Rule
             </Button>
-            <Button onClick={handleLogout} variant="outline">
-              <LogOut className="h-4 w-4 mr-2" />
-              Logout
-            </Button>
           </div>
         </div>
-      </header>
+      </div>
 
       <main className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-8">
         <div className="space-y-6">

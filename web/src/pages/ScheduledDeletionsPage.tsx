@@ -1,8 +1,6 @@
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiClient } from '@/lib/api';
-import { useAuthStore } from '@/store/auth';
 import type { DeletionCandidate, MediaItem } from '@/lib/types';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -16,8 +14,9 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { Clock, LogOut, Film, Tv, HardDrive, AlertTriangle, Info, Trash2 } from 'lucide-react';
+import { Film, Tv, HardDrive, AlertTriangle, Info, Trash2, Clock } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
+import AppHeader from '@/components/AppHeader';
 
 type MediaType = 'all' | 'movies' | 'shows';
 type SortField = 'title' | 'year' | 'days_overdue' | 'file_size';
@@ -26,8 +25,6 @@ type SortOrder = 'asc' | 'desc';
 const ITEMS_PER_PAGE = 50;
 
 export default function ScheduledDeletionsPage() {
-  const navigate = useNavigate();
-  const logout = useAuthStore((state) => state.logout);
   const { toast } = useToast();
   const queryClient = useQueryClient();
   
@@ -58,13 +55,6 @@ export default function ScheduledDeletionsPage() {
     queryFn: () => apiClient.getConfig(),
   });
 
-  // Sync status
-  const { data: syncStatus } = useQuery({
-    queryKey: ['sync-status'],
-    queryFn: () => apiClient.getSyncStatus(),
-    refetchInterval: 5000,
-  });
-
   const isLoading = moviesLoading || showsLoading;
 
   // Execute deletions mutation
@@ -90,11 +80,6 @@ export default function ScheduledDeletionsPage() {
       setShowDeleteDialog(false);
     },
   });
-
-  const handleLogout = () => {
-    logout();
-    navigate('/login');
-  };
 
   const handleExecuteDeletions = () => {
     executeDeletionsMutation.mutate();
@@ -284,43 +269,7 @@ export default function ScheduledDeletionsPage() {
 
   return (
     <div className="min-h-screen bg-background">
-      {/* Header */}
-      <header className="border-b">
-        <div className="container mx-auto px-4 py-4 flex items-center justify-between">
-          <div className="flex items-center gap-6">
-            <h1 className="text-2xl font-bold">OxiCleanarr</h1>
-            <nav className="flex gap-4">
-              <Button variant="ghost" onClick={() => navigate('/')}>
-                Dashboard
-              </Button>
-              <Button variant="ghost" onClick={() => navigate('/timeline')}>
-                Timeline
-              </Button>
-              <Button variant="ghost" onClick={() => navigate('/library')}>
-                Library
-              </Button>
-              <Button variant="ghost" className="bg-accent">
-                Scheduled Deletions
-              </Button>
-              <Button variant="ghost" onClick={() => navigate('/job-history')}>
-                Job History
-              </Button>
-            </nav>
-          </div>
-          <div className="flex items-center gap-4">
-            {syncStatus?.in_progress && (
-              <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                <Clock className="h-4 w-4 animate-spin" />
-                Syncing...
-              </div>
-            )}
-            <Button variant="ghost" size="sm" onClick={handleLogout}>
-              <LogOut className="h-4 w-4 mr-2" />
-              Logout
-            </Button>
-          </div>
-        </div>
-      </header>
+      <AppHeader />
 
       {/* Main Content */}
       <main className="container mx-auto px-4 py-8">
