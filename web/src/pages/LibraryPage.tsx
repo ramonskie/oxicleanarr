@@ -9,7 +9,7 @@ import { Input } from '@/components/ui/input';
 import { useSearchParams } from 'react-router-dom';
 import { Shield, ShieldOff } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
-import AppHeader from '@/components/AppHeader';
+import AppLayout from '@/components/AppHeader';
 
 type MediaType = 'all' | 'movies' | 'shows';
 type SortField = 'title' | 'year' | 'last_watched' | 'deletion_date';
@@ -290,11 +290,8 @@ export default function LibraryPage() {
   };
 
   return (
-    <div className="min-h-screen bg-background">
-      <AppHeader />
-
-      {/* Main Content */}
-      <main className="container mx-auto px-4 py-8">
+    <AppLayout>
+      <div className="container mx-auto px-4 py-8">
         {/* Filters and Search */}
         <div className="mb-6 space-y-4">
           <div className="flex gap-4 items-center flex-wrap">
@@ -586,7 +583,7 @@ export default function LibraryPage() {
             </p>
           </div>
         )}
-      </main>
-    </div>
+      </div>
+    </AppLayout>
   );
 }

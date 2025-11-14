@@ -4,7 +4,6 @@ import { apiClient } from '@/lib/api';
 import type { Job, DeletionCandidate } from '@/lib/types';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
 import {
   Dialog,
   DialogContent,
@@ -25,7 +24,7 @@ import {
   HardDrive,
   Info,
 } from 'lucide-react';
-import AppHeader from '@/components/AppHeader';
+import AppLayout from '@/components/AppHeader';
 
 export default function JobHistoryPage() {
   const [selectedJob, setSelectedJob] = useState<Job | null>(null);
@@ -108,11 +107,8 @@ export default function JobHistoryPage() {
   };
 
   return (
-    <div className="min-h-screen bg-background">
-      <AppHeader />
-
-      {/* Main Content */}
-      <main className="container mx-auto px-4 py-8">
+    <AppLayout>
+      <div className="container mx-auto px-4 py-8">
         {/* Page Header */}
         <div className="mb-6">
           <h2 className="text-3xl font-bold mb-2">Job History</h2>
@@ -496,7 +492,7 @@ export default function JobHistoryPage() {
             )}
           </DialogContent>
         </Dialog>
-      </main>
-    </div>
+      </div>
+    </AppLayout>
   );
 }

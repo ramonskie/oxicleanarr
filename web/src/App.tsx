@@ -3,6 +3,7 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { Toaster } from 'sonner';
 import { useAuthStore } from '@/store/auth';
+import { useThemeStore } from '@/store/theme';
 import LoginPage from '@/pages/LoginPage';
 import DashboardPage from '@/pages/DashboardPage';
 import TimelinePage from '@/pages/TimelinePage';
@@ -24,11 +25,13 @@ const queryClient = new QueryClient({
 });
 
 function App() {
-  const initialize = useAuthStore((state) => state.initialize);
+  const initializeAuth = useAuthStore((state) => state.initialize);
+  const initializeTheme = useThemeStore((state) => state.initialize);
 
   useEffect(() => {
-    initialize();
-  }, [initialize]);
+    initializeAuth();
+    initializeTheme();
+  }, [initializeAuth, initializeTheme]);
 
   return (
     <QueryClientProvider client={queryClient}>

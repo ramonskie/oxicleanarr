@@ -8,7 +8,7 @@ import { Save, Settings, Clock } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { useState, useEffect } from 'react';
 import type { Config, UpdateConfigRequest } from '@/lib/types';
-import AppHeader from '@/components/AppHeader';
+import AppLayout from '@/components/AppHeader';
 
 export default function ConfigurationPage() {
   const navigate = useNavigate();
@@ -78,22 +78,19 @@ export default function ConfigurationPage() {
 
   if (isLoading) {
     return (
-      <div className="min-h-screen bg-background">
-        <AppHeader />
-        <main className="container mx-auto px-4 py-8">
+      <AppLayout>
+        <div className="container mx-auto px-4 py-8">
           <div className="flex items-center justify-center">
             <Clock className="h-8 w-8 animate-spin text-muted-foreground" />
             <span className="ml-2">Loading configuration...</span>
           </div>
-        </main>
-      </div>
+        </div>
+      </AppLayout>
     );
   }
 
   return (
-    <div className="min-h-screen bg-background">
-      <AppHeader />
-      
+    <AppLayout>
       <div className="container mx-auto px-4 py-6">
         <div className="flex justify-between items-center mb-6">
           <div className="flex items-center gap-4">
@@ -116,9 +113,7 @@ export default function ConfigurationPage() {
             </Button>
           </div>
         </div>
-      </div>
 
-      <main className="container mx-auto px-4 pb-8">
         <div className="space-y-6">
           {/* App Settings */}
           <Card>
@@ -282,7 +277,7 @@ export default function ConfigurationPage() {
             </CardContent>
           </Card>
         </div>
-      </main>
-    </div>
+      </div>
+    </AppLayout>
   );
 }

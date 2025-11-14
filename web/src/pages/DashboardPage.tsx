@@ -6,7 +6,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Badge } from '@/components/ui/badge';
 import { Film, Tv, Shield, ShieldOff, Info, AlertTriangle, Clock } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
-import AppHeader from '@/components/AppHeader';
+import AppLayout from '@/components/AppHeader';
 
 export default function DashboardPage() {
   const navigate = useNavigate();
@@ -105,11 +105,8 @@ export default function DashboardPage() {
   });
 
   return (
-    <div className="min-h-screen bg-background">
-      <AppHeader />
-
-      {/* Main Content */}
-      <main className="container mx-auto px-4 py-8">
+    <AppLayout>
+      <div className="container mx-auto px-4 py-8">
         <div className="grid gap-6">
           {/* Stats Cards */}
           <div className="grid gap-4 md:grid-cols-4">
@@ -328,7 +325,7 @@ export default function DashboardPage() {
             </CardContent>
           </Card>
         </div>
-      </main>
-    </div>
+      </div>
+    </AppLayout>
   );
 }

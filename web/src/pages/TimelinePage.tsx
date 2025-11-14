@@ -7,7 +7,7 @@ import { Badge } from '@/components/ui/badge';
 import { Film, Tv, Clock, Shield, ShieldOff, Calendar } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import type { MediaItem } from '@/lib/types';
-import AppHeader from '@/components/AppHeader';
+import AppLayout from '@/components/AppHeader';
 
 interface GroupedMedia {
   date: string;
@@ -136,11 +136,8 @@ export default function TimelinePage() {
   };
 
   return (
-    <div className="min-h-screen bg-background">
-      <AppHeader />
-
-      {/* Main Content */}
-      <main className="container mx-auto px-4 py-8">
+    <AppLayout>
+      <div className="container mx-auto px-4 py-8">
         <div className="mb-6">
           <h2 className="text-3xl font-bold mb-2">Deletion Timeline</h2>
           <p className="text-muted-foreground">
@@ -287,7 +284,7 @@ export default function TimelinePage() {
             })}
           </div>
         )}
-      </main>
-    </div>
+      </div>
+    </AppLayout>
   );
 }

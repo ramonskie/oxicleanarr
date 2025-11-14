@@ -10,7 +10,7 @@ import { Plus, Edit2, Trash2, Settings } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { useState } from 'react';
 import type { AdvancedRule, UserRule } from '@/lib/types';
-import AppHeader from '@/components/AppHeader';
+import AppLayout from '@/components/AppHeader';
 
 export default function RulesPage() {
   const navigate = useNavigate();
@@ -157,20 +157,17 @@ export default function RulesPage() {
 
   if (isLoading) {
     return (
-      <div className="min-h-screen bg-gray-50">
-        <AppHeader />
-        <main className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-8">
+      <AppLayout>
+        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-8">
           <div className="text-center">Loading rules...</div>
-        </main>
-      </div>
+        </div>
+      </AppLayout>
     );
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <AppHeader />
-      
-      <div className="bg-white shadow">
+    <AppLayout>
+      <div className="bg-white shadow mb-6">
         <div className="mx-auto px-4 sm:px-6 lg:px-8 py-6 flex justify-between items-center">
           <div className="flex items-center gap-4">
             <Button variant="ghost" onClick={() => navigate('/configuration')}>
@@ -187,7 +184,7 @@ export default function RulesPage() {
         </div>
       </div>
 
-      <main className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-8">
+      <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-8">
         <div className="space-y-6">
           {/* Info Card */}
           <Card className="bg-blue-50 border-blue-200">
@@ -257,7 +254,7 @@ export default function RulesPage() {
             </div>
           )}
         </div>
-      </main>
+      </div>
 
       {/* Add/Edit Dialog */}
       {isDialogOpen && (
@@ -301,7 +298,7 @@ export default function RulesPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </div>
+    </AppLayout>
   );
 }
 

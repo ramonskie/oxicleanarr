@@ -16,7 +16,7 @@ import {
 } from '@/components/ui/dialog';
 import { Film, Tv, HardDrive, AlertTriangle, Info, Trash2, Clock } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
-import AppHeader from '@/components/AppHeader';
+import AppLayout from '@/components/AppHeader';
 
 type MediaType = 'all' | 'movies' | 'shows';
 type SortField = 'title' | 'year' | 'days_overdue' | 'file_size';
@@ -268,11 +268,8 @@ export default function ScheduledDeletionsPage() {
   };
 
   return (
-    <div className="min-h-screen bg-background">
-      <AppHeader />
-
-      {/* Main Content */}
-      <main className="container mx-auto px-4 py-8">
+    <AppLayout>
+      <div className="container mx-auto px-4 py-8">
         {/* Page Header */}
         <div className="mb-6">
           <h2 className="text-3xl font-bold mb-2 flex items-center gap-2">
@@ -600,32 +597,32 @@ export default function ScheduledDeletionsPage() {
             )}
           </>
         )}
-      </main>
 
-      {/* Confirmation Dialog */}
-      <Dialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Execute Deletions</DialogTitle>
-            <DialogDescription>
-              Are you sure you want to delete {scheduledDeletions.length} items 
-              ({getTotalFileSize()} total)? This action cannot be undone.
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setShowDeleteDialog(false)}>
-              Cancel
-            </Button>
-            <Button 
-              variant="destructive" 
-              onClick={handleExecuteDeletions}
-              disabled={executeDeletionsMutation.isPending}
-            >
-              {executeDeletionsMutation.isPending ? 'Deleting...' : 'Delete'}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-    </div>
+        {/* Confirmation Dialog */}
+        <Dialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Execute Deletions</DialogTitle>
+              <DialogDescription>
+                Are you sure you want to delete {scheduledDeletions.length} items 
+                ({getTotalFileSize()} total)? This action cannot be undone.
+              </DialogDescription>
+            </DialogHeader>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setShowDeleteDialog(false)}>
+                Cancel
+              </Button>
+              <Button 
+                variant="destructive" 
+                onClick={handleExecuteDeletions}
+                disabled={executeDeletionsMutation.isPending}
+              >
+                {executeDeletionsMutation.isPending ? 'Deleting...' : 'Delete'}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      </div>
+    </AppLayout>
   );
 }
