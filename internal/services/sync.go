@@ -782,18 +782,26 @@ func (e *SyncEngine) syncJellystat(ctx context.Context) error {
 	e.mediaLibraryLock.Lock()
 	defer e.mediaLibraryLock.Unlock()
 
-	// Create a map of Jellyfin ID to most recent watch date
+	// Create a map of Jellyfin ID to most recent watch date and watch count
 	// This gives us the most accurate "last watched" timestamp per item
+	// Jellystat is the authoritative source for watch history
 	lastWatchedMap := make(map[string]time.Time)
+	watchCountMap := make(map[string]int)
 
 	for _, item := range history {
+		jellyfinID := item.NowPlayingItemID
+
 		// Track the most recent watch for each Jellyfin item
-		if existing, found := lastWatchedMap[item.NowPlayingItemID]; !found || item.ActivityDateInserted.After(existing) {
-			lastWatchedMap[item.NowPlayingItemID] = item.ActivityDateInserted
+		if existing, found := lastWatchedMap[jellyfinID]; !found || item.ActivityDateInserted.After(existing) {
+			lastWatchedMap[jellyfinID] = item.ActivityDateInserted
 		}
+
+		// Count how many times this item appears in history
+		watchCountMap[jellyfinID]++
 	}
 
-	// Update media library with accurate last watched dates
+	// Update media library with accurate watch data from Jellystat
+	// Jellystat overrides Jellyfin's watch count as the authoritative source
 	updatedCount := 0
 	for id, media := range e.mediaLibrary {
 		if media.JellyfinID == "" {
@@ -801,9 +809,22 @@ func (e *SyncEngine) syncJellystat(ctx context.Context) error {
 		}
 
 		if lastWatched, found := lastWatchedMap[media.JellyfinID]; found {
-			// Only update if Jellystat has a more recent date than what we have
+			// Update both LastWatched and WatchCount from Jellystat
+			// This makes Jellystat the single source of truth for watch history
+			updated := false
+
 			if media.LastWatched.IsZero() || lastWatched.After(media.LastWatched) {
 				media.LastWatched = lastWatched
+				updated = true
+			}
+
+			// Always set WatchCount from Jellystat to override Jellyfin's potentially incorrect value
+			if watchCount := watchCountMap[media.JellyfinID]; watchCount > 0 {
+				media.WatchCount = watchCount
+				updated = true
+			}
+
+			if updated {
 				e.mediaLibrary[id] = media
 				updatedCount++
 			}
