@@ -219,6 +219,23 @@ func (tc *TestClient) GetScheduledCount() int {
 	return len(result.Items)
 }
 
+// GetMovies returns all movies from the API
+func (tc *TestClient) GetMovies() []map[string]interface{} {
+	resp, err := tc.Get("/api/media/movies")
+	require.NoError(tc.t, err)
+	defer resp.Body.Close()
+
+	require.Equal(tc.t, http.StatusOK, resp.StatusCode)
+
+	var result struct {
+		Items []map[string]interface{} `json:"items"`
+	}
+	err = json.NewDecoder(resp.Body).Decode(&result)
+	require.NoError(tc.t, err)
+
+	return result.Items
+}
+
 // UpdateRetentionPolicy modifies the retention value in the config file using YAML parsing
 func UpdateRetentionPolicy(t *testing.T, configPath, retention string) {
 	t.Helper()
@@ -287,6 +304,11 @@ func UpdateDryRun(t *testing.T, configPath string, dryRun bool) {
 
 // UpdateConfigAPIKeys updates Jellyfin and Radarr API keys in the config file
 func UpdateConfigAPIKeys(t *testing.T, configPath, jellyfinKey, radarrKey string) {
+	UpdateConfigAPIKeysWithExtras(t, configPath, jellyfinKey, radarrKey, "", "")
+}
+
+// UpdateConfigAPIKeysWithExtras updates all service API keys in the config file
+func UpdateConfigAPIKeysWithExtras(t *testing.T, configPath, jellyfinKey, radarrKey, jellyseerrKey, jellystatKey string) {
 	t.Logf("Updating config API keys...")
 
 	// Read config file
@@ -296,8 +318,12 @@ func UpdateConfigAPIKeys(t *testing.T, configPath, jellyfinKey, radarrKey string
 	lines := strings.Split(string(content), "\n")
 	inJellyfinSection := false
 	inRadarrSection := false
+	inJellyseerrSection := false
+	inJellystatSection := false
 	jellyfinUpdated := false
 	radarrUpdated := false
+	jellyseerrUpdated := false
+	jellystatUpdated := false
 
 	for i, line := range lines {
 		trimmed := strings.TrimSpace(line)
@@ -306,23 +332,40 @@ func UpdateConfigAPIKeys(t *testing.T, configPath, jellyfinKey, radarrKey string
 		if strings.HasPrefix(trimmed, "jellyfin:") {
 			inJellyfinSection = true
 			inRadarrSection = false
-			// Also enable Jellyfin integration
+			inJellyseerrSection = false
+			inJellystatSection = false
 			continue
 		} else if strings.HasPrefix(trimmed, "radarr:") {
 			inRadarrSection = true
 			inJellyfinSection = false
+			inJellyseerrSection = false
+			inJellystatSection = false
 			continue
-		} else if strings.HasPrefix(trimmed, "sonarr:") ||
-			strings.HasPrefix(trimmed, "jellyseerr:") ||
-			strings.HasPrefix(trimmed, "jellystat:") {
-			// Exit both sections when hitting other integrations (siblings)
+		} else if strings.HasPrefix(trimmed, "jellyseerr:") {
+			inJellyseerrSection = true
 			inJellyfinSection = false
 			inRadarrSection = false
+			inJellystatSection = false
+			continue
+		} else if strings.HasPrefix(trimmed, "jellystat:") {
+			inJellystatSection = true
+			inJellyfinSection = false
+			inRadarrSection = false
+			inJellyseerrSection = false
+			continue
+		} else if strings.HasPrefix(trimmed, "sonarr:") {
+			// Exit all sections when hitting other integrations (siblings)
+			inJellyfinSection = false
+			inRadarrSection = false
+			inJellyseerrSection = false
+			inJellystatSection = false
 			continue
 		} else if strings.HasSuffix(trimmed, ":") && !strings.HasPrefix(line, " ") {
 			// New top-level section
 			inJellyfinSection = false
 			inRadarrSection = false
+			inJellyseerrSection = false
+			inJellystatSection = false
 		}
 
 		// Update enabled: false to enabled: true for Jellyfin
@@ -349,10 +392,62 @@ func UpdateConfigAPIKeys(t *testing.T, configPath, jellyfinKey, radarrKey string
 			t.Logf("Updated Radarr API key")
 			continue
 		}
+
+		// Update Jellyseerr API key and URL (only if key provided)
+		if inJellyseerrSection && jellyseerrKey != "" {
+			if strings.Contains(trimmed, "enabled:") && strings.Contains(trimmed, "false") {
+				lines[i] = strings.Replace(line, "false", "true", 1)
+				t.Logf("Enabled Jellyseerr integration")
+				continue
+			}
+			if strings.HasPrefix(trimmed, "api_key:") {
+				indent := len(line) - len(strings.TrimLeft(line, " "))
+				lines[i] = fmt.Sprintf("%s%sapi_key: \"%s\"", strings.Repeat(" ", indent), "", jellyseerrKey)
+				jellyseerrUpdated = true
+				t.Logf("Updated Jellyseerr API key")
+				continue
+			}
+			if strings.HasPrefix(trimmed, "url:") {
+				indent := len(line) - len(strings.TrimLeft(line, " "))
+				lines[i] = fmt.Sprintf("%s%surl: \"http://jellyseerr:5055\"", strings.Repeat(" ", indent), "")
+				t.Logf("Updated Jellyseerr URL")
+				continue
+			}
+		}
+
+		// Update Jellystat API key and URL (only if key provided)
+		if inJellystatSection && jellystatKey != "" {
+			if strings.Contains(trimmed, "enabled:") && strings.Contains(trimmed, "false") {
+				lines[i] = strings.Replace(line, "false", "true", 1)
+				t.Logf("Enabled Jellystat integration")
+				continue
+			}
+			if strings.HasPrefix(trimmed, "api_key:") {
+				indent := len(line) - len(strings.TrimLeft(line, " "))
+				lines[i] = fmt.Sprintf("%s%sapi_key: \"%s\"", strings.Repeat(" ", indent), "", jellystatKey)
+				jellystatUpdated = true
+				t.Logf("Updated Jellystat API key")
+				continue
+			}
+			if strings.HasPrefix(trimmed, "url:") {
+				indent := len(line) - len(strings.TrimLeft(line, " "))
+				lines[i] = fmt.Sprintf("%s%surl: \"http://jellystat:3000\"", strings.Repeat(" ", indent), "")
+				t.Logf("Updated Jellystat URL")
+				continue
+			}
+		}
 	}
 
 	require.True(t, jellyfinUpdated, "Failed to update Jellyfin API key")
 	require.True(t, radarrUpdated, "Failed to update Radarr API key")
+
+	// Only check these if keys were provided
+	if jellyseerrKey != "" {
+		require.True(t, jellyseerrUpdated, "Failed to update Jellyseerr API key")
+	}
+	if jellystatKey != "" {
+		require.True(t, jellystatUpdated, "Failed to update Jellystat API key")
+	}
 
 	// Write updated config
 	newContent := strings.Join(lines, "\n")
