@@ -554,6 +554,12 @@ func InstallOxiCleanarrPluginToContainer(t *testing.T, containerName string) err
 	// GitHub API requires User-Agent header
 	req.Header.Set("User-Agent", "OxiCleanarr-IntegrationTest")
 
+	// Use GitHub token if available to avoid rate limiting
+	if githubToken := os.Getenv("GITHUB_TOKEN"); githubToken != "" {
+		req.Header.Set("Authorization", "Bearer "+githubToken)
+		t.Logf("Using GITHUB_TOKEN for authenticated API request")
+	}
+
 	resp, err := client.Do(req)
 	if err != nil {
 		return fmt.Errorf("failed to fetch release info: %w", err)

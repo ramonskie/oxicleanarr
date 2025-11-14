@@ -6,10 +6,11 @@ services:
   test-media-init:
     image: alpine:latest
     container_name: oxicleanarr-test-media-init
+    user: "0:0"
     volumes:
       - ./test-media:/source:ro
       - test-media:/target
-    command: sh -c "echo 'Copying test media to volume...'; rm -rf /target/movies; cp -r /source/movies /target/; chown -R 1000:1000 /target; chmod -R 755 /target; echo 'Test media copied successfully'; ls -la /target/movies"
+    command: sh -c "echo 'Copying test media to volume...'; mkdir -p /target && cp -rf /source/movies /target/ && chown -R 1000:1000 /target && chmod -R 755 /target && echo 'Test media copied successfully'; exit 0"
     networks:
       - oxicleanarr-test
 
@@ -82,6 +83,8 @@ services:
       - PGID=1000
       - TZ=UTC
       - LOG_LEVEL=debug
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     depends_on:
       jellyfin:
         condition: service_healthy

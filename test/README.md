@@ -280,11 +280,25 @@ func TestIntegrationSuite(t *testing.T) {
 - **`TEST_JELLYFIN_URL`** - Override Jellyfin URL (default: auto-detected)
 - **`TEST_RADARR_URL`** - Override Radarr URL (default: auto-detected)
 - **`TEST_OXICLEANARR_URL`** - Override OxiCleanarr URL (default: auto-detected)
+- **`GITHUB_TOKEN`** - GitHub personal access token to avoid API rate limiting when downloading the OxiCleanarr Bridge plugin
 
 Example:
 ```bash
 TEST_JELLYFIN_URL=http://localhost:8096 \
 go test -v ./test/integration/ -run TestIntegrationSuite/InfrastructureSetup
+```
+
+### Using GITHUB_TOKEN to Avoid Rate Limiting
+
+The tests automatically download the OxiCleanarr Bridge plugin from GitHub. Without authentication, GitHub limits you to 60 API requests per hour per IP address. If you encounter rate limit errors:
+
+```bash
+# Create a GitHub personal access token (no scopes required for public repos)
+# Visit: https://github.com/settings/tokens
+
+# Set the token before running tests
+export GITHUB_TOKEN=ghp_your_token_here
+go test -v ./test/integration/ -run TestIntegrationSuite
 ```
 
 ---

@@ -791,7 +791,7 @@ func TestSyncLibraries_Integration(t *testing.T) {
 		},
 	}
 
-	err := manager.SyncLibraries(context.Background(), mediaLibrary)
+	_, err := manager.SyncLibraries(context.Background(), mediaLibrary)
 	require.NoError(t, err)
 
 	// Verify symlinks were created
