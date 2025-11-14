@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
+	"gopkg.in/yaml.v3"
 )
 
 const (
@@ -218,106 +219,70 @@ func (tc *TestClient) GetScheduledCount() int {
 	return len(result.Items)
 }
 
-// UpdateRetentionPolicy modifies the retention value in the config file
+// UpdateRetentionPolicy modifies the retention value in the config file using YAML parsing
 func UpdateRetentionPolicy(t *testing.T, configPath, retention string) {
+	t.Helper()
 	t.Logf("Updating retention policy to: %s", retention)
-	t.Logf("Config file path: %s", configPath)
 
 	// Read config file
 	content, err := os.ReadFile(configPath)
 	require.NoError(t, err)
-	t.Logf("Read config file successfully (%d bytes)", len(content))
 
-	// Replace movie_retention value
-	oldLine := ""
-	newLine := fmt.Sprintf("  movie_retention: %s", retention)
+	// Parse YAML
+	var config map[string]interface{}
+	err = yaml.Unmarshal(content, &config)
+	require.NoError(t, err, "Failed to parse YAML config")
 
-	lines := strings.Split(string(content), "\n")
-	for i, line := range lines {
-		if strings.Contains(line, "movie_retention:") {
-			oldLine = line
-			lines[i] = newLine
-			t.Logf("Found movie_retention at line %d: %q", i+1, oldLine)
-			t.Logf("Replacing with: %q", newLine)
-			break
-		}
-	}
+	// Update movie_retention
+	rules, ok := config["rules"].(map[string]interface{})
+	require.True(t, ok, "rules section not found in config")
 
-	require.NotEmpty(t, oldLine, "movie_retention not found in config")
+	oldValue := rules["movie_retention"]
+	rules["movie_retention"] = retention
+	t.Logf("Updated movie_retention from %v to %s", oldValue, retention)
+
+	// Marshal back to YAML
+	newContent, err := yaml.Marshal(config)
+	require.NoError(t, err, "Failed to marshal YAML config")
 
 	// Write updated config
-	newContent := strings.Join(lines, "\n")
-	t.Logf("Writing updated config (%d bytes)", len(newContent))
-	err = os.WriteFile(configPath, []byte(newContent), 0644)
+	err = os.WriteFile(configPath, newContent, 0644)
 	require.NoError(t, err)
 
-	// Verify the write by reading back
-	verifyContent, err := os.ReadFile(configPath)
-	require.NoError(t, err)
-	verifyLines := strings.Split(string(verifyContent), "\n")
-
-	found := false
-	for _, line := range verifyLines {
-		if strings.Contains(line, "movie_retention:") {
-			t.Logf("Verified file now contains: %q", line)
-			found = true
-			break
-		}
-	}
-	require.True(t, found, "movie_retention not found after write")
-
-	t.Logf("Retention policy updated and verified successfully")
+	t.Logf("Retention policy updated successfully")
 }
 
-// UpdateDryRun modifies the dry_run value in the config file
+// UpdateDryRun modifies the dry_run value in the config file using YAML parsing
 func UpdateDryRun(t *testing.T, configPath string, dryRun bool) {
+	t.Helper()
 	t.Logf("Updating dry_run to: %v", dryRun)
-	t.Logf("Config file path: %s", configPath)
 
 	// Read config file
 	content, err := os.ReadFile(configPath)
 	require.NoError(t, err)
-	t.Logf("Read config file successfully (%d bytes)", len(content))
 
-	// Replace dry_run value
-	oldLine := ""
-	newLine := fmt.Sprintf("  dry_run: %v", dryRun)
+	// Parse YAML
+	var config map[string]interface{}
+	err = yaml.Unmarshal(content, &config)
+	require.NoError(t, err, "Failed to parse YAML config")
 
-	lines := strings.Split(string(content), "\n")
-	for i, line := range lines {
-		if strings.Contains(line, "dry_run:") {
-			oldLine = line
-			lines[i] = newLine
-			t.Logf("Found dry_run at line %d: %q", i+1, oldLine)
-			t.Logf("Replacing with: %q", newLine)
-			break
-		}
-	}
+	// Update dry_run
+	app, ok := config["app"].(map[string]interface{})
+	require.True(t, ok, "app section not found in config")
 
-	require.NotEmpty(t, oldLine, "dry_run not found in config")
+	oldValue := app["dry_run"]
+	app["dry_run"] = dryRun
+	t.Logf("Updated dry_run from %v to %v", oldValue, dryRun)
+
+	// Marshal back to YAML
+	newContent, err := yaml.Marshal(config)
+	require.NoError(t, err, "Failed to marshal YAML config")
 
 	// Write updated config
-	newContent := strings.Join(lines, "\n")
-	t.Logf("Writing updated config (%d bytes)", len(newContent))
-	err = os.WriteFile(configPath, []byte(newContent), 0644)
+	err = os.WriteFile(configPath, newContent, 0644)
 	require.NoError(t, err)
 
-	// Verify the write by reading back
-	verifyContent, err := os.ReadFile(configPath)
-	require.NoError(t, err)
-	verifyLines := strings.Split(string(verifyContent), "\n")
-
-	found := false
-	for _, line := range verifyLines {
-		if strings.Contains(line, "dry_run:") {
-			t.Logf("Verified file now contains: %q", line)
-			found = true
-			break
-		}
-	}
-	require.True(t, found, "dry_run not found after write")
-
-	t.Logf("dry_run updated and verified successfully")
+	t.Logf("dry_run updated successfully")
 }
 
 // UpdateConfigAPIKeys updates Jellyfin and Radarr API keys in the config file
@@ -655,6 +620,47 @@ func GetJellyfinAPIKey(t *testing.T, configPath string) string {
 	}
 
 	require.Failf(t, "API key extraction failed", "Failed to extract Jellyfin API key from config")
+	return ""
+}
+
+// GetRadarrAPIKeyFromYAMLConfig extracts the Radarr API key from the config file
+func GetRadarrAPIKeyFromYAMLConfig(t *testing.T, configPath string) string {
+	content, err := os.ReadFile(configPath)
+	require.NoError(t, err)
+
+	lines := strings.Split(string(content), "\n")
+	inRadarrSection := false
+
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+
+		if strings.HasPrefix(trimmed, "radarr:") {
+			inRadarrSection = true
+			continue
+		}
+
+		if inRadarrSection && strings.HasPrefix(trimmed, "api_key:") {
+			// Extract value (handles both quoted and unquoted)
+			value := strings.TrimPrefix(trimmed, "api_key:")
+			value = strings.TrimSpace(value)
+
+			// Remove quotes if present
+			if strings.HasPrefix(value, "\"") && strings.HasSuffix(value, "\"") {
+				value = strings.Trim(value, "\"")
+			}
+
+			if value != "" {
+				return value
+			}
+		}
+
+		// Exit section if we hit another top-level key
+		if inRadarrSection && strings.HasSuffix(trimmed, ":") && !strings.HasPrefix(trimmed, " ") {
+			break
+		}
+	}
+
+	require.Failf(t, "API key extraction failed", "Failed to extract Radarr API key from config")
 	return ""
 }
 
@@ -1261,4 +1267,386 @@ func (tc *TestClient) GetMediaDetails(mediaID string) (map[string]interface{}, e
 
 	tc.t.Logf("Retrieved media details for ID: %s", mediaID)
 	return details, nil
+}
+
+// GetLatestJob retrieves the latest job from the API
+func (tc *TestClient) GetLatestJob() (map[string]interface{}, error) {
+	tc.t.Helper()
+	tc.t.Logf("Getting latest job from API...")
+
+	resp, err := tc.Get("/api/jobs/latest")
+	if err != nil {
+		return nil, fmt.Errorf("failed to get latest job: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		bodyBytes, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("unexpected status code %d: %s", resp.StatusCode, string(bodyBytes))
+	}
+
+	var job map[string]interface{}
+	if err := json.NewDecoder(resp.Body).Decode(&job); err != nil {
+		return nil, fmt.Errorf("failed to decode response: %w", err)
+	}
+
+	tc.t.Logf("Retrieved latest job ID: %v", job["id"])
+	return job, nil
+}
+
+// WaitForJobCompletion polls the latest job until it's no longer in "running" status
+func (tc *TestClient) WaitForJobCompletion(maxWait time.Duration) (map[string]interface{}, error) {
+	tc.t.Helper()
+	tc.t.Logf("Waiting for job to complete (max wait: %v)...", maxWait)
+
+	timeout := time.After(maxWait)
+	ticker := time.NewTicker(500 * time.Millisecond)
+	defer ticker.Stop()
+
+	var lastJob map[string]interface{}
+	var lastJobID string
+
+	for {
+		select {
+		case <-timeout:
+			return nil, fmt.Errorf("timed out waiting for job to complete after %v (last status: %v)", maxWait, lastJob["status"])
+		case <-ticker.C:
+			job, err := tc.GetLatestJob()
+			if err != nil {
+				return nil, fmt.Errorf("failed to get latest job: %w", err)
+			}
+
+			lastJob = job
+			jobID, _ := job["id"].(string)
+			status, _ := job["status"].(string)
+
+			// Track if we're looking at a new job
+			if lastJobID == "" {
+				lastJobID = jobID
+				tc.t.Logf("Watching job %s (status: %s)", jobID, status)
+			} else if jobID != lastJobID {
+				tc.t.Logf("New job detected: %s (status: %s)", jobID, status)
+				lastJobID = jobID
+			}
+
+			// Job is complete if it's not in "running" or "pending" status
+			if status != "running" && status != "pending" {
+				tc.t.Logf("Job %s completed with status: %s", jobID, status)
+				return job, nil
+			}
+		}
+	}
+}
+
+// RadarrMovieResponse represents a movie from Radarr API
+type RadarrMovieResponse struct {
+	ID         int    `json:"id"`
+	Title      string `json:"title"`
+	Year       int    `json:"year"`
+	Tags       []int  `json:"tags"`
+	HasFile    bool   `json:"hasFile"`
+	Path       string `json:"path"`
+	SizeOnDisk int64  `json:"sizeOnDisk"`
+}
+
+// RadarrTagResponse represents a tag from Radarr API
+type RadarrTagResponse struct {
+	ID    int    `json:"id"`
+	Label string `json:"label"`
+}
+
+// CreateRadarrTag creates a tag in Radarr and returns the tag ID
+func CreateRadarrTag(t *testing.T, radarrURL, apiKey, tagLabel string) int {
+	t.Helper()
+	t.Logf("Creating Radarr tag: %s", tagLabel)
+
+	tagData := map[string]string{"label": tagLabel}
+	jsonData, err := json.Marshal(tagData)
+	require.NoError(t, err)
+
+	req, err := http.NewRequest(http.MethodPost, radarrURL+"/api/v3/tag", bytes.NewBuffer(jsonData))
+	require.NoError(t, err)
+	req.Header.Set("X-Api-Key", apiKey)
+	req.Header.Set("Content-Type", "application/json")
+
+	client := &http.Client{Timeout: 10 * time.Second}
+	resp, err := client.Do(req)
+	require.NoError(t, err)
+	defer resp.Body.Close()
+
+	require.Equal(t, http.StatusCreated, resp.StatusCode, "Failed to create Radarr tag")
+
+	var tag RadarrTagResponse
+	err = json.NewDecoder(resp.Body).Decode(&tag)
+	require.NoError(t, err)
+
+	t.Logf("Created Radarr tag ID %d: %s", tag.ID, tag.Label)
+	return tag.ID
+}
+
+// DeleteRadarrTag deletes a tag from Radarr by ID
+func DeleteRadarrTag(t *testing.T, radarrURL, apiKey string, tagID int) {
+	t.Helper()
+	t.Logf("Deleting Radarr tag ID: %d", tagID)
+
+	req, err := http.NewRequest(http.MethodDelete, fmt.Sprintf("%s/api/v3/tag/%d", radarrURL, tagID), nil)
+	require.NoError(t, err)
+	req.Header.Set("X-Api-Key", apiKey)
+
+	client := &http.Client{Timeout: 10 * time.Second}
+	resp, err := client.Do(req)
+	require.NoError(t, err)
+	defer resp.Body.Close()
+
+	require.True(t, resp.StatusCode == http.StatusOK || resp.StatusCode == http.StatusNoContent, "Failed to delete Radarr tag")
+	t.Logf("Deleted Radarr tag ID: %d", tagID)
+}
+
+// GetRadarrMovieByTitle finds a movie in Radarr by title
+func GetRadarrMovieByTitle(t *testing.T, radarrURL, apiKey, title string) *RadarrMovieResponse {
+	t.Helper()
+	t.Logf("Searching for Radarr movie: %s", title)
+
+	req, err := http.NewRequest(http.MethodGet, radarrURL+"/api/v3/movie", nil)
+	require.NoError(t, err)
+	req.Header.Set("X-Api-Key", apiKey)
+
+	client := &http.Client{Timeout: 10 * time.Second}
+	resp, err := client.Do(req)
+	require.NoError(t, err)
+	defer resp.Body.Close()
+
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+
+	var movies []RadarrMovieResponse
+	err = json.NewDecoder(resp.Body).Decode(&movies)
+	require.NoError(t, err)
+
+	for _, movie := range movies {
+		if movie.Title == title {
+			t.Logf("Found Radarr movie ID %d: %s", movie.ID, movie.Title)
+			return &movie
+		}
+	}
+
+	require.Fail(t, "Movie not found in Radarr", "Title: %s", title)
+	return nil
+}
+
+// TagRadarrMovie adds a tag to a movie in Radarr
+func TagRadarrMovie(t *testing.T, radarrURL, apiKey string, movieID, tagID int) {
+	t.Helper()
+	t.Logf("Adding tag %d to Radarr movie ID %d", tagID, movieID)
+
+	// Get current movie data
+	req, err := http.NewRequest(http.MethodGet, fmt.Sprintf("%s/api/v3/movie/%d", radarrURL, movieID), nil)
+	require.NoError(t, err)
+	req.Header.Set("X-Api-Key", apiKey)
+
+	client := &http.Client{Timeout: 10 * time.Second}
+	resp, err := client.Do(req)
+	require.NoError(t, err)
+	defer resp.Body.Close()
+
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+
+	var movie map[string]interface{}
+	err = json.NewDecoder(resp.Body).Decode(&movie)
+	require.NoError(t, err)
+
+	// Add tag to tags array
+	tags, ok := movie["tags"].([]interface{})
+	if !ok {
+		tags = []interface{}{}
+	}
+	tags = append(tags, float64(tagID))
+	movie["tags"] = tags
+
+	// Update movie
+	jsonData, err := json.Marshal(movie)
+	require.NoError(t, err)
+
+	req, err = http.NewRequest(http.MethodPut, fmt.Sprintf("%s/api/v3/movie/%d", radarrURL, movieID), bytes.NewBuffer(jsonData))
+	require.NoError(t, err)
+	req.Header.Set("X-Api-Key", apiKey)
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err = client.Do(req)
+	require.NoError(t, err)
+	defer resp.Body.Close()
+
+	require.True(t, resp.StatusCode == http.StatusOK || resp.StatusCode == http.StatusAccepted, "Failed to tag Radarr movie")
+	t.Logf("Tagged Radarr movie ID %d with tag %d", movieID, tagID)
+}
+
+// VerifyMovieExistsInRadarr checks if movie exists in Radarr
+func VerifyMovieExistsInRadarr(t *testing.T, radarrURL, apiKey, title string) bool {
+	t.Helper()
+	t.Logf("Verifying movie exists in Radarr: %s", title)
+
+	req, err := http.NewRequest(http.MethodGet, radarrURL+"/api/v3/movie", nil)
+	require.NoError(t, err)
+	req.Header.Set("X-Api-Key", apiKey)
+
+	client := &http.Client{Timeout: 10 * time.Second}
+	resp, err := client.Do(req)
+	require.NoError(t, err)
+	defer resp.Body.Close()
+
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+
+	var movies []RadarrMovieResponse
+	err = json.NewDecoder(resp.Body).Decode(&movies)
+	require.NoError(t, err)
+
+	for _, movie := range movies {
+		if movie.Title == title {
+			t.Logf("✅ Movie exists in Radarr: %s", title)
+			return true
+		}
+	}
+
+	t.Logf("❌ Movie NOT found in Radarr: %s", title)
+	return false
+}
+
+// UpdateEnableDeletion updates the enable_deletion setting in config using YAML parsing
+func UpdateEnableDeletion(t *testing.T, configPath string, enabled bool) {
+	t.Helper()
+	t.Logf("Updating enable_deletion to: %v", enabled)
+
+	// Read config file
+	content, err := os.ReadFile(configPath)
+	require.NoError(t, err)
+
+	// Parse YAML
+	var config map[string]interface{}
+	err = yaml.Unmarshal(content, &config)
+	require.NoError(t, err, "Failed to parse YAML config")
+
+	// Update enable_deletion
+	app, ok := config["app"].(map[string]interface{})
+	require.True(t, ok, "app section not found in config")
+
+	oldValue := app["enable_deletion"]
+	app["enable_deletion"] = enabled
+	t.Logf("Updated enable_deletion from %v to %v", oldValue, enabled)
+
+	// Marshal back to YAML
+	newContent, err := yaml.Marshal(config)
+	require.NoError(t, err, "Failed to marshal YAML config")
+
+	// Write updated config
+	err = os.WriteFile(configPath, newContent, 0644)
+	require.NoError(t, err)
+
+	t.Logf("Config updated: enable_deletion=%v", enabled)
+}
+
+// AdvancedRuleConfig represents a rule for config updates
+type AdvancedRuleConfig struct {
+	Name           string
+	Type           string
+	Enabled        bool
+	Tag            string
+	Retention      string
+	RequireWatched bool
+}
+
+// AddAdvancedRule adds an advanced rule to config file
+func AddAdvancedRule(t *testing.T, configPath string, rule AdvancedRuleConfig) {
+	t.Helper()
+	t.Logf("Adding advanced rule: %s (type: %s, tag: %s)", rule.Name, rule.Type, rule.Tag)
+
+	// Read config file
+	content, err := os.ReadFile(configPath)
+	require.NoError(t, err)
+
+	lines := strings.Split(string(content), "\n")
+
+	// Find where to insert advanced_rules section (after integrations section)
+	insertIndex := -1
+	for i := len(lines) - 1; i >= 0; i-- {
+		if strings.TrimSpace(lines[i]) != "" {
+			insertIndex = i + 1
+			break
+		}
+	}
+
+	require.True(t, insertIndex > 0, "Could not find insertion point for advanced_rules")
+
+	// Build rule YAML
+	ruleYAML := []string{
+		"",
+		"advanced_rules:",
+		fmt.Sprintf("  - name: \"%s\"", rule.Name),
+		fmt.Sprintf("    type: %s", rule.Type),
+		fmt.Sprintf("    enabled: %v", rule.Enabled),
+	}
+
+	if rule.Tag != "" {
+		ruleYAML = append(ruleYAML, fmt.Sprintf("    tag: %s", rule.Tag))
+	}
+	if rule.Retention != "" {
+		ruleYAML = append(ruleYAML, fmt.Sprintf("    retention: %s", rule.Retention))
+	}
+	ruleYAML = append(ruleYAML, fmt.Sprintf("    require_watched: %v", rule.RequireWatched))
+
+	// Insert rule at end of file
+	newLines := append(lines[:insertIndex], append(ruleYAML, lines[insertIndex:]...)...)
+
+	// Write updated config
+	newContent := strings.Join(newLines, "\n")
+	err = os.WriteFile(configPath, []byte(newContent), 0644)
+	require.NoError(t, err)
+
+	t.Logf("Advanced rule added to config")
+}
+
+// RemoveAdvancedRules removes all advanced rules from config
+func RemoveAdvancedRules(t *testing.T, configPath string) {
+	t.Helper()
+	t.Logf("Removing advanced rules from config")
+
+	// Read config file
+	content, err := os.ReadFile(configPath)
+	require.NoError(t, err)
+
+	lines := strings.Split(string(content), "\n")
+	inAdvancedRules := false
+	newLines := []string{}
+
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+
+		// Start of advanced_rules section
+		if strings.HasPrefix(trimmed, "advanced_rules:") {
+			inAdvancedRules = true
+			continue
+		}
+
+		// End of advanced_rules section (new top-level section or empty line after rules)
+		if inAdvancedRules {
+			if strings.HasSuffix(trimmed, ":") && !strings.HasPrefix(line, " ") {
+				// New top-level section
+				inAdvancedRules = false
+				newLines = append(newLines, line)
+			} else if !strings.HasPrefix(line, " ") && trimmed != "" {
+				// Non-indented non-empty line (shouldn't happen but handle it)
+				inAdvancedRules = false
+				newLines = append(newLines, line)
+			}
+			// Skip lines that are part of advanced_rules
+			continue
+		}
+
+		newLines = append(newLines, line)
+	}
+
+	// Write updated config
+	newContent := strings.Join(newLines, "\n")
+	err = os.WriteFile(configPath, []byte(newContent), 0644)
+	require.NoError(t, err)
+
+	t.Logf("Advanced rules removed from config")
 }

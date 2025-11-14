@@ -106,6 +106,17 @@ func TestIntegrationSuite(t *testing.T) {
 		}
 		testExclusionLifecycle(t)
 	})
+
+	// Run deletion lifecycle tests fourth (uses existing environment)
+	t.Run("DeletionLifecycle", func(t *testing.T) {
+		// If infrastructure wasn't set up (due to -run filter), set it up now
+		if !infrastructureReady {
+			t.Log("⚠️  Infrastructure not ready (filtered by -run), setting up now...")
+			testInfrastructureSetup(t)
+			infrastructureReady = true
+		}
+		testDeletionLifecycle(t)
+	})
 }
 
 // testInfrastructureSetup validates that the Docker environment can start reliably
