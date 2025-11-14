@@ -20,6 +20,9 @@ func newTestSyncEngineForAPI(t *testing.T) *services.SyncEngine {
 	tmpDir := t.TempDir()
 
 	cfg := &config.Config{
+		App: config.AppConfig{
+			LeavingSoonDays: 14, // Default leaving soon threshold
+		},
 		Sync: config.SyncConfig{
 			FullInterval:        3600,
 			IncrementalInterval: 300,

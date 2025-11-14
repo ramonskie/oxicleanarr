@@ -110,9 +110,17 @@ func (m *SymlinkLibraryManager) filterScheduledMedia(mediaLibrary map[string]mod
 	tvShows := make([]models.Media, 0)
 	now := time.Now()
 
+	// Get leaving_soon_days from config
+	cfg := config.Get()
+	if cfg == nil {
+		cfg = m.config
+	}
+	leavingSoonDays := cfg.App.LeavingSoonDays
+
 	skippedExcluded := 0
 	skippedNoDeleteDate := 0
 	skippedPastDeletion := 0
+	skippedOutsideWindow := 0
 	skippedNoJellyfinID := 0
 
 	for _, media := range mediaLibrary {
@@ -131,6 +139,13 @@ func (m *SymlinkLibraryManager) filterScheduledMedia(mediaLibrary map[string]mod
 		// Only include future deletions (leaving soon items)
 		if !media.DeleteAfter.After(now) {
 			skippedPastDeletion++
+			continue
+		}
+
+		// Check if item is within the leaving_soon_days window
+		daysUntilDue := int(time.Until(media.DeleteAfter).Hours() / 24)
+		if daysUntilDue > leavingSoonDays {
+			skippedOutsideWindow++
 			continue
 		}
 
@@ -158,9 +173,11 @@ func (m *SymlinkLibraryManager) filterScheduledMedia(mediaLibrary map[string]mod
 		Int("total_media", len(mediaLibrary)).
 		Int("movies", len(movies)).
 		Int("tv_shows", len(tvShows)).
+		Int("leaving_soon_days", leavingSoonDays).
 		Int("skipped_excluded", skippedExcluded).
 		Int("skipped_no_delete_date", skippedNoDeleteDate).
 		Int("skipped_past_deletion", skippedPastDeletion).
+		Int("skipped_outside_window", skippedOutsideWindow).
 		Int("skipped_no_jellyfin_id", skippedNoJellyfinID).
 		Msg("Filtered scheduled media for symlink library")
 

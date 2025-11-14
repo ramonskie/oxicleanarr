@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ramonskie/oxicleanarr/internal/config"
 	"github.com/ramonskie/oxicleanarr/internal/models"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -221,6 +222,90 @@ func TestMediaHandler_ListLeavingSoon(t *testing.T) {
 		assert.Equal(t, float64(1), response["total"])
 		media := response["items"].([]interface{})
 		assert.Len(t, media, 1)
+	})
+
+	t.Run("respects leaving_soon_days threshold", func(t *testing.T) {
+		engine := newTestSyncEngineForAPI(t)
+		handler := NewMediaHandler(engine)
+
+		// Set leaving_soon_days to 14 days
+		cfg := config.Get()
+		cfg.App.LeavingSoonDays = 14
+		config.SetTestConfig(cfg)
+
+		now := time.Now()
+
+		// Media within threshold (5 days - should appear)
+		engine.GetMediaLibrary()["movie-1"] = models.Media{
+			ID:           "movie-1",
+			Type:         models.MediaTypeMovie,
+			Title:        "Leaving in 5 days",
+			DaysUntilDue: 5,
+			DeleteAfter:  now.Add(5 * 24 * time.Hour),
+		}
+
+		// Media within threshold (14 days exactly - should appear)
+		engine.GetMediaLibrary()["movie-2"] = models.Media{
+			ID:           "movie-2",
+			Type:         models.MediaTypeMovie,
+			Title:        "Leaving in 14 days",
+			DaysUntilDue: 14,
+			DeleteAfter:  now.Add(14 * 24 * time.Hour),
+		}
+
+		// Media outside threshold (29 days - should NOT appear)
+		engine.GetMediaLibrary()["movie-3"] = models.Media{
+			ID:           "movie-3",
+			Type:         models.MediaTypeMovie,
+			Title:        "Leaving in 29 days",
+			DaysUntilDue: 29,
+			DeleteAfter:  now.Add(29 * 24 * time.Hour),
+		}
+
+		// Media outside threshold (30 days - should NOT appear)
+		engine.GetMediaLibrary()["movie-4"] = models.Media{
+			ID:           "movie-4",
+			Type:         models.MediaTypeMovie,
+			Title:        "Leaving in 30 days",
+			DaysUntilDue: 30,
+			DeleteAfter:  now.Add(30 * 24 * time.Hour),
+		}
+
+		// Media with 0 days (should NOT appear)
+		engine.GetMediaLibrary()["movie-5"] = models.Media{
+			ID:           "movie-5",
+			Type:         models.MediaTypeMovie,
+			Title:        "Not scheduled for deletion",
+			DaysUntilDue: 0,
+		}
+
+		req := httptest.NewRequest(http.MethodGet, "/api/media/leaving-soon", nil)
+		w := httptest.NewRecorder()
+
+		handler.ListLeavingSoon(w, req)
+
+		assert.Equal(t, http.StatusOK, w.Code)
+
+		var response map[string]interface{}
+		err := json.NewDecoder(w.Body).Decode(&response)
+		require.NoError(t, err)
+
+		// Should only return items with 5 and 14 days (2 items)
+		assert.Equal(t, float64(2), response["total"])
+		items := response["items"].([]interface{})
+		assert.Len(t, items, 2)
+
+		// Verify the correct items are returned (by checking DaysUntilDue)
+		returnedDays := make(map[int]bool)
+		for _, item := range items {
+			itemMap := item.(map[string]interface{})
+			days := int(itemMap["days_until_deletion"].(float64))
+			returnedDays[days] = true
+		}
+		assert.True(t, returnedDays[5], "Item with 5 days should be returned")
+		assert.True(t, returnedDays[14], "Item with 14 days should be returned")
+		assert.False(t, returnedDays[29], "Item with 29 days should NOT be returned")
+		assert.False(t, returnedDays[30], "Item with 30 days should NOT be returned")
 	})
 }
 

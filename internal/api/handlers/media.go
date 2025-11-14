@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/ramonskie/oxicleanarr/internal/config"
 	"github.com/ramonskie/oxicleanarr/internal/models"
 	"github.com/ramonskie/oxicleanarr/internal/services"
 	"github.com/rs/zerolog/log"
@@ -96,10 +97,14 @@ func (h *MediaHandler) ListShows(w http.ResponseWriter, r *http.Request) {
 func (h *MediaHandler) ListLeavingSoon(w http.ResponseWriter, r *http.Request) {
 	media := h.syncEngine.GetMediaList()
 
-	// Filter leaving soon items (items with positive DaysUntilDue, meaning they'll be deleted soon)
+	// Get leaving_soon_days threshold from config
+	cfg := config.Get()
+	leavingSoonDays := cfg.App.LeavingSoonDays
+
+	// Filter leaving soon items (items within the leaving_soon_days threshold)
 	var leavingSoon []models.Media
 	for _, item := range media {
-		if item.DaysUntilDue > 0 && !item.IsExcluded {
+		if item.DaysUntilDue > 0 && item.DaysUntilDue <= leavingSoonDays && !item.IsExcluded {
 			leavingSoon = append(leavingSoon, item)
 		}
 	}
