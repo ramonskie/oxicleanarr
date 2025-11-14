@@ -46,7 +46,8 @@ func NewSymlinkLibraryManager(jellyfinClient JellyfinVirtualFolderClient, cfg *c
 }
 
 // SyncLibraries synchronizes symlink-based Jellyfin libraries with scheduled deletions
-func (m *SymlinkLibraryManager) SyncLibraries(ctx context.Context, mediaLibrary map[string]models.Media) error {
+// Returns the total count of items added to leaving soon libraries
+func (m *SymlinkLibraryManager) SyncLibraries(ctx context.Context, mediaLibrary map[string]models.Media) (int, error) {
 	cfg := config.Get()
 	if cfg == nil {
 		log.Debug().Msg("Config not available, using stored config")
@@ -56,7 +57,7 @@ func (m *SymlinkLibraryManager) SyncLibraries(ctx context.Context, mediaLibrary 
 	// Check if symlink libraries are enabled
 	if !cfg.Integrations.Jellyfin.SymlinkLibrary.Enabled {
 		log.Debug().Msg("Symlink libraries disabled, skipping")
-		return nil
+		return 0, nil
 	}
 
 	symlinkCfg := cfg.Integrations.Jellyfin.SymlinkLibrary
@@ -80,28 +81,32 @@ func (m *SymlinkLibraryManager) SyncLibraries(ctx context.Context, mediaLibrary 
 
 	// Separate media into movies and TV shows that are scheduled for deletion
 	movies, tvShows := m.filterScheduledMedia(mediaLibrary)
+	leavingSoonCount := len(movies) + len(tvShows)
 
 	log.Debug().
 		Int("movies", len(movies)).
 		Int("tv_shows", len(tvShows)).
+		Int("leaving_soon_total", leavingSoonCount).
 		Msg("Filtered scheduled media")
 
 	// Sync movie library
 	moviePath := filepath.Join(symlinkCfg.BasePath, "movies")
 	if err := m.syncLibrary(ctx, moviesLibraryName, "movies", moviePath, movies); err != nil {
 		log.Error().Err(err).Str("type", "movies").Msg("Failed to sync movie library")
-		return err
+		return 0, err
 	}
 
 	// Sync TV show library
 	tvPath := filepath.Join(symlinkCfg.BasePath, "tv")
 	if err := m.syncLibrary(ctx, tvLibraryName, "tvshows", tvPath, tvShows); err != nil {
 		log.Error().Err(err).Str("type", "tv_shows").Msg("Failed to sync TV show library")
-		return err
+		return 0, err
 	}
 
-	log.Info().Msg("Symlink library sync completed")
-	return nil
+	log.Info().
+		Int("leaving_soon_count", leavingSoonCount).
+		Msg("Symlink library sync completed")
+	return leavingSoonCount, nil
 }
 
 // filterScheduledMedia separates media into movies and TV shows scheduled for deletion

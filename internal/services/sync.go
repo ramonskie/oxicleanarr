@@ -305,6 +305,7 @@ func (e *SyncEngine) FullSync(ctx context.Context) error {
 	e.applyRetentionRules()
 
 	// Sync symlink libraries for "Leaving Soon" items
+	leavingSoonCount := 0
 	if e.symlinkLibraryManager != nil {
 		e.mediaLibraryLock.RLock()
 		mediaLibraryCopy := make(map[string]models.Media, len(e.mediaLibrary))
@@ -313,7 +314,9 @@ func (e *SyncEngine) FullSync(ctx context.Context) error {
 		}
 		e.mediaLibraryLock.RUnlock()
 
-		if err := e.symlinkLibraryManager.SyncLibraries(ctx, mediaLibraryCopy); err != nil {
+		var err error
+		leavingSoonCount, err = e.symlinkLibraryManager.SyncLibraries(ctx, mediaLibraryCopy)
+		if err != nil {
 			lastErr = err
 			log.Error().Err(err).Msg("Failed to sync symlink libraries")
 		}
@@ -339,6 +342,7 @@ func (e *SyncEngine) FullSync(ctx context.Context) error {
 	job.Summary["tv_shows"] = tvShowCount
 	job.Summary["total_media"] = e.GetMediaCount()
 	job.Summary["scheduled_deletions"] = scheduledCount
+	job.Summary["leaving_soon_count"] = leavingSoonCount
 	job.Summary["dry_run"] = e.config.App.DryRun
 	job.Summary["enable_deletion"] = e.config.App.EnableDeletion
 

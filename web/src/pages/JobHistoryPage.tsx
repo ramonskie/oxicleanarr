@@ -246,6 +246,13 @@ export default function JobHistoryPage() {
                                 {job.summary.tv_shows} shows
                               </div>
                             )}
+                            {job.summary.leaving_soon_count !== undefined &&
+                              job.summary.leaving_soon_count > 0 && (
+                                <div className="flex items-center gap-1 text-blue-600">
+                                  <Clock className="h-4 w-4" />
+                                  {job.summary.leaving_soon_count} leaving soon
+                                </div>
+                              )}
                             {job.summary.scheduled_deletions !== undefined &&
                               job.summary.scheduled_deletions > 0 && (
                                 <div className="flex items-center gap-1 text-amber-600">
