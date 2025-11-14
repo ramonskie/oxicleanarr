@@ -149,6 +149,12 @@ advanced_rules:
         require_watched: true  # Per-user override: only delete if watched
       - email: guest@example.com
         retention: 14d
+  
+  - name: Watched-Based Cleanup
+    type: watched
+    enabled: true
+    retention: 30d             # Delete 30 days after last watch
+    require_watched: true      # Only delete media that has been watched (protects unwatched)
 
 integrations:
   jellyfin:

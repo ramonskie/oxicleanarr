@@ -9,11 +9,36 @@ Before running OxiCleanarr, ensure you have:
    - Radarr (for movie management)
    - Sonarr (for TV show management)
    - Jellyseerr (optional - for request tracking)
+   - Jellystat (optional - for watch history and watched-based rules)
 
 2. **API Keys**:
    - Jellyfin API key
    - Radarr API key
    - Sonarr API key
+
+3. **OxiCleanarr Bridge Plugin**:
+   - **Required** for "Leaving Soon" library functionality
+   - Provides symlink management via HTTP API
+   - See installation instructions below
+
+## Installation
+
+### Step 0: Install the OxiCleanarr Bridge Plugin
+
+> **⚠️ REQUIRED**: This plugin is necessary for OxiCleanarr to create "Leaving Soon" libraries in Jellyfin.
+
+1. Open Jellyfin → **Dashboard** → **Plugins** → **Repositories**
+2. Click **"+"** to add a repository
+3. Enter:
+   - **Repository Name**: `OxiCleanarr Plugin Repository`
+   - **Repository URL**: `https://cdn.jsdelivr.net/gh/ramonskie/jellyfin-plugin-oxicleanarr@main/manifest.json`
+4. Click **Save**
+5. Go to **Dashboard** → **Plugins** → **Catalog**
+6. Find "OxiCleanarr Bridge" and click **Install**
+7. Restart Jellyfin when prompted
+8. Verify: **Dashboard** → **Plugins** → Confirm "OxiCleanarr Bridge" is listed and active
+
+> **Manual Installation**: For manual installation, see the [plugin repository](https://github.com/ramonskie/jellyfin-plugin-oxicleanarr)
 
 ## Configuration
 
@@ -28,7 +53,23 @@ cp config/config.yaml.example config/config.yaml
 
 **⚠️ IMPORTANT:** Never commit `config/config.yaml` to version control - it contains sensitive API keys!
 
-### Step 2: Edit Configuration
+### Step 2: Configure "Leaving Soon" Library (Optional)
+
+If you want the "Leaving Soon" feature, configure the symlink library paths:
+
+1. **Create directories** on your Jellyfin server:
+   ```bash
+   mkdir -p /path/to/media/leaving-soon/movies
+   mkdir -p /path/to/media/leaving-soon/tv
+   ```
+
+2. **Add libraries in Jellyfin**:
+   - Go to **Dashboard** → **Libraries** → **Add Media Library**
+   - Create library "Leaving Soon - Movies" pointing to `/path/to/media/leaving-soon/movies`
+   - Create library "Leaving Soon - TV" pointing to `/path/to/media/leaving-soon/tv`
+   - Set content type to Movies/Shows respectively
+
+### Step 3: Edit Configuration
 
 Edit `config/config.yaml` and update the following:
 
@@ -42,6 +83,13 @@ integrations:
     enabled: true
     url: http://YOUR-JELLYFIN-HOST:8096  # Update this
     api_key: YOUR-JELLYFIN-API-KEY       # Update this
+    
+    # Optional: Enable "Leaving Soon" library
+    symlink_library:
+      enabled: true
+      base_path: /path/to/media/leaving-soon  # Path on Jellyfin server
+      movies_library_name: "Leaving Soon - Movies"
+      tv_library_name: "Leaving Soon - TV"
   
   radarr:
     enabled: true
@@ -52,6 +100,18 @@ integrations:
     enabled: true
     url: http://YOUR-SONARR-HOST:8989    # Update this
     api_key: YOUR-SONARR-API-KEY         # Update this
+  
+  # Optional: Enable for user-based rules
+  jellyseerr:
+    enabled: false
+    url: http://YOUR-JELLYSEERR-HOST:5055
+    api_key: YOUR-JELLYSEERR-API-KEY
+  
+  # Optional: Enable for watched-based rules
+  jellystat:
+    enabled: false
+    url: http://YOUR-JELLYSTAT-HOST:3000
+    api_key: YOUR-JELLYSTAT-API-KEY
 ```
 
 **⚠️ Security Warning:** 
@@ -60,7 +120,7 @@ integrations:
 - Protect the config file: `chmod 600 config/config.yaml`
 - Use a strong password since it's not hashed
 
-### Step 2: Optional Settings
+### Step 4: Optional Settings
 
 Uncomment and modify these sections as needed:
 
@@ -74,9 +134,43 @@ sync:
   incremental_interval: 900  # Incremental sync every 15 minutes
   auto_start: true           # Start syncing immediately on startup
 
+rules:
+  movie_retention: 90d       # Keep movies for 90 days
+  tv_retention: 120d         # Keep TV shows for 120 days
+
 server:
   host: 0.0.0.0             # Listen on all interfaces
   port: 8080                 # HTTP port
+```
+
+### Step 5: Advanced Rules (Optional)
+
+Configure advanced rules for fine-grained control. See [README.md](README.md#advanced-rules) for full documentation.
+
+```yaml
+advanced_rules:
+  # Tag-based: Preserve kids content longer
+  - name: Kids Content
+    type: tag
+    enabled: true
+    tag: kids
+    retention: 180d
+  
+  # User-based: Trial users get shorter retention (requires Jellyseerr)
+  - name: Trial Users
+    type: user
+    enabled: true
+    users:
+      - email: guest@example.com
+        retention: 7d
+        require_watched: true
+  
+  # Watched-based: Auto-cleanup watched content (requires Jellystat)
+  - name: Watched Cleanup
+    type: watched
+    enabled: true
+    retention: 30d
+    require_watched: true
 ```
 
 ## Running OxiCleanarr
@@ -321,6 +415,57 @@ curl -X DELETE http://localhost:8080/api/media/MEDIA_ID?dry_run=true \
      -H "Authorization: Bearer $TOKEN" | jq
    ```
 
+### Testing Advanced Rules
+
+#### Testing Watched-Based Rules
+
+If you have Jellystat configured and want to test watched-based cleanup:
+
+```bash
+# 1. Enable watched rules in config
+# advanced_rules:
+#   - name: Watched Cleanup
+#     type: watched
+#     enabled: true
+#     retention: 30d
+#     require_watched: true
+
+# 2. Sync to pull watch history from Jellystat
+curl -X POST http://localhost:8080/api/sync/full \
+  -H "Authorization: Bearer $TOKEN"
+
+# 3. Check media with watch counts
+curl http://localhost:8080/api/media/movies \
+  -H "Authorization: Bearer $TOKEN" | jq '.[] | {title, watch_count, last_watched, delete_after}'
+
+# 4. Verify that:
+#    - Watched content has delete_after date = last_watched + retention
+#    - Unwatched content (watch_count: 0) is NOT scheduled for deletion
+```
+
+#### Testing User-Based Rules
+
+If you have Jellyseerr configured:
+
+```bash
+# 1. Enable user rules in config
+# advanced_rules:
+#   - name: Guest Users
+#     type: user
+#     enabled: true
+#     users:
+#       - email: guest@example.com
+#         retention: 7d
+
+# 2. Sync to pull request data from Jellyseerr
+curl -X POST http://localhost:8080/api/sync/full \
+  -H "Authorization: Bearer $TOKEN"
+
+# 3. Check which user requested each item
+curl http://localhost:8080/api/media/movies \
+  -H "Authorization: Bearer $TOKEN" | jq '.[] | {title, requested_by, delete_after}'
+```
+
 ## Troubleshooting
 
 ### Check Logs
@@ -350,6 +495,19 @@ Logs are output to stdout/stderr. Look for:
 4. **"401 Unauthorized"**
    - Missing or invalid JWT token
    - Include `Authorization: Bearer YOUR_TOKEN` header
+
+5. **"Leaving Soon library not working"**
+   - Verify OxiCleanarr Bridge Plugin is installed and active in Jellyfin
+   - Check Jellyfin logs for plugin errors
+   - Verify `symlink_library.enabled: true` in config
+   - Ensure `base_path` exists and is accessible by Jellyfin
+   - Confirm library names match in both config and Jellyfin
+
+6. **"Watched rules not working"**
+   - Ensure Jellystat integration is enabled and configured
+   - Verify Jellystat is tracking watch history
+   - Check that `require_watched: true` is set if you want to protect unwatched content
+   - Sync again to refresh watch history: `POST /api/sync/full`
 
 ### Enable Debug Logging
 

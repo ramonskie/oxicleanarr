@@ -2,6 +2,26 @@
 
 ## Prerequisites Check
 
+### 1. Install OxiCleanarr Bridge Plugin in Jellyfin
+
+> **⚠️ REQUIRED**: The OxiCleanarr Bridge Plugin must be installed in Jellyfin for symlink management to work.
+
+**Install via Plugin Repository (Recommended):**
+1. Open Jellyfin → **Dashboard** → **Plugins** → **Repositories**
+2. Click **"+"** to add a repository
+3. Enter:
+   - **Repository Name**: `OxiCleanarr Plugin Repository`
+   - **Repository URL**: `https://cdn.jsdelivr.net/gh/ramonskie/jellyfin-plugin-oxicleanarr@main/manifest.json`
+4. Click **Save**
+5. Go to **Dashboard** → **Plugins** → **Catalog**
+6. Find "OxiCleanarr Bridge" and click **Install**
+7. Restart Jellyfin when prompted
+8. Verify: **Dashboard** → **Plugins** → Confirm "OxiCleanarr Bridge" is active
+
+> **Manual Installation**: See the [plugin repository](https://github.com/ramonskie/jellyfin-plugin-oxicleanarr) for manual installation steps.
+
+### 2. Verify NAS Setup
+
 Run these commands on your NAS to verify the setup:
 
 ```bash

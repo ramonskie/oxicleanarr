@@ -7,6 +7,8 @@
 ## Features
 
 - **Automated Media Cleanup**: Intelligently removes unwatched media based on configurable retention rules
+- **Advanced Rules Engine**: Tag-based, user-based, and watched-based cleanup rules for fine-grained control
+- **"Leaving Soon" Library**: Creates symlink libraries in Jellyfin to preview content scheduled for deletion
 - **Multi-Service Integration**: Supports Jellyfin, Radarr, Sonarr, Jellyseerr, and Jellystat
 - **Safe Operations**: Dry-run mode enabled by default, manual exclusions, and job history tracking
 - **Hot Configuration Reload**: Update settings without restarting the application
@@ -18,10 +20,30 @@
 ### Prerequisites
 
 - Go 1.21+ (for building from source)
-- Active *arr stack services (Radarr, Sonarr)
+- Active *arr stack services (Radarr and/or Sonarr)
 - Jellyfin instance
+- **[OxiCleanarr Bridge Plugin](https://github.com/ramonskie/jellyfin-plugin-oxicleanarr)** installed in Jellyfin
+
+> **⚠️ IMPORTANT:** The OxiCleanarr Bridge Plugin is **required** for Jellyfin integration. It provides file system operations (symlink management, directory operations) that Jellyfin's native API doesn't support. Without this plugin, OxiCleanarr cannot create "leaving soon" libraries or manage media lifecycle.
 
 ### Installation
+
+#### Step 1: Install the OxiCleanarr Bridge Plugin
+
+1. Open Jellyfin → **Dashboard** → **Plugins** → **Repositories**
+2. Click **"+"** to add a repository
+3. Enter:
+   - **Repository Name**: `OxiCleanarr Plugin Repository`
+   - **Repository URL**: `https://cdn.jsdelivr.net/gh/ramonskie/jellyfin-plugin-oxicleanarr@main/manifest.json`
+4. Click **Save**
+5. Go to **Dashboard** → **Plugins** → **Catalog**
+6. Find "OxiCleanarr Bridge" and click **Install**
+7. Restart Jellyfin when prompted
+8. Verify the plugin is loaded: **Dashboard → Plugins → OxiCleanarr Bridge**
+
+> **Manual Installation**: For manual installation from source or releases, see the [plugin repository](https://github.com/ramonskie/jellyfin-plugin-oxicleanarr)
+
+#### Step 2: Install OxiCleanarr
 
 1. Clone the repository:
 ```bash
@@ -40,7 +62,16 @@ mkdir -p config
 cp config/config.yaml.example config/config.yaml
 ```
 
-4. Edit `config/config.yaml` with your service URLs and API keys:
+4. Configure "Leaving Soon" library paths in Jellyfin:
+   - Create directories for symlink libraries (on the Jellyfin server):
+     ```bash
+     mkdir -p /path/to/media/leaving-soon/movies
+     mkdir -p /path/to/media/leaving-soon/tv
+     ```
+   - Add these directories as new libraries in Jellyfin
+   - Name them appropriately (e.g., "Leaving Soon - Movies", "Leaving Soon - TV")
+
+5. Edit `config/config.yaml` with your service URLs and API keys:
 ```yaml
 admin:
   username: admin
@@ -51,6 +82,11 @@ integrations:
     enabled: true
     url: http://jellyfin:8096
     api_key: your-jellyfin-api-key-here
+    symlink_library:
+      enabled: true
+      base_path: /path/to/media/leaving-soon  # Path on Jellyfin server
+      movies_library_name: "Leaving Soon - Movies"
+      tv_library_name: "Leaving Soon - TV"
   
   radarr:
     enabled: true
@@ -61,11 +97,19 @@ integrations:
     enabled: true
     url: http://sonarr:8989
     api_key: your-sonarr-api-key-here
+
+rules:
+  movie_retention: 90d      # Keep movies for 90 days
+  tv_retention: 120d        # Keep TV shows for 120 days
+
+app:
+  dry_run: true             # Start in safe mode - no actual deletions
+  leaving_soon_days: 14     # Show items in "leaving soon" 14 days before deletion
 ```
 
 **⚠️ Security Note:** Passwords are stored in plain text in the configuration file. Ensure the file has restricted permissions (`chmod 600 config/config.yaml`) and use a strong password.
 
-5. Run OxiCleanarr:
+6. Run OxiCleanarr:
 ```bash
 ./oxicleanarr
 ```
@@ -171,6 +215,113 @@ export OXICLEANARR_SERVER_PORT=9090
 export OXICLEANARR_APP_DRY_RUN=false
 export OXICLEANARR_INTEGRATIONS_JELLYFIN_URL=http://jellyfin:8096
 export OXICLEANARR_INTEGRATIONS_JELLYFIN_API_KEY=your-key
+```
+
+## Advanced Rules
+
+OxiCleanarr provides a powerful rules engine that allows fine-grained control over media cleanup behavior. Rules are evaluated in priority order: **tag-based** → **user-based** → **watched-based** → **default retention**.
+
+### Tag-Based Rules
+
+Target media by Radarr/Sonarr tags for custom retention periods:
+
+```yaml
+advanced_rules:
+  - name: Kids Content
+    type: tag
+    enabled: true
+    tag: kids
+    retention: 60d      # Keep kids content for 60 days
+  
+  - name: Premium Content
+    type: tag
+    enabled: true
+    tag: premium
+    retention: 180d     # Keep premium content for 6 months
+```
+
+### User-Based Rules
+
+Apply different retention policies based on who requested the content. Match users by any of: `user_id`, `username`, or `email`.
+
+```yaml
+advanced_rules:
+  - name: Trial Users
+    type: user
+    enabled: true
+    users:
+      - user_id: 42                    # Match by Jellyseerr user ID
+        retention: 30d
+      - email: guest@example.com       # Match by email address
+        retention: 7d
+        require_watched: true          # Only delete after watched
+      - username: trial_user           # Match by username
+        retention: 14d
+```
+
+**Integration Requirements**: User-based rules require Jellyseerr integration enabled to match requesters.
+
+### Watched-Based Rules
+
+Automatically clean up content based on watch history. Requires Jellystat integration.
+
+```yaml
+advanced_rules:
+  - name: Auto Clean Watched Content
+    type: watched
+    enabled: true
+    retention: 30d              # Delete 30 days after last watch
+    require_watched: true       # Only delete media that has been watched
+                                # Protects unwatched content from deletion
+```
+
+**How it works**: When `require_watched: true`, media must have at least one watch event. The retention period starts from the **last watch date**. Unwatched content is never deleted by this rule.
+
+**Integration Requirements**: Watched-based rules require Jellystat integration enabled to track watch history.
+
+### Rule Priority Order
+
+Rules are evaluated in this order:
+
+1. **Tag-based rules** (highest priority) - If media has a matching tag
+2. **User-based rules** - If media was requested by a matching user
+3. **Watched-based rules** - If media meets watch criteria
+4. **Default retention** (lowest priority) - `movie_retention` or `tv_retention`
+
+The first matching rule determines the retention policy.
+
+### Example: Complete Configuration
+
+```yaml
+rules:
+  movie_retention: 90d      # Default for movies
+  tv_retention: 120d        # Default for TV shows
+
+advanced_rules:
+  # Highest priority: Preserve important content by tag
+  - name: Keep Forever
+    type: tag
+    enabled: true
+    tag: keep
+    retention: never        # Never delete
+  
+  # Medium priority: Guest users get shorter retention
+  - name: Guest Users
+    type: user
+    enabled: true
+    users:
+      - username: guest
+        retention: 7d
+        require_watched: true
+  
+  # Lower priority: Auto-cleanup watched content
+  - name: Watched Cleanup
+    type: watched
+    enabled: true
+    retention: 30d
+    require_watched: true
+  
+  # Fallback: Default retention applies if no rules match
 ```
 
 ## API Documentation
