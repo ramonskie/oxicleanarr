@@ -1,56 +1,44 @@
-# Test Configuration for Integration Tests
-# API keys are set dynamically by integration test helpers at runtime
-
 admin:
-  username: admin
-  password: adminpassword
-
+    password: adminpassword
+    username: admin
 app:
-  dry_run: false
-  enable_deletion: false  # Safety: manual deletion only
-  leaving_soon_days: 14
-
-sync:
-  full_interval: 3600
-  incremental_interval: 900
-  auto_start: false  # Manual sync control in tests
-
-rules:
-  movie_retention: 7d
-  tv_retention: 120d
-
-server:
-  host: 0.0.0.0
-  port: 8080
-
+    dry_run: false
+    enable_deletion: false
+    leaving_soon_days: 14
 integrations:
-  jellyfin:
-    enabled: true
-    url: http://oxicleanarr-test-jellyfin:8096  # Docker container name for inter-container communication
-    api_key: ""
-    symlink_library:
-      enabled: true
-      base_path: /data/media/leaving-soon
-      movies_library_name: "Test - Leaving Soon Movies"
-      tv_library_name: "Test - Leaving Soon TV"
-      hide_when_empty: true
-  
-  radarr:
-    enabled: true
-    url: http://oxicleanarr-test-radarr:7878  # Docker container name for inter-container communication
-    api_key: ""
-
-  sonarr:
-    enabled: false  # Not used in current integration tests
-    url: http://oxicleanarr-test-sonarr:8989
-    api_key: ""  # Set dynamically by integration tests
-  
-  jellyseerr:
-    enabled: false  # Not used in current integration tests
-    url: http://oxicleanarr-test-jellyseerr:5055
-    api_key: ""  # Set dynamically by integration tests
-  
-  jellystat:
-    enabled: false  # Not used in current integration tests
-    url: http://oxicleanarr-test-jellystat:3000
-    api_key: ""  # Set dynamically by integration tests
+    jellyfin:
+        api_key: bb1088c0775c4fd68d33e91c49754c0e
+        enabled: true
+        symlink_library:
+            base_path: /data/media/leaving-soon
+            enabled: true
+            hide_when_empty: true
+            movies_library_name: Test - Leaving Soon Movies
+            tv_library_name: Test - Leaving Soon TV
+        url: http://oxicleanarr-test-jellyfin:8096
+    jellyseerr:
+        api_key: ""
+        enabled: false
+        url: http://oxicleanarr-test-jellyseerr:5055
+    jellystat:
+        api_key: ""
+        enabled: false
+        url: http://oxicleanarr-test-jellystat:3000
+    radarr:
+        api_key: 0b1e31a0186349168b227f2ccb3f2fca
+        enabled: true
+        url: http://oxicleanarr-test-radarr:7878
+    sonarr:
+        api_key: ""
+        enabled: false
+        url: http://oxicleanarr-test-sonarr:8989
+rules:
+    movie_retention: 7d
+    tv_retention: 120d
+server:
+    host: 0.0.0.0
+    port: 8080
+sync:
+    auto_start: false
+    full_interval: 3600
+    incremental_interval: 900

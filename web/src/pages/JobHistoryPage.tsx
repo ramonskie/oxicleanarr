@@ -359,6 +359,16 @@ export default function JobHistoryPage() {
                             <span>{selectedJob.summary.total_media}</span>
                           </div>
                         )}
+                        {selectedJob.summary.leaving_soon_count !== undefined && (
+                          <div className="flex justify-between">
+                            <span className="text-muted-foreground">
+                              Leaving Soon:
+                            </span>
+                            <span className="text-blue-600 font-medium">
+                              {selectedJob.summary.leaving_soon_count}
+                            </span>
+                          </div>
+                        )}
                         {selectedJob.summary.scheduled_deletions !== undefined && (
                           <div className="flex justify-between">
                             <span className="text-muted-foreground">

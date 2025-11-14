@@ -22,6 +22,7 @@ vendor/
 # Ignore all active config files that may contain real API keys
 config/config.yaml
 config/config.nas.yaml
+test/assets/config/config.yaml
 
 # Data files
 data/
