@@ -27,9 +27,11 @@ test/assets/config/config.yaml
 # Data files
 data/
 *.json
-# But allow important lock files
+# But allow important web config and package files
 !web/package.json
 !web/package-lock.json
+!web/tsconfig*.json
+!web/public/*.json
 !go.sum
 
 # Log files
