@@ -144,51 +144,44 @@ Save and exit (Ctrl+X, Y, Enter)
 - Protect the file: `sudo chmod 600 /volume3/docker/oxicleanarr/config/config.yaml`
 - Only the NAS admin user should be able to read this file
 
-### Step 3: Build OxiCleanarr Docker Image
+### Step 3: Pull OxiCleanarr Docker Image
 
-OxiCleanarr uses a **multi-stage Dockerfile** that:
-1. Builds the React frontend (web UI)
-2. Builds the Go backend binary
-3. Combines both in a minimal Alpine runtime image
-
-**Option A: Build on NAS (if you have the source code)**
+**Option A: Pull from GitHub Container Registry (Recommended)**
 
 ```bash
-cd /path/to/oxicleanarr/source
-docker build -t oxicleanarr:latest .
+# Pull the latest stable release
+docker pull ghcr.io/ramonskie/oxicleanarr:latest
 
-# Build will take 5-10 minutes
-# You'll see 3 stages: frontend-builder, backend-builder, runtime
+# Or pull a specific version
+docker pull ghcr.io/ramonskie/oxicleanarr:v1.0.0
+
+# Verify image downloaded
+docker images | grep oxicleanarr
+# Should show: ghcr.io/ramonskie/oxicleanarr  latest  <image-id>  <size>
 ```
 
-**Option B: Build on dev machine, export, import on NAS (Recommended)**
+**Available Tags:**
+- `ghcr.io/ramonskie/oxicleanarr:latest` - Latest stable release
+- `ghcr.io/ramonskie/oxicleanarr:v1.0.0` - Specific version (e.g., v1.0.0)
+- `ghcr.io/ramonskie/oxicleanarr:1.0` - Major.minor version
+- `ghcr.io/ramonskie/oxicleanarr:1` - Major version only
+
+**Option B: Build from Source (if you need custom modifications)**
 
 ```bash
 # On dev machine:
 cd /path/to/oxicleanarr
 docker build -t oxicleanarr:latest .
-docker save oxicleanarr:latest | gzip > oxicleanarr-latest.tar.gz
 
-# Copy to NAS (replace with your NAS IP/hostname)
+# Option B1: Save and transfer to NAS
+docker save oxicleanarr:latest | gzip > oxicleanarr-latest.tar.gz
 scp oxicleanarr-latest.tar.gz admin@your-nas:/volume3/docker/
 
 # On NAS (SSH in):
 docker load < /volume3/docker/oxicleanarr-latest.tar.gz
-
-# Verify image loaded
-docker images | grep oxicleanarr
-# Should show: oxicleanarr  latest  <image-id>  <size>
 ```
 
-**Option C: Use docker-compose build (simplest if source is on NAS)**
-
-```bash
-# If you cloned the repo to your NAS:
-cd /volume3/docker/oxicleanarr/source
-docker-compose -f docker-compose.nas.yml build
-
-# This will use the Dockerfile in the repo root
-```
+> **Note:** Building from source takes 5-10 minutes. The multi-stage Dockerfile builds the React frontend, Go backend, and combines them in a minimal Alpine runtime image.
 
 ### Step 4: Create Docker Compose File for OxiCleanarr
 
@@ -203,7 +196,7 @@ version: '3.8'
 
 services:
   oxicleanarr:
-    image: oxicleanarr:latest
+    image: ghcr.io/ramonskie/oxicleanarr:latest
     container_name: oxicleanarr
     environment:
       - PUID=1027

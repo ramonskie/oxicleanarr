@@ -52,7 +52,7 @@
 
 ### Prerequisites
 
-- Go 1.21+ (for building from source)
+- Docker (recommended) or Go 1.21+ (for building from source)
 - Active *arr stack services (Radarr and/or Sonarr)
 - Jellyfin instance
 - **[OxiCleanarr Bridge Plugin](https://github.com/ramonskie/jellyfin-plugin-oxicleanarr)** installed in Jellyfin
@@ -60,6 +60,39 @@
 > **⚠️ IMPORTANT:** The OxiCleanarr Bridge Plugin is **required** for Jellyfin integration. It provides file system operations (symlink management, directory operations) that Jellyfin's native API doesn't support. Without this plugin, OxiCleanarr cannot create "leaving soon" libraries or manage media lifecycle.
 
 ### Installation
+
+#### Option A: Docker (Recommended)
+
+**Pull the latest image:**
+
+```bash
+docker pull ghcr.io/ramonskie/oxicleanarr:latest
+```
+
+**Run with Docker:**
+
+```bash
+docker run -d \
+  --name oxicleanarr \
+  -p 8080:8080 \
+  -v /path/to/config:/app/config \
+  -v /path/to/data:/app/data \
+  -v /path/to/media:/data/media:ro \
+  -e PUID=1000 \
+  -e PGID=1000 \
+  -e TZ=UTC \
+  ghcr.io/ramonskie/oxicleanarr:latest
+```
+
+**Or use Docker Compose** (see [NAS_DEPLOYMENT.md](NAS_DEPLOYMENT.md) for detailed examples)
+
+**Available Tags:**
+- `ghcr.io/ramonskie/oxicleanarr:latest` - Latest stable release
+- `ghcr.io/ramonskie/oxicleanarr:v1.0.0` - Specific version
+- `ghcr.io/ramonskie/oxicleanarr:1.0` - Major.minor version
+- `ghcr.io/ramonskie/oxicleanarr:1` - Major version
+
+#### Option B: Build from Source
 
 #### Step 1: Install the OxiCleanarr Bridge Plugin
 
@@ -76,7 +109,7 @@
 
 > **Manual Installation**: For manual installation from source or releases, see the [plugin repository](https://github.com/ramonskie/jellyfin-plugin-oxicleanarr)
 
-#### Step 2: Install OxiCleanarr
+#### Step 2: Build OxiCleanarr
 
 1. Clone the repository:
 ```bash

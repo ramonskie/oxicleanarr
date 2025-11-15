@@ -1,7 +1,7 @@
 services:
-  prunarr:
-    image: ramonskie/prunarr:latest
-    container_name: prunarr
+  oxicleanarr:
+    image: ghcr.io/ramonskie/oxicleanarr:latest
+    container_name: oxicleanarr
     environment:
       # User/Group IDs - Match your NAS user (check with `id` command)
       # Synology default: 1026 or 1027, QNAP: varies
@@ -12,29 +12,29 @@ services:
       - LOG_LEVEL=info
       - LOG_FORMAT=json
     volumes:
-      # Config file (single YAML file mount)
+      # Config directory (mount directory, not individual file)
       # NOTE: Add :z flag if using SELinux systems (Fedora, RHEL, CentOS)
       # Synology/QNAP users: :z flag is optional but harmless
-      - /volume3/docker/prunarr/prunarr.yaml:/app/config/prunarr.yaml
+      - /volume3/docker/oxicleanarr/config:/app/config
       
       # Data directory (jobs, exclusions)
-      - /volume3/docker/prunarr/data:/app/data
+      - /volume3/docker/oxicleanarr/data:/app/data
       
       # Logs directory (optional - logs go to docker logs by default)
-      - /volume3/docker/prunarr/logs:/app/logs
+      - /volume3/docker/oxicleanarr/logs:/app/logs
       
-      # Media paths (read-write so Prunarr can create symlinks)
+      # Media paths (read-write so OxiCleanarr can create symlinks)
       # MUST match Radarr/Sonarr/Jellyfin paths exactly
       # Mount ONLY the media directory for better security (not all of /volume1/data)
       # Adjust to match YOUR system structure:
-      - /volume1/data/media:/data/media  # Prunarr creates symlinks at /data/media/leaving-soon/
+      - /volume1/data/media:/data/media  # OxiCleanarr creates symlinks at /data/media/leaving-soon/
       
-      # RECOMMENDED CONFIG: Use base_path: /data/media/leaving-soon in prunarr.yaml
+      # RECOMMENDED CONFIG: Use base_path: /data/media/leaving-soon in config.yaml
       # This way Jellyfin doesn't need an extra mount - it already has /data/media!
       
       # Alternative: Separate symlink directory (requires extra Jellyfin mount)
-      # - /volume3/docker/prunarr/leaving-soon:/app/leaving-soon
-      # Then use base_path: /app/leaving-soon in prunarr.yaml
+      # - /volume3/docker/oxicleanarr/leaving-soon:/app/leaving-soon
+      # Then use base_path: /app/leaving-soon in config.yaml
       
       # Alternative path patterns (uncomment/modify based on your setup):
       # - /volume1/media:/media:ro           # If your media is at /volume1/media/
