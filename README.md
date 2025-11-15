@@ -1,10 +1,14 @@
 # OxiCleanarr
 
+<p align="center">
+  <img src="docs/logo.png" alt="OxiCleanarr Logo" width="300">
+</p>
+
 > **"But wait, there's more!"** - A lightweight media cleanup automation tool for the *arr stack with Jellyfin integration.
 
 **OxiCleanarr** removes media clutter from your Jellyfin server with the power and effectiveness you'd expect from a product endorsed by Billy Mays himself! Just like OxiClean tackles tough stains, OxiCleanarr tackles your unwatched media backlog.
 
-> **Built with AI:** This project was created ~90% with AI assistance using [OpenCode](https://opencode.ai/) and Claude 3.5 Sonnet.
+> **Built with AI:** This project was created ~90% with AI assistance using [OpenCode](https://opencode.ai/) and Claude 4.5 Sonnet.
 
 ## Features
 
