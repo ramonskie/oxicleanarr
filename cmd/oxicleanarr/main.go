@@ -25,10 +25,10 @@ func main() {
 	configPath := flag.String("config", "", "Path to configuration file")
 	flag.Parse()
 
-	// Initialize logger
+	// Initialize logger (env vars: LOG_LEVEL, LOG_FORMAT, LOG_DIR)
 	logLevel := getEnv("LOG_LEVEL", "info")
 	logFormat := getEnv("LOG_FORMAT", "json")
-	utils.InitLogger(logLevel, logFormat)
+	utils.InitLogger(logLevel, logFormat, "backend")
 
 	log.Info().Msg("Starting Prunarr...")
 

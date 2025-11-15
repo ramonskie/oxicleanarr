@@ -35,6 +35,7 @@ data/
 !go.sum
 
 # Log files
+logs/
 *.log
 *.pid
 
