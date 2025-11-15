@@ -1,5 +1,5 @@
-# Prunarr Configuration
-# Minimal viable config - just credentials and integrations
+# OxiCleanarr Configuration
+# Minimal viable config - credentials and integrations
 
 admin:
   username: admin
@@ -10,6 +10,13 @@ integrations:
     enabled: true
     url: http://jellyfin:8096
     api_key: your-jellyfin-api-key-here
+    
+    # ⚠️ PREREQUISITE: OxiCleanarr Bridge Plugin REQUIRED
+    # Install the plugin in Jellyfin before enabling symlink_library:
+    #   Dashboard → Plugins → Repositories → Add → https://cdn.jsdelivr.net/gh/ramonskie/jellyfin-plugin-oxicleanarr@main/manifest.json
+    #   Dashboard → Plugins → Catalog → Install "OxiCleanarr Bridge"
+    # Plugin provides file system operations (symlink management, directory creation)
+    # See: https://github.com/ramonskie/jellyfin-plugin-oxicleanarr
     
     # Symlink Libraries (optional) - Create "Leaving Soon" libraries in Jellyfin sidebar
     # symlink_library:
@@ -22,32 +29,33 @@ integrations:
     #                                                      # Set to false to keep empty libraries visible
     #
     # Docker Volume Mapping - RECOMMENDED APPROACH (reuse existing media mount):
-    #   prunarr:
+    #   oxicleanarr:
     #     volumes:
-    #       - /volume3/docker/prunarr/config:/app/config
-    #       - /volume3/docker/prunarr/data:/app/data
-    #       - /volume1/data/media:/data/media         # Prunarr creates symlinks at /data/media/leaving-soon/
-    #
+    #       - /volume1/data/media:/data/media              # OxiCleanarr creates symlinks at /data/media/leaving-soon/
     #   jellyfin:
     #     volumes:
-    #       - /volume1/data/media:/data/media:ro      # Already has access to symlinks! No extra mount needed ✅
-    #
+    #       - /volume1/data/media:/data/media:rw           # Already has access to symlinks! No extra mount needed ✅
+    # 
     # Alternative: Separate directory (more complex, requires extra Jellyfin mount):
     #   base_path: /app/leaving-soon
-    #   prunarr volumes:
-    #     - /volume3/docker/prunarr/leaving-soon:/app/leaving-soon
-    #     - /volume1/data/media:/data/media:ro
+    #   oxicleanarr volumes:
+    #     - /volume3/docker/oxicleanarr/leaving-soon:/app/leaving-soon
     #   jellyfin volumes:
-    #     - /volume3/docker/prunarr/leaving-soon:/app/leaving-soon:ro  # Extra mount required
+    #     - /volume3/docker/oxicleanarr/leaving-soon:/app/leaving-soon:rw  # Extra mount required
     #     - /volume1/data/media:/data/media:ro
     #
-    # IMPORTANT: Jellyfin needs BOTH mounts for symlinks to work:
-    #   1. /app/leaving-soon mount - To see the symlink files Prunarr creates
-    #   2. /data/media mount - To follow symlinks and access the actual video files
+    # IMPORTANT: Path consistency across containers:
+    #   - base_path must match the path AS SEEN BY THE PLUGIN (running in Jellyfin container)
+    #   - OxiCleanarr calls the plugin API with paths like: /data/media/leaving-soon/movies/Movie.mkv
+    #   - Plugin creates symlinks at those paths in Jellyfin's file system
+    #   - Jellyfin needs BOTH mounts for symlinks to work:
+    #       1. Symlink directory mount - To see the symlink files the plugin creates
+    #       2. Source media mount - To follow symlinks and access the actual video files
     # 
     # How it works:
-    #   - Prunarr creates: /app/leaving-soon/movies/Movie.mkv → /data/media/movies/Movie/file.mkv
-    #   - Jellyfin Virtual Folder points to: /app/leaving-soon/movies/
+    #   - OxiCleanarr calls plugin API: POST /api/oxicleanarr/symlinks/add with sourcePath and targetDirectory
+    #   - Plugin creates: /data/media/leaving-soon/movies/Movie.mkv → /data/media/movies/Movie/file.mkv
+    #   - Jellyfin Virtual Folder points to: /data/media/leaving-soon/movies/
     #   - Jellyfin reads symlink and follows it to the real file at /data/media/...
     #   - Without both mounts, Jellyfin can't access the files!
   
