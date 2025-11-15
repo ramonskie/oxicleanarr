@@ -72,7 +72,6 @@ regexes = [
 ]
 
 # Stopwords for additional context
-[allowlist.stopwords]
 stopwords = [
   'test',
   'mock',
