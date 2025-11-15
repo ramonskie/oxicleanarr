@@ -149,6 +149,23 @@ func (e *RulesEngine) evaluateUserBasedRules(media *models.Media) (matched bool,
 		return false, false, time.Time{}, ""
 	}
 
+	// Check if any user-based rules exist
+	hasUserRules := false
+	for _, rule := range cfg.AdvancedRules {
+		if rule.Enabled && rule.Type == "user" {
+			hasUserRules = true
+			break
+		}
+	}
+
+	// If user-based rules exist but media has no user data, log a warning
+	if hasUserRules && media.IsRequested && media.RequestedByUserID == nil && media.RequestedByUsername == nil && media.RequestedByEmail == nil {
+		log.Warn().
+			Str("media_id", media.ID).
+			Str("title", media.Title).
+			Msg("User-based rules are configured but requested media has no user information - Jellyseerr may be disabled or not syncing properly")
+	}
+
 	// Find user-based rules
 	for _, rule := range cfg.AdvancedRules {
 		if !rule.Enabled || rule.Type != "user" {

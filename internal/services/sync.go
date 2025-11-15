@@ -296,6 +296,20 @@ func (e *SyncEngine) FullSync(ctx context.Context) error {
 			lastErr = err
 			log.Error().Err(err).Msg("Failed to sync Jellyseerr")
 		}
+	} else {
+		// Check if user-based rules are configured but Jellyseerr is disabled
+		cfg := config.Get()
+		hasUserRules := false
+		for _, rule := range cfg.AdvancedRules {
+			if rule.Enabled && rule.Type == "user" {
+				hasUserRules = true
+				break
+			}
+		}
+		if hasUserRules {
+			log.Warn().
+				Msg("User-based advanced rules are configured but Jellyseerr is disabled - user rules will not work without Jellyseerr integration")
+		}
 	}
 
 	// Apply exclusions from file
