@@ -9,31 +9,31 @@ useDefault = true
 [[rules]]
 id = "jellyfin-api-key"
 description = "Jellyfin API Key"
-regex = '''(?i)(?:jellyfin|emby)[_-]?(?:api[_-]?)?key[_-\s]*[:=]\s*['"]*([a-f0-9]{32})['"]*'''
+regex = '''(?i)(?:jellyfin|emby)[_-]?(?:api[_-]?)?key[_- \t]*[:=][ \t]*['"]*([a-f0-9]{32})['"]*'''
 tags = ["api-key", "jellyfin"]
 
 [[rules]]
 id = "radarr-api-key"
 description = "Radarr API Key"
-regex = '''(?i)radarr[_-]?(?:api[_-]?)?key[_-\s]*[:=]\s*['"]*([a-f0-9]{32})['"]*'''
+regex = '''(?i)radarr[_-]?(?:api[_-]?)?key[_- \t]*[:=][ \t]*['"]*([a-f0-9]{32})['"]*'''
 tags = ["api-key", "radarr"]
 
 [[rules]]
 id = "sonarr-api-key"
 description = "Sonarr API Key"
-regex = '''(?i)sonarr[_-]?(?:api[_-]?)?key[_-\s]*[:=]\s*['"]*([a-f0-9]{32})['"]*'''
+regex = '''(?i)sonarr[_-]?(?:api[_-]?)?key[_- \t]*[:=][ \t]*['"]*([a-f0-9]{32})['"]*'''
 tags = ["api-key", "sonarr"]
 
 [[rules]]
 id = "jellyseerr-api-key"
 description = "Jellyseerr API Key"
-regex = '''(?i)jellyseerr[_-]?(?:api[_-]?)?key[_-\s]*[:=]\s*['"]*([A-Za-z0-9+/]{40,}={0,2})['"]*'''
+regex = '''(?i)jellyseerr[_-]?(?:api[_-]?)?key[_- \t]*[:=][ \t]*['"]*([A-Za-z0-9+/]{40,}={0,2})['"]*'''
 tags = ["api-key", "jellyseerr"]
 
 [[rules]]
 id = "generic-api-key-in-config"
 description = "Generic API Key in config files"
-regex = '''(?i)api[_-]?key[_-\s]*[:=]\s*['"]*([a-f0-9]{32,}|[A-Za-z0-9+/]{40,}={0,2})['"]*'''
+regex = '''(?i)api[_-]?key[_- \t]*[:=][ \t]*['"]*([a-f0-9]{32,}|[A-Za-z0-9+/]{40,}={0,2})['"]*'''
 tags = ["api-key", "generic"]
 # Only scan specific file types to reduce false positives
 [rules.allowlist]
@@ -47,7 +47,7 @@ paths = [
 [[rules]]
 id = "jwt-secret"
 description = "JWT Secret"
-regex = '''(?i)jwt[_-]?secret[_-\s]*[:=]\s*['"]*([A-Za-z0-9+/=]{32,})['"]*'''
+regex = '''(?i)jwt[_-]?secret[_- \t]*[:=][ \t]*['"]*([A-Za-z0-9+/=]{32,})['"]*'''
 tags = ["jwt", "secret"]
 
 # Allowlist for known safe patterns
