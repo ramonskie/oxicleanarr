@@ -27,6 +27,10 @@ test/assets/config/config.yaml
 # Data files
 data/
 *.json
+# But allow important lock files
+!web/package.json
+!web/package-lock.json
+!go.sum
 
 # Log files
 *.log
