@@ -24,8 +24,8 @@ func newTestSyncEngineForAPI(t *testing.T) *services.SyncEngine {
 			LeavingSoonDays: 14, // Default leaving soon threshold
 		},
 		Sync: config.SyncConfig{
-			FullInterval:        3600,
-			IncrementalInterval: 300,
+			FullInterval:        60,
+			IncrementalInterval: 5,
 			AutoStart:           false,
 		},
 		Rules: config.RulesConfig{
@@ -125,8 +125,8 @@ func TestSyncHandler_GetSyncStatus(t *testing.T) {
 		require.NoError(t, err)
 
 		assert.False(t, response.Running)
-		assert.Equal(t, 3600, response.FullInterval)
-		assert.Equal(t, 300, response.IncrInterval)
+		assert.Equal(t, 60, response.FullInterval)
+		assert.Equal(t, 5, response.IncrInterval)
 		assert.Equal(t, 0, response.MediaCount)
 	})
 

@@ -303,7 +303,10 @@ func TestNewSymlinkLibraryManager(t *testing.T) {
 func TestFilterScheduledMedia(t *testing.T) {
 	tmpDir := t.TempDir()
 	cfg := &config.Config{
-		App: config.AppConfig{DryRun: true},
+		App: config.AppConfig{
+			DryRun:          true,
+			LeavingSoonDays: 14, // Default: items are "leaving soon" if deletion is within 14 days
+		},
 		Integrations: config.IntegrationsConfig{
 			Jellyfin: config.JellyfinConfig{
 				SymlinkLibrary: config.SymlinkLibraryConfig{
@@ -748,7 +751,10 @@ func TestSyncLibraries_Integration(t *testing.T) {
 	require.NoError(t, os.WriteFile(tvPath, []byte("tv"), 0644))
 
 	cfg := &config.Config{
-		App: config.AppConfig{DryRun: false},
+		App: config.AppConfig{
+			DryRun:          false,
+			LeavingSoonDays: 14, // Default: items are "leaving soon" if deletion is within 14 days
+		},
 		Integrations: config.IntegrationsConfig{
 			Jellyfin: config.JellyfinConfig{
 				SymlinkLibrary: config.SymlinkLibraryConfig{

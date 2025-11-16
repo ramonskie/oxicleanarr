@@ -86,9 +86,9 @@ integrations:
 #   leaving_soon_days: 14           # Show items in "Leaving Soon" window
 
 # sync:
-#   full_interval: 3600
-#   incremental_interval: 900
-#   auto_start: true
+#   full_interval: 60              # Full sync every 60 minutes (1 hour)
+#   incremental_interval: 15       # Incremental sync every 15 minutes
+#   auto_start: true               # Start sync scheduler on application startup
 
 # rules:
 #   movie_retention: 90d        # How long to keep movies (e.g., "90d", "30d", "180d")

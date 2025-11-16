@@ -21,8 +21,8 @@ func newTestSyncEngine(t *testing.T) (*SyncEngine, *storage.JobsFile, *storage.E
 
 	cfg := &config.Config{
 		Sync: config.SyncConfig{
-			FullInterval:        3600,
-			IncrementalInterval: 300,
+			FullInterval:        60,
+			IncrementalInterval: 5,
 			AutoStart:           false,
 		},
 		Rules: config.RulesConfig{
@@ -68,8 +68,8 @@ func TestNewSyncEngine(t *testing.T) {
 
 		cfg := &config.Config{
 			Sync: config.SyncConfig{
-				FullInterval:        3600,
-				IncrementalInterval: 300,
+				FullInterval:        60,
+				IncrementalInterval: 5,
 			},
 			Rules: config.RulesConfig{
 				MovieRetention: "90d",
@@ -130,8 +130,8 @@ func TestSyncEngine_StartStop(t *testing.T) {
 
 		cfg := &config.Config{
 			Sync: config.SyncConfig{
-				FullInterval:        3600,
-				IncrementalInterval: 300,
+				FullInterval:        60,
+				IncrementalInterval: 5,
 				AutoStart:           true, // Enable auto-start
 			},
 			Rules: config.RulesConfig{
@@ -378,8 +378,8 @@ func TestSyncEngine_GetStatus(t *testing.T) {
 		assert.Equal(t, 2, status.MoviesCount)
 		assert.Equal(t, 1, status.TVShowsCount)
 		assert.Equal(t, 1, status.ExcludedCount)
-		assert.Equal(t, 3600, status.FullInterval)
-		assert.Equal(t, 300, status.IncrInterval)
+		assert.Equal(t, 60, status.FullInterval)
+		assert.Equal(t, 5, status.IncrInterval)
 	})
 
 	t.Run("reflects running state", func(t *testing.T) {
@@ -777,8 +777,8 @@ func TestSyncEngine_ExecuteDeletions(t *testing.T) {
 				EnableDeletion: true,
 			},
 			Sync: config.SyncConfig{
-				FullInterval:        3600,
-				IncrementalInterval: 300,
+				FullInterval:        60,
+				IncrementalInterval: 5,
 			},
 			Rules: config.RulesConfig{
 				MovieRetention: "90d",
@@ -842,8 +842,8 @@ func TestSyncEngine_FullSync_EnableDeletion(t *testing.T) {
 				EnableDeletion: false, // But deletion disabled
 			},
 			Sync: config.SyncConfig{
-				FullInterval:        3600,
-				IncrementalInterval: 300,
+				FullInterval:        60,
+				IncrementalInterval: 5,
 			},
 			Rules: config.RulesConfig{
 				MovieRetention: "90d",
@@ -892,8 +892,8 @@ func TestSyncEngine_FullSync_EnableDeletion(t *testing.T) {
 				EnableDeletion: true,
 			},
 			Sync: config.SyncConfig{
-				FullInterval:        3600,
-				IncrementalInterval: 300,
+				FullInterval:        60,
+				IncrementalInterval: 5,
 			},
 			Rules: config.RulesConfig{
 				MovieRetention: "90d",

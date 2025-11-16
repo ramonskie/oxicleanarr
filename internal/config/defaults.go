@@ -9,8 +9,8 @@ func DefaultConfig() *Config {
 			LeavingSoonDays: 14,
 		},
 		Sync: SyncConfig{
-			FullInterval:        3600,
-			IncrementalInterval: 900,
+			FullInterval:        60, // 60 minutes (1 hour)
+			IncrementalInterval: 15, // 15 minutes
 			AutoStart:           true,
 		},
 		Rules: RulesConfig{

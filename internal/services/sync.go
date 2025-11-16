@@ -99,8 +99,8 @@ func (e *SyncEngine) Start() error {
 
 	// Always read current config values (supports hot-reload)
 	cfg := config.Get()
-	fullInterval := time.Duration(cfg.Sync.FullInterval) * time.Second
-	incrInterval := time.Duration(cfg.Sync.IncrementalInterval) * time.Second
+	fullInterval := time.Duration(cfg.Sync.FullInterval) * time.Minute
+	incrInterval := time.Duration(cfg.Sync.IncrementalInterval) * time.Minute
 
 	// Only start sync scheduler if auto-start is enabled
 	if cfg.Sync.AutoStart {
@@ -1200,8 +1200,8 @@ type SyncStatus struct {
 	MediaCount    int       `json:"media_count"`
 	LastFullSync  time.Time `json:"last_full_sync,omitempty"`
 	LastIncrSync  time.Time `json:"last_incr_sync,omitempty"`
-	FullInterval  int       `json:"full_interval_seconds"`
-	IncrInterval  int       `json:"incr_interval_seconds"`
+	FullInterval  int       `json:"full_interval_minutes"`
+	IncrInterval  int       `json:"incr_interval_minutes"`
 	MoviesCount   int       `json:"movies_count"`
 	TVShowsCount  int       `json:"tv_shows_count"`
 	ExcludedCount int       `json:"excluded_count"`
