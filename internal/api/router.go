@@ -18,7 +18,8 @@ type RouterDependencies struct {
 	AuthService *services.AuthService
 	SyncEngine  *services.SyncEngine
 	JobsFile    *storage.JobsFile
-	SPAHandler  http.Handler // Optional: handler for serving the SPA frontend
+	ShutdownCh  chan struct{} // Channel for signaling graceful shutdown
+	SPAHandler  http.Handler  // Optional: handler for serving the SPA frontend
 }
 
 // NewRouter creates and configures the HTTP router
@@ -50,6 +51,7 @@ func NewRouter(deps *RouterDependencies) *chi.Mux {
 	jobsHandler := handlers.NewJobsHandler(deps.JobsFile)
 	configHandler := handlers.NewConfigHandler(deps.SyncEngine)
 	rulesHandler := handlers.NewRulesHandler()
+	systemHandler := handlers.NewSystemHandler(deps.SyncEngine, deps.ShutdownCh)
 
 	// Public routes
 	r.Get("/health", healthHandler.Handle)
@@ -100,6 +102,11 @@ func NewRouter(deps *RouterDependencies) *chi.Mux {
 			r.Put("/rules/{name}", rulesHandler.UpdateRule)
 			r.Delete("/rules/{name}", rulesHandler.DeleteRule)
 			r.Patch("/rules/{name}/toggle", rulesHandler.ToggleRule)
+
+			// System routes
+			r.Post("/system/restart", systemHandler.Restart)
+			r.Get("/system/health", systemHandler.HealthCheck)
+			r.Get("/system/info", systemHandler.GetInfo)
 		})
 	})
 

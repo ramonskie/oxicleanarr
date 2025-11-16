@@ -158,20 +158,14 @@ export interface BaseIntegration {
 }
 
 export interface JellyfinIntegration extends BaseIntegration {
-  username: string;
-  has_password: boolean;
-  leaving_soon_type: string;
-  collections: CollectionsConfig;
+  symlink_library: SymlinkLibraryConfig;
 }
 
-export interface CollectionsConfig {
+export interface SymlinkLibraryConfig {
   enabled: boolean;
-  movies: CollectionItemConfig;
-  tv_shows: CollectionItemConfig;
-}
-
-export interface CollectionItemConfig {
-  name: string;
+  base_path: string;
+  movies_library_name: string;
+  tv_library_name: string;
   hide_when_empty: boolean;
 }
 
@@ -202,7 +196,7 @@ export interface UpdateConfigRequest {
   rules?: RulesConfig;
   server?: ServerConfig;
   integrations?: Partial<{
-    jellyfin?: Partial<JellyfinIntegration & { password?: string; api_key?: string }>;
+    jellyfin?: Partial<JellyfinIntegration & { api_key?: string }>;
     radarr?: Partial<BaseIntegration & { api_key?: string }>;
     sonarr?: Partial<BaseIntegration & { api_key?: string }>;
     jellyseerr?: Partial<BaseIntegration & { api_key?: string }>;

@@ -246,6 +246,22 @@ class ApiClient {
       body: JSON.stringify({ enabled }),
     });
   }
+
+  // System
+  async restartApplication(force: boolean = false): Promise<{ message: string; status: string }> {
+    return this.request<{ message: string; status: string }>('/system/restart', {
+      method: 'POST',
+      body: JSON.stringify({ force }),
+    });
+  }
+
+  async getSystemHealth(): Promise<{ status: string; sync_running: boolean; media_count: number; timestamp: string }> {
+    return this.request<{ status: string; sync_running: boolean; media_count: number; timestamp: string }>('/system/health');
+  }
+
+  async getSystemInfo(): Promise<{ hostname: string; pid: number; go_version: string; restarting: boolean }> {
+    return this.request<{ hostname: string; pid: number; go_version: string; restarting: boolean }>('/system/info');
+  }
 }
 
 export const apiClient = new ApiClient();

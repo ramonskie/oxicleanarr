@@ -97,11 +97,15 @@ func main() {
 		log.Warn().Err(err).Msg("Frontend not available, running in API-only mode")
 	}
 
+	// Create shutdown channel for graceful restart
+	shutdownCh := make(chan struct{})
+
 	// Create router with dependencies
 	router := api.NewRouter(&api.RouterDependencies{
 		AuthService: authService,
 		SyncEngine:  syncEngine,
 		JobsFile:    jobsFile,
+		ShutdownCh:  shutdownCh,
 		SPAHandler:  spaHandler,
 	})
 	log.Info().Msg("Router initialized")
@@ -138,10 +142,16 @@ func main() {
 
 	log.Info().Msg("Prunarr started successfully")
 
-	// Wait for interrupt signal
+	// Wait for interrupt signal or shutdown signal from API
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
-	<-quit
+
+	select {
+	case <-quit:
+		log.Info().Msg("Received interrupt signal, shutting down...")
+	case <-shutdownCh:
+		log.Info().Msg("Received shutdown signal from API, shutting down...")
+	}
 
 	log.Info().Msg("Shutting down server...")
 
