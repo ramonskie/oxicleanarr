@@ -83,7 +83,7 @@ func TestValidate_UserRules_RequiresAtLeastOneIdentifier(t *testing.T) {
 				},
 				Server: ServerConfig{
 					Host: "0.0.0.0",
-					Port: 8080,
+					Port: 9709,
 				},
 				Integrations: IntegrationsConfig{
 					Jellyfin: JellyfinConfig{
@@ -141,7 +141,7 @@ func TestValidate_UserRules_RetentionFormat(t *testing.T) {
 				},
 				Server: ServerConfig{
 					Host: "0.0.0.0",
-					Port: 8080,
+					Port: 9709,
 				},
 				Integrations: IntegrationsConfig{
 					Jellyfin: JellyfinConfig{
@@ -187,7 +187,7 @@ func TestValidate_UserRules_RetentionFormat(t *testing.T) {
 				},
 				Server: ServerConfig{
 					Host: "0.0.0.0",
-					Port: 8080,
+					Port: 9709,
 				},
 				Integrations: IntegrationsConfig{
 					Jellyfin: JellyfinConfig{
@@ -292,7 +292,7 @@ func TestValidate_DisabledRetention_MovieAndTV(t *testing.T) {
 				},
 				Server: ServerConfig{
 					Host: "0.0.0.0",
-					Port: 8080,
+					Port: 9709,
 				},
 				Integrations: IntegrationsConfig{
 					Jellyfin: JellyfinConfig{
@@ -394,7 +394,7 @@ func TestValidate_DisableAuth_SkipsAdminValidation(t *testing.T) {
 				},
 				Server: ServerConfig{
 					Host: "0.0.0.0",
-					Port: 8080,
+					Port: 9709,
 				},
 				Integrations: IntegrationsConfig{
 					Jellyfin: JellyfinConfig{
@@ -461,7 +461,7 @@ func TestValidate_DisabledRetention_AdvancedRules(t *testing.T) {
 				},
 				Server: ServerConfig{
 					Host: "0.0.0.0",
-					Port: 8080,
+					Port: 9709,
 				},
 				Integrations: IntegrationsConfig{
 					Jellyfin: JellyfinConfig{

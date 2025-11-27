@@ -100,7 +100,7 @@ integrations:
 
 # server:
 #   host: 0.0.0.0
-#   port: 8080
+#   port: 9709
 
 # Advanced Rules (optional) - Tag-based, watched-based, or user-based cleanup
 # advanced_rules:

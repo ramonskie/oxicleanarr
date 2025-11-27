@@ -41,13 +41,13 @@ services:
       # - /mnt/storage/media:/media:ro       # Custom storage location
       # - /volume1/data:/data:ro             # If you need more than just media (less secure)
     ports:
-      - 8080:8080
+      - 9709:9709
     network_mode: bridge
     security_opt:
       - no-new-privileges:true
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/health"]
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:9709/health"]
       interval: 30s
       timeout: 10s
       retries: 3

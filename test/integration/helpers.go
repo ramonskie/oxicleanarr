@@ -20,7 +20,7 @@ import (
 )
 
 const (
-	OxiCleanarrURL = "http://localhost:8080"
+	OxiCleanarrURL = "http://localhost:9709"
 	JellyfinURL    = "http://localhost:8096"
 
 	// OxiCleanarr admin credentials (configured in test config.yaml)

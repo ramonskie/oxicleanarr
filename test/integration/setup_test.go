@@ -168,7 +168,7 @@ func testInfrastructureSetup(t *testing.T) {
 
 	// Note: OxiCleanarr will start but crash due to missing API keys in config.
 	// We'll check its health after config is populated and it's restarted (Step 11).
-	oxicleanURL := "http://localhost:8080"
+	oxicleanURL := "http://localhost:9709"
 
 	// Step 3: Initialize Jellyfin
 	t.Log("Step 3: Initializing Jellyfin...")
