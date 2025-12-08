@@ -2,7 +2,6 @@ import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiClient } from '@/lib/api';
 import type { DeletionCandidate, MediaItem } from '@/lib/types';
-import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
@@ -16,7 +15,7 @@ import {
 } from '@/components/ui/dialog';
 import { Film, Tv, HardDrive, AlertTriangle, Info, Trash2, Clock } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
-import AppLayout from '@/components/AppHeader';
+import AppLayout from '@/components/AppLayout';
 
 type MediaType = 'all' | 'movies' | 'shows';
 type SortField = 'title' | 'year' | 'days_overdue' | 'file_size';
@@ -269,62 +268,66 @@ export default function ScheduledDeletionsPage() {
 
   return (
     <AppLayout>
-      <div className="container mx-auto px-4 py-8">
+      <div className="container mx-auto max-w-[1600px] px-4 py-6">
         {/* Page Header */}
         <div className="mb-6">
-          <h2 className="text-3xl font-bold mb-2 flex items-center gap-2">
-            <AlertTriangle className="h-8 w-8 text-yellow-600" />
+          <h2 className="text-3xl font-bold mb-2 flex items-center gap-2 text-white">
+            <AlertTriangle className="h-8 w-8 text-red-500" />
             Scheduled Deletions
           </h2>
-          <p className="text-muted-foreground">
+          <p className="text-gray-400">
             Items that would be deleted when dry-run mode is disabled
           </p>
         </div>
 
         {isLoading ? (
-          <Card>
-            <CardContent className="p-8 text-center">
-              <Clock className="h-12 w-12 mx-auto mb-4 text-muted-foreground animate-spin" />
-              <p className="text-muted-foreground">Loading scheduled deletions...</p>
-            </CardContent>
-          </Card>
+          <div className="bg-[#1a1a1a] border border-[#333] rounded-md p-8 text-center">
+            <Clock className="h-12 w-12 mx-auto mb-4 text-gray-500 animate-spin" />
+            <p className="text-gray-400">Loading scheduled deletions...</p>
+          </div>
         ) : scheduledDeletions.length === 0 ? (
-          <Card>
-            <CardContent className="p-8 text-center">
-              <Info className="h-12 w-12 mx-auto mb-4 text-muted-foreground" />
-              <p className="text-lg font-medium mb-2">No scheduled deletions</p>
-              <p className="text-muted-foreground">
-                No items are currently scheduled for deletion
-              </p>
-            </CardContent>
-          </Card>
+          <div className="bg-[#1a1a1a] border border-[#333] rounded-md p-8 text-center">
+            <Info className="h-12 w-12 mx-auto mb-4 text-gray-500" />
+            <p className="text-lg font-medium mb-2 text-white">No scheduled deletions</p>
+            <p className="text-gray-400 mb-4">
+              No items are currently overdue for deletion. All media is within retention periods!
+            </p>
+            <div className="flex flex-col items-center gap-2 text-sm text-gray-400">
+              <p>Items appear here when:</p>
+              <ul className="list-disc list-inside">
+                <li>Watched content exceeds retention period</li>
+                <li>Advanced rules trigger deletion</li>
+                <li>Episode limits are exceeded</li>
+              </ul>
+            </div>
+          </div>
         ) : (
           <>
             {/* Stats Summary */}
-            <div className="mb-6 p-4 bg-yellow-500/10 border border-yellow-500/50 rounded-lg">
+            <div className="mb-6 p-4 bg-red-900/20 border border-red-900/50 rounded-md">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-6">
                   <div>
-                    <p className="text-sm text-muted-foreground">Total Items</p>
-                    <p className="text-2xl font-bold">{scheduledDeletions.length}</p>
+                    <p className="text-sm text-gray-400">Total Items</p>
+                    <p className="text-2xl font-bold text-white">{scheduledDeletions.length}</p>
                   </div>
                   <div>
-                    <p className="text-sm text-muted-foreground">Total Space</p>
-                    <p className="text-2xl font-bold">{getTotalFileSize()}</p>
+                    <p className="text-sm text-gray-400">Total Space</p>
+                    <p className="text-2xl font-bold text-white">{getTotalFileSize()}</p>
                   </div>
                   <div>
-                    <p className="text-sm text-muted-foreground">Movies</p>
-                    <p className="text-2xl font-bold">{movieCount}</p>
+                    <p className="text-sm text-gray-400">Movies</p>
+                    <p className="text-2xl font-bold text-white">{movieCount}</p>
                   </div>
                   <div>
-                    <p className="text-sm text-muted-foreground">TV Shows</p>
-                    <p className="text-2xl font-bold">{showCount}</p>
+                    <p className="text-sm text-gray-400">TV Shows</p>
+                    <p className="text-2xl font-bold text-white">{showCount}</p>
                   </div>
                 </div>
                 <div className="flex items-center gap-3">
                   {isDryRunMode ? (
                     <>
-                      <Badge variant="outline" className="bg-yellow-500/10 text-yellow-700 border-yellow-500/50">
+                      <Badge variant="outline" className="bg-yellow-900/20 text-yellow-400 border-yellow-900/50">
                         Dry Run Active
                       </Badge>
                       <div className="flex flex-col items-end">
@@ -333,24 +336,26 @@ export default function ScheduledDeletionsPage() {
                           onClick={() => setShowDeleteDialog(true)}
                           disabled={true}
                           title="Deletions are disabled in dry-run mode. Change app.dry_run to false in config to enable."
+                          className="bg-red-900 hover:bg-red-800 text-white"
                         >
                           <Trash2 className="h-4 w-4 mr-2" />
                           Execute Deletions
                         </Button>
-                        <p className="text-xs text-muted-foreground mt-1">
-                          Set <code className="bg-muted px-1 py-0.5 rounded">app.dry_run: false</code> in config to enable
+                        <p className="text-xs text-gray-500 mt-1">
+                          Set <code className="bg-[#262626] px-1 py-0.5 rounded text-gray-300">app.dry_run: false</code> in config to enable
                         </p>
                       </div>
                     </>
                   ) : (
                     <>
-                      <Badge variant="outline" className="bg-green-500/10 text-green-700 border-green-500/50">
+                      <Badge variant="outline" className="bg-green-900/20 text-green-400 border-green-900/50">
                         Deletions Enabled
                       </Badge>
                       <Button
                         variant="destructive"
                         onClick={() => setShowDeleteDialog(true)}
                         disabled={executeDeletionsMutation.isPending}
+                        className="bg-red-900 hover:bg-red-800 text-white"
                       >
                         <Trash2 className="h-4 w-4 mr-2" />
                         Execute Deletions
@@ -369,18 +374,21 @@ export default function ScheduledDeletionsPage() {
                   <Button
                     variant={mediaType === 'all' ? 'default' : 'outline'}
                     onClick={() => handleFilterChange('all')}
+                    className={mediaType === 'all' ? 'bg-blue-600 hover:bg-blue-700' : 'bg-[#262626] border-[#444] text-gray-300 hover:bg-[#333] hover:text-white'}
                   >
                     All ({scheduledDeletions.length})
                   </Button>
                   <Button
                     variant={mediaType === 'movies' ? 'default' : 'outline'}
                     onClick={() => handleFilterChange('movies')}
+                    className={mediaType === 'movies' ? 'bg-blue-600 hover:bg-blue-700' : 'bg-[#262626] border-[#444] text-gray-300 hover:bg-[#333] hover:text-white'}
                   >
                     Movies ({movieCount})
                   </Button>
                   <Button
                     variant={mediaType === 'shows' ? 'default' : 'outline'}
                     onClick={() => handleFilterChange('shows')}
+                    className={mediaType === 'shows' ? 'bg-blue-600 hover:bg-blue-700' : 'bg-[#262626] border-[#444] text-gray-300 hover:bg-[#333] hover:text-white'}
                   >
                     TV Shows ({showCount})
                   </Button>
@@ -392,17 +400,19 @@ export default function ScheduledDeletionsPage() {
                     placeholder="Search by title or year..."
                     value={searchQuery}
                     onChange={(e) => handleSearchChange(e.target.value)}
+                    className="bg-[#262626] border-[#444] text-white placeholder:text-gray-500"
                   />
                 </div>
               </div>
 
               {/* Sort Controls */}
               <div className="flex gap-2 items-center text-sm">
-                <span className="text-gray-600">Sort by:</span>
+                <span className="text-gray-400">Sort by:</span>
                 <Button
                   variant="ghost"
                   size="sm"
                   onClick={() => handleSortChange('title')}
+                  className="text-gray-300 hover:text-white hover:bg-[#262626]"
                 >
                   Title {getSortIcon('title')}
                 </Button>
@@ -410,6 +420,7 @@ export default function ScheduledDeletionsPage() {
                   variant="ghost"
                   size="sm"
                   onClick={() => handleSortChange('year')}
+                  className="text-gray-300 hover:text-white hover:bg-[#262626]"
                 >
                   Year {getSortIcon('year')}
                 </Button>
@@ -417,6 +428,7 @@ export default function ScheduledDeletionsPage() {
                   variant="ghost"
                   size="sm"
                   onClick={() => handleSortChange('days_overdue')}
+                  className="text-gray-300 hover:text-white hover:bg-[#262626]"
                 >
                   Days Overdue {getSortIcon('days_overdue')}
                 </Button>
@@ -424,13 +436,14 @@ export default function ScheduledDeletionsPage() {
                   variant="ghost"
                   size="sm"
                   onClick={() => handleSortChange('file_size')}
+                  className="text-gray-300 hover:text-white hover:bg-[#262626]"
                 >
                   File Size {getSortIcon('file_size')}
                 </Button>
               </div>
 
               {/* Results count */}
-              <div className="text-sm text-gray-600">
+              <div className="text-sm text-gray-400">
                 Showing {startIndex + 1}-{Math.min(endIndex, allItems.length)} of {allItems.length} items
               </div>
             </div>
@@ -438,24 +451,24 @@ export default function ScheduledDeletionsPage() {
             {/* Deletion Candidates */}
             <div className="space-y-3 mb-6">
               {paginatedItems.map((item) => (
-                <Card key={item.id} className="p-4 hover:shadow-md transition-shadow border-yellow-500/30">
+                <div key={item.id} className="bg-[#1a1a1a] border border-red-900/50 rounded-md p-4 hover:bg-[#262626] transition-colors">
                   <div className="flex justify-between items-start gap-4">
                     <div className="flex-1">
                       <div className="flex items-center gap-2 mb-2">
                         {item.type === 'movie' ? (
-                          <Film className="h-5 w-5 text-muted-foreground" />
+                          <Film className="h-5 w-5 text-blue-500" />
                         ) : (
-                          <Tv className="h-5 w-5 text-muted-foreground" />
+                          <Tv className="h-5 w-5 text-purple-500" />
                         )}
-                        <h3 className="text-lg font-semibold text-gray-900">
+                        <h3 className="text-lg font-semibold text-white">
                           {item.title}
                           {item.year && (
-                            <span className="text-gray-500 font-normal ml-2">
+                            <span className="text-gray-400 font-normal ml-2">
                               ({item.year})
                             </span>
                           )}
                         </h3>
-                        <Badge variant={item.type === 'movie' ? 'movie' : 'show'}>
+                        <Badge variant="outline" className="bg-[#262626] text-gray-300 border-[#444]">
                           {item.type === 'movie' ? 'Movie' : 'TV Show'}
                         </Badge>
                         {getRuleType(item.reason) && (
@@ -537,7 +550,7 @@ export default function ScheduledDeletionsPage() {
                       </Badge>
                     </div>
                   </div>
-                </Card>
+                </div>
               ))}
             </div>
 

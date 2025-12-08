@@ -2,12 +2,11 @@ import { useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiClient } from '@/lib/api';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Film, Tv, Clock, Shield, ShieldOff, Calendar } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import type { MediaItem } from '@/lib/types';
-import AppLayout from '@/components/AppHeader';
+import AppLayout from '@/components/AppLayout';
 
 interface GroupedMedia {
   date: string;
@@ -137,28 +136,26 @@ export default function TimelinePage() {
 
   return (
     <AppLayout>
-      <div className="container mx-auto px-4 py-8">
+      <div className="container mx-auto max-w-[1600px] px-4 py-6">
         <div className="mb-6">
-          <h2 className="text-3xl font-bold mb-2">Deletion Timeline</h2>
-          <p className="text-muted-foreground">
+          <h2 className="text-3xl font-bold mb-2 text-white">Deletion Timeline</h2>
+          <p className="text-gray-400">
             Media items scheduled for deletion, grouped by date
           </p>
         </div>
 
         {isLoading ? (
           <div className="flex items-center justify-center py-12">
-            <Clock className="h-8 w-8 animate-spin text-muted-foreground" />
+            <Clock className="h-8 w-8 animate-spin text-gray-500" />
           </div>
         ) : groupedByDate.length === 0 ? (
-          <Card>
-            <CardContent className="py-12">
-              <div className="text-center text-muted-foreground">
-                <Calendar className="h-12 w-12 mx-auto mb-4 opacity-20" />
-                <p className="text-lg font-medium mb-1">No items scheduled for deletion</p>
-                <p className="text-sm">All media items are within retention policy</p>
-              </div>
-            </CardContent>
-          </Card>
+          <div className="bg-[#1a1a1a] border border-[#333] rounded-md py-12">
+            <div className="text-center text-gray-400">
+              <Calendar className="h-12 w-12 mx-auto mb-4 opacity-20" />
+              <p className="text-lg font-medium mb-1 text-white">No items scheduled for deletion</p>
+              <p className="text-sm">All media items are within retention policy</p>
+            </div>
+          </div>
         ) : (
           <div className="space-y-8">
             {groupedByDate.map((group) => {
@@ -170,115 +167,119 @@ export default function TimelinePage() {
                   {/* Date Header */}
                   <div className="flex items-center justify-between">
                     <div>
-                      <h3 className="text-xl font-semibold flex items-center gap-2">
-                        <Calendar className="h-5 w-5" />
+                      <h3 className="text-xl font-semibold flex items-center gap-2 text-white">
+                        <Calendar className="h-5 w-5 text-orange-500" />
                         {formatDate(group.date)}
                       </h3>
-                      <p className="text-sm text-muted-foreground mt-1">
+                      <p className="text-sm text-gray-400 mt-1">
                         {daysUntil === 0 ? 'Today' : daysUntil === 1 ? '1 day away' : `${daysUntil} days away`} • {group.items.length} item{group.items.length !== 1 ? 's' : ''} • {formatFileSize(totalSize)} to be freed
                       </p>
                     </div>
                   </div>
 
                   {/* Items Card */}
-                  <Card>
-                    <CardContent className="p-0">
-                      <div className="divide-y">
-                        {group.items.map((item) => (
-                          <div
-                            key={item.id}
-                            className="p-4 hover:bg-accent transition-colors"
-                          >
-                            <div className="flex items-center justify-between">
-                              <div className="flex items-center gap-4 flex-1 min-w-0">
-                                {item.type === 'movie' ? (
-                                  <Film className="h-8 w-8 text-muted-foreground flex-shrink-0" />
-                                ) : (
-                                  <Tv className="h-8 w-8 text-muted-foreground flex-shrink-0" />
-                                )}
-                                <div className="flex-1 min-w-0">
-                                  <h4 className="font-medium truncate">{item.title}</h4>
-                                  <div className="flex items-center gap-2 mt-1">
-                                    {item.year && (
-                                      <span className="text-sm text-muted-foreground">
-                                        {item.year}
+                  <div className="bg-[#1a1a1a] border border-[#333] rounded-md overflow-hidden">
+                    <div className="divide-y divide-[#333]">
+                      {group.items.map((item) => (
+                        <div
+                          key={item.id}
+                          className="p-4 hover:bg-[#262626] transition-colors"
+                        >
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-4 flex-1 min-w-0">
+                              {item.type === 'movie' ? (
+                                <Film className="h-8 w-8 text-blue-500 flex-shrink-0" />
+                              ) : (
+                                <Tv className="h-8 w-8 text-purple-500 flex-shrink-0" />
+                              )}
+                              <div className="flex-1 min-w-0">
+                                <h4 className="font-medium truncate text-white">{item.title}</h4>
+                                <div className="flex items-center gap-2 mt-1">
+                                  {item.year && (
+                                    <span className="text-sm text-gray-400">
+                                      {item.year}
+                                    </span>
+                                  )}
+                                  {item.file_size && (
+                                    <>
+                                      <span className="text-gray-500">•</span>
+                                      <span className="text-sm text-gray-400">
+                                        {formatFileSize(item.file_size)}
                                       </span>
-                                    )}
-                                    {item.file_size && (
-                                      <>
-                                        <span className="text-muted-foreground">•</span>
-                                        <span className="text-sm text-muted-foreground">
-                                          {formatFileSize(item.file_size)}
-                                        </span>
-                                      </>
-                                    )}
-                                  </div>
-                                  {/* Tags */}
-                                  {item.tags && item.tags.length > 0 && (
-                                    <div className="flex flex-wrap gap-1 mt-1">
-                                      {item.tags.map((tag) => (
-                                        <Badge key={tag} variant="secondary" className="text-xs">
-                                          {tag}
-                                        </Badge>
-                                      ))}
-                                    </div>
-                                  )}
-                                  {/* Jellyfin Match Warning */}
-                                  {item.jellyfin_match_status && item.jellyfin_match_status !== 'matched' && (
-                                    <div className="mt-1">
-                                      <Badge 
-                                        variant={item.jellyfin_match_status === 'metadata_mismatch' ? 'destructive' : 'outline'}
-                                        className="text-xs"
-                                      >
-                                        ⚠️ {item.jellyfin_match_status === 'metadata_mismatch' ? 'Metadata Mismatch' : 'Not in Jellyfin'}
-                                      </Badge>
-                                    </div>
-                                  )}
-                                  {item.deletion_reason && (
-                                    <p className="text-xs text-muted-foreground mt-1 line-clamp-1">
-                                      {item.deletion_reason}
-                                    </p>
-                                  )}
-                                  {item.is_requested && item.requested_by_username && (
-                                    <p className="text-xs text-muted-foreground mt-1">
-                                      Requested by: {item.requested_by_username}
-                                      {item.requested_by_email && ` (${item.requested_by_email})`}
-                                    </p>
+                                    </>
                                   )}
                                 </div>
-                              </div>
-                              <div className="flex items-center gap-3 flex-shrink-0">
-                                <Badge variant={item.type === 'movie' ? 'movie' : 'show'}>
-                                  {item.type === 'movie' ? 'Movie' : 'TV Show'}
-                                </Badge>
-                                {item.excluded ? (
-                                  <Button
-                                    variant="outline"
-                                    size="sm"
-                                    onClick={() => unexcludeMutation.mutate(item.id)}
-                                    disabled={unexcludeMutation.isPending}
-                                  >
-                                    <ShieldOff className="h-4 w-4 mr-2" />
-                                    Unexclude
-                                  </Button>
-                                ) : (
-                                  <Button
-                                    variant="outline"
-                                    size="sm"
-                                    onClick={() => excludeMutation.mutate(item.id)}
-                                    disabled={excludeMutation.isPending}
-                                  >
-                                    <Shield className="h-4 w-4 mr-2" />
-                                    Exclude
-                                  </Button>
+                                {/* Tags */}
+                                {item.tags && item.tags.length > 0 && (
+                                  <div className="flex flex-wrap gap-1 mt-1">
+                                    {item.tags.map((tag) => (
+                                      <Badge key={tag} variant="outline" className="text-xs bg-[#262626] text-gray-400 border-[#444]">
+                                        {tag}
+                                      </Badge>
+                                    ))}
+                                  </div>
+                                )}
+                                {/* Jellyfin Match Warning */}
+                                {item.jellyfin_match_status && item.jellyfin_match_status !== 'matched' && (
+                                  <div className="mt-1">
+                                    <Badge 
+                                      variant="outline"
+                                      className={`text-xs ${
+                                        item.jellyfin_match_status === 'metadata_mismatch'
+                                          ? 'bg-red-900/20 text-red-400 border-red-900/50'
+                                          : 'bg-yellow-900/20 text-yellow-400 border-yellow-900/50'
+                                      }`}
+                                    >
+                                      ⚠️ {item.jellyfin_match_status === 'metadata_mismatch' ? 'Metadata Mismatch' : 'Not in Jellyfin'}
+                                    </Badge>
+                                  </div>
+                                )}
+                                {item.deletion_reason && (
+                                  <p className="text-xs text-gray-500 mt-1 line-clamp-1">
+                                    {item.deletion_reason}
+                                  </p>
+                                )}
+                                {item.is_requested && item.requested_by_username && (
+                                  <p className="text-xs text-gray-500 mt-1">
+                                    Requested by: {item.requested_by_username}
+                                    {item.requested_by_email && ` (${item.requested_by_email})`}
+                                  </p>
                                 )}
                               </div>
                             </div>
+                            <div className="flex items-center gap-3 flex-shrink-0">
+                              <Badge variant="outline" className="bg-[#262626] text-gray-300 border-[#444]">
+                                {item.type === 'movie' ? 'Movie' : 'TV Show'}
+                              </Badge>
+                              {item.excluded ? (
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() => unexcludeMutation.mutate(item.id)}
+                                  disabled={unexcludeMutation.isPending}
+                                  className="bg-[#262626] border-[#444] text-gray-300 hover:bg-[#333] hover:text-white"
+                                >
+                                  <ShieldOff className="h-4 w-4 mr-2" />
+                                  Unexclude
+                                </Button>
+                              ) : (
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() => excludeMutation.mutate(item.id)}
+                                  disabled={excludeMutation.isPending}
+                                  className="bg-[#262626] border-[#444] text-gray-300 hover:bg-[#333] hover:text-white"
+                                >
+                                  <Shield className="h-4 w-4 mr-2" />
+                                  Exclude
+                                </Button>
+                              )}
+                            </div>
                           </div>
-                        ))}
-                      </div>
-                    </CardContent>
-                  </Card>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
                 </div>
               );
             })}

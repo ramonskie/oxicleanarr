@@ -9,6 +9,7 @@ import (
 	"github.com/go-chi/cors"
 	"github.com/ramonskie/oxicleanarr/internal/api/handlers"
 	mw "github.com/ramonskie/oxicleanarr/internal/api/middleware"
+	"github.com/ramonskie/oxicleanarr/internal/config"
 	"github.com/ramonskie/oxicleanarr/internal/services"
 	"github.com/ramonskie/oxicleanarr/internal/storage"
 )
@@ -52,6 +53,7 @@ func NewRouter(deps *RouterDependencies) *chi.Mux {
 	configHandler := handlers.NewConfigHandler(deps.SyncEngine)
 	rulesHandler := handlers.NewRulesHandler()
 	systemHandler := handlers.NewSystemHandler(deps.SyncEngine, deps.ShutdownCh)
+	servicesHandler := handlers.NewServiceStatusHandler(config.Get())
 
 	// Public routes
 	r.Get("/health", healthHandler.Handle)
@@ -107,6 +109,7 @@ func NewRouter(deps *RouterDependencies) *chi.Mux {
 			r.Post("/system/restart", systemHandler.Restart)
 			r.Get("/system/health", systemHandler.HealthCheck)
 			r.Get("/system/info", systemHandler.GetInfo)
+			r.Get("/system/services", servicesHandler.CheckStatus)
 		})
 	})
 

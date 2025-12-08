@@ -12,6 +12,7 @@ import type {
   RulesListResponse,
   AdvancedRule
 } from './types';
+import type { ServiceStatusResponse } from './types-services';
 
 const API_BASE = '/api';
 
@@ -261,6 +262,10 @@ class ApiClient {
 
   async getSystemInfo(): Promise<{ hostname: string; pid: number; go_version: string; restarting: boolean }> {
     return this.request<{ hostname: string; pid: number; go_version: string; restarting: boolean }>('/system/info');
+  }
+
+  async getServiceStatus(): Promise<ServiceStatusResponse> {
+    return this.request<ServiceStatusResponse>('/system/services');
   }
 }
 

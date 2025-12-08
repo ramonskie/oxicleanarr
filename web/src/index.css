@@ -1,48 +1,65 @@
 @import "tailwindcss";
 
 @theme {
-  --color-background: oklch(1 0 0);
-  --color-foreground: oklch(0.17 0.006 285.77);
-  --color-card: oklch(1 0 0);
-  --color-card-foreground: oklch(0.17 0.006 285.77);
-  --color-popover: oklch(1 0 0);
-  --color-popover-foreground: oklch(0.17 0.006 285.77);
-  --color-primary: oklch(0.56 0.171 263.44);
-  --color-primary-foreground: oklch(0.96 0.003 285.82);
-  --color-secondary: oklch(0.96 0.003 285.82);
-  --color-secondary-foreground: oklch(0.29 0.016 285.94);
-  --color-muted: oklch(0.96 0.003 285.82);
-  --color-muted-foreground: oklch(0.55 0.015 285.88);
-  --color-accent: oklch(0.96 0.003 285.82);
-  --color-accent-foreground: oklch(0.29 0.016 285.94);
-  --color-destructive: oklch(0.66 0.201 27.33);
-  --color-destructive-foreground: oklch(0.96 0.003 285.82);
-  --color-border: oklch(0.89 0.005 286.07);
-  --color-input: oklch(0.89 0.005 286.07);
-  --color-ring: oklch(0.56 0.171 263.44);
-  --radius: 0.5rem;
+  /* Use specific hex values for better control over the Arr-style theme */
+  --color-background: #141414; /* Very dark gray, almost black */
+  --color-foreground: #e5e5e5; /* Light gray text */
+  
+  --color-card: #1e1e1e; /* Slightly lighter for cards */
+  --color-card-foreground: #e5e5e5;
+  
+  --color-popover: #1e1e1e;
+  --color-popover-foreground: #e5e5e5;
+  
+  /* Arr Blue/Teal Accent */
+  --color-primary: #3b82f6; /* A nice bright blue */
+  --color-primary-foreground: #ffffff;
+  
+  --color-secondary: #262626; /* Darker secondary elements */
+  --color-secondary-foreground: #a3a3a3;
+  
+  --color-muted: #262626;
+  --color-muted-foreground: #737373;
+  
+  --color-accent: #262626;
+  --color-accent-foreground: #e5e5e5;
+  
+  --color-destructive: #ef4444; /* Standard red */
+  --color-destructive-foreground: #ffffff;
+  
+  --color-border: #333333; /* Subtle borders */
+  --color-input: #262626;
+  --color-ring: #3b82f6;
+  
+  --radius: 0.375rem; /* 6px - slightly squarer */
+}
+
+/* Force dark mode for now as it's standard for Arr apps */
+:root {
+  color-scheme: dark;
 }
 
 .dark {
-  --color-background: oklch(0.17 0.006 285.77);
-  --color-foreground: oklch(0.96 0.003 285.82);
-  --color-card: oklch(0.17 0.006 285.77);
-  --color-card-foreground: oklch(0.96 0.003 285.82);
-  --color-popover: oklch(0.17 0.006 285.77);
-  --color-popover-foreground: oklch(0.96 0.003 285.82);
-  --color-primary: oklch(0.67 0.175 257.29);
-  --color-primary-foreground: oklch(0.29 0.016 285.94);
-  --color-secondary: oklch(0.37 0.026 265.75);
-  --color-secondary-foreground: oklch(0.96 0.003 285.82);
-  --color-muted: oklch(0.37 0.026 265.75);
-  --color-muted-foreground: oklch(0.71 0.013 286.07);
-  --color-accent: oklch(0.37 0.026 265.75);
-  --color-accent-foreground: oklch(0.96 0.003 285.82);
-  --color-destructive: oklch(0.43 0.119 27.33);
-  --color-destructive-foreground: oklch(0.96 0.003 285.82);
-  --color-border: oklch(0.37 0.026 265.75);
-  --color-input: oklch(0.37 0.026 265.75);
-  --color-ring: oklch(0.56 0.149 264.54);
+  /* Ensure variables map correctly if using dark class */
+  --color-background: #141414;
+  --color-foreground: #e5e5e5;
+  --color-card: #1e1e1e;
+  --color-card-foreground: #e5e5e5;
+  --color-popover: #1e1e1e;
+  --color-popover-foreground: #e5e5e5;
+  --color-primary: #3b82f6;
+  --color-primary-foreground: #ffffff;
+  --color-secondary: #262626;
+  --color-secondary-foreground: #a3a3a3;
+  --color-muted: #262626;
+  --color-muted-foreground: #737373;
+  --color-accent: #262626;
+  --color-accent-foreground: #e5e5e5;
+  --color-destructive: #ef4444;
+  --color-destructive-foreground: #ffffff;
+  --color-border: #333333;
+  --color-input: #262626;
+  --color-ring: #3b82f6;
 }
 
 html {
@@ -51,4 +68,16 @@ html {
 
 body {
   @apply bg-background text-foreground;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+}
+
+/* Arr-style table overrides if needed */
+.arr-table {
+    @apply w-full text-sm text-left;
+}
+.arr-table th {
+    @apply font-medium text-muted-foreground border-b border-border p-3 uppercase text-xs tracking-wider;
+}
+.arr-table td {
+    @apply p-3 border-b border-border/50 align-middle;
 }

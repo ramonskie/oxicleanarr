@@ -1,6 +1,8 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
+import { useNavigate } from 'react-router-dom';
 import { apiClient } from '@/lib/api';
+import { Button } from '@/components/ui/button';
 import type { Job, DeletionCandidate } from '@/lib/types';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -24,9 +26,10 @@ import {
   HardDrive,
   Info,
 } from 'lucide-react';
-import AppLayout from '@/components/AppHeader';
+import AppLayout from '@/components/AppLayout';
 
 export default function JobHistoryPage() {
+  const navigate = useNavigate();
   const [selectedJob, setSelectedJob] = useState<Job | null>(null);
 
   const { data: jobsData, isLoading } = useQuery({
@@ -108,119 +111,130 @@ export default function JobHistoryPage() {
 
   return (
     <AppLayout>
-      <div className="container mx-auto px-4 py-8">
+      <div className="container mx-auto max-w-[1600px] px-4 py-6">
         {/* Page Header */}
         <div className="mb-6">
-          <h2 className="text-3xl font-bold mb-2">Job History</h2>
-          <p className="text-muted-foreground">
+          <h2 className="text-3xl font-bold mb-2 text-white">Job History</h2>
+          <p className="text-gray-400">
             View synchronization history and dry-run previews
           </p>
         </div>
 
         {/* Job List */}
         {isLoading ? (
-          <Card>
-            <CardContent className="p-8 text-center">
-              <Clock className="h-12 w-12 mx-auto mb-4 text-muted-foreground animate-spin" />
-              <p className="text-muted-foreground">Loading job history...</p>
-            </CardContent>
-          </Card>
+          <div className="bg-[#1a1a1a] border border-[#333] rounded-md p-8 text-center">
+            <Clock className="h-12 w-12 mx-auto mb-4 text-gray-500 animate-spin" />
+            <p className="text-gray-400">Loading job history...</p>
+          </div>
         ) : jobs.length === 0 ? (
-          <Card>
-            <CardContent className="p-8 text-center">
-              <Info className="h-12 w-12 mx-auto mb-4 text-muted-foreground" />
-              <p className="text-lg font-medium mb-2">No jobs yet</p>
-              <p className="text-muted-foreground">
-                Job history will appear here after the first sync
-              </p>
-            </CardContent>
-          </Card>
+          <div className="bg-[#1a1a1a] border border-[#333] rounded-md p-8 text-center">
+            <Info className="h-12 w-12 mx-auto mb-4 text-gray-500" />
+            <p className="text-lg font-medium mb-2 text-white">No sync jobs yet</p>
+            <p className="text-gray-400 mb-4">
+              Job history will appear here after the first sync with Radarr/Sonarr
+            </p>
+            <div className="flex flex-col items-center gap-2 text-sm text-gray-400">
+              <p>Sync jobs are created automatically based on your schedule, or you can:</p>
+              <Button 
+                variant="outline" 
+                size="sm" 
+                onClick={() => navigate('/settings')}
+                className="mt-2 bg-[#262626] border-[#444] text-gray-300 hover:bg-[#333] hover:text-white"
+              >
+                Configure Sync Settings
+              </Button>
+            </div>
+          </div>
         ) : (
-          <div className="space-y-4">
+          <div className="space-y-3">
             {jobs.map((job) => (
-              <Card
+              <div
                 key={job.id}
-                className="hover:bg-accent/50 cursor-pointer transition-colors"
+                className="bg-[#1a1a1a] border border-[#333] rounded-md p-6 hover:bg-[#262626] cursor-pointer transition-colors"
                 onClick={() => setSelectedJob(job)}
               >
-                <CardContent className="p-6">
-                  <div className="flex items-start justify-between">
-                    <div className="flex items-start gap-4 flex-1">
-                      {/* Status Icon */}
-                      <div className="mt-1">{getStatusIcon(job.status)}</div>
+                <div className="flex items-start justify-between">
+                  <div className="flex items-start gap-4 flex-1">
+                    {/* Status Icon */}
+                    <div className="mt-1">{getStatusIcon(job.status)}</div>
 
-                      {/* Job Details */}
-                      <div className="flex-1 space-y-2">
-                        <div className="flex items-center gap-2">
-                          {getTypeBadge(job.type)}
-                          {getStatusBadge(job.status)}
-                          {job.summary?.dry_run && (
-                            <Badge
-                              variant="outline"
-                              className="bg-yellow-500/10 text-yellow-700 border-yellow-500/50"
-                            >
-                              Dry Run
-                            </Badge>
-                          )}
-                        </div>
-
-                        <div className="flex items-center gap-4 text-sm text-muted-foreground">
-                          <div className="flex items-center gap-1">
-                            <Calendar className="h-4 w-4" />
-                            {formatDate(job.started_at)}
-                          </div>
-                          <div className="flex items-center gap-1">
-                            <Clock className="h-4 w-4" />
-                            {formatDuration(job.duration_ms)}
-                          </div>
-                        </div>
-
-                        {/* Summary Stats */}
-                        {job.summary && (
-                          <div className="flex items-center gap-4 text-sm">
-                            {job.summary.movies !== undefined && (
-                              <div className="flex items-center gap-1">
-                                <Film className="h-4 w-4" />
-                                {job.summary.movies} movies
-                              </div>
-                            )}
-                            {job.summary.tv_shows !== undefined && (
-                              <div className="flex items-center gap-1">
-                                <Tv className="h-4 w-4" />
-                                {job.summary.tv_shows} shows
-                              </div>
-                            )}
-                            {job.summary.leaving_soon_count !== undefined &&
-                              job.summary.leaving_soon_count > 0 && (
-                                <div className="flex items-center gap-1 text-blue-600">
-                                  <Clock className="h-4 w-4" />
-                                  {job.summary.leaving_soon_count} leaving soon
-                                </div>
-                              )}
-                            {job.summary.scheduled_deletions !== undefined &&
-                              job.summary.scheduled_deletions > 0 && (
-                                <div className="flex items-center gap-1 text-amber-600">
-                                  <AlertTriangle className="h-4 w-4" />
-                                  {job.summary.scheduled_deletions} scheduled
-                                </div>
-                              )}
-                          </div>
-                        )}
-
-                        {job.error && (
-                          <div className="text-sm text-red-600 flex items-start gap-1">
-                            <XCircle className="h-4 w-4 mt-0.5" />
-                            {job.error}
-                          </div>
+                    {/* Job Details */}
+                    <div className="flex-1 space-y-2">
+                      <div className="flex items-center gap-2">
+                        <Badge variant="outline" className="bg-[#262626] text-gray-300 border-[#444] capitalize">
+                          {job.type.replace('_', ' ')}
+                        </Badge>
+                        <Badge variant="outline" className={`capitalize ${
+                          job.status === 'completed' ? 'bg-green-900/20 text-green-400 border-green-900/50' :
+                          job.status === 'failed' ? 'bg-red-900/20 text-red-400 border-red-900/50' :
+                          job.status === 'running' ? 'bg-blue-900/20 text-blue-400 border-blue-900/50' :
+                          'bg-[#262626] text-gray-400 border-[#444]'
+                        }`}>
+                          {job.status}
+                        </Badge>
+                        {job.summary?.dry_run && (
+                          <Badge variant="outline" className="bg-yellow-900/20 text-yellow-400 border-yellow-900/50">
+                            Dry Run
+                          </Badge>
                         )}
                       </div>
-                    </div>
 
-                    {/* Arrow */}
-                    <ChevronRight className="h-5 w-5 text-muted-foreground" />
+                      <div className="flex items-center gap-4 text-sm text-gray-400">
+                        <div className="flex items-center gap-1">
+                          <Calendar className="h-4 w-4" />
+                          {formatDate(job.started_at)}
+                        </div>
+                        <div className="flex items-center gap-1">
+                          <Clock className="h-4 w-4" />
+                          {formatDuration(job.duration_ms)}
+                        </div>
+                      </div>
+
+                      {/* Summary Stats */}
+                      {job.summary && (
+                        <div className="flex items-center gap-4 text-sm text-gray-300">
+                          {job.summary.movies !== undefined && (
+                            <div className="flex items-center gap-1">
+                              <Film className="h-4 w-4 text-blue-500" />
+                              {job.summary.movies} movies
+                            </div>
+                          )}
+                          {job.summary.tv_shows !== undefined && (
+                            <div className="flex items-center gap-1">
+                              <Tv className="h-4 w-4 text-purple-500" />
+                              {job.summary.tv_shows} shows
+                            </div>
+                          )}
+                          {job.summary.leaving_soon_count !== undefined &&
+                            job.summary.leaving_soon_count > 0 && (
+                              <div className="flex items-center gap-1 text-orange-400">
+                                <Clock className="h-4 w-4" />
+                                {job.summary.leaving_soon_count} leaving soon
+                              </div>
+                            )}
+                          {job.summary.scheduled_deletions !== undefined &&
+                            job.summary.scheduled_deletions > 0 && (
+                              <div className="flex items-center gap-1 text-red-400">
+                                <AlertTriangle className="h-4 w-4" />
+                                {job.summary.scheduled_deletions} scheduled
+                              </div>
+                            )}
+                        </div>
+                      )}
+
+                      {job.error && (
+                        <div className="text-sm text-red-400 flex items-start gap-1">
+                          <XCircle className="h-4 w-4 mt-0.5" />
+                          {job.error}
+                        </div>
+                      )}
+                    </div>
                   </div>
-                </CardContent>
-              </Card>
+
+                  {/* Arrow */}
+                  <ChevronRight className="h-5 w-5 text-gray-500" />
+                </div>
+              </div>
             ))}
           </div>
         )}

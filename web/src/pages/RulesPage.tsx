@@ -1,8 +1,6 @@
-import { useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiClient } from '@/lib/api';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Badge } from '@/components/ui/badge';
@@ -10,10 +8,9 @@ import { Plus, Edit2, Trash2, Settings } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { useState } from 'react';
 import type { AdvancedRule, UserRule } from '@/lib/types';
-import AppLayout from '@/components/AppHeader';
+import AppLayout from '@/components/AppLayout';
 
 export default function RulesPage() {
-  const navigate = useNavigate();
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
@@ -167,93 +164,84 @@ export default function RulesPage() {
 
   return (
     <AppLayout>
-      <div className="bg-white shadow mb-6">
-        <div className="mx-auto px-4 sm:px-6 lg:px-8 py-6 flex justify-between items-center">
+      <div className="container mx-auto px-4 py-6">
+        <div className="flex justify-between items-center mb-6">
           <div className="flex items-center gap-4">
-            <Button variant="ghost" onClick={() => navigate('/configuration')}>
-              ← Back to Configuration
-            </Button>
-            <h1 className="text-3xl font-bold text-gray-900">Advanced Rules</h1>
+            <h1 className="text-3xl font-bold">Advanced Rules</h1>
           </div>
           <div className="flex gap-2">
-            <Button onClick={handleAddRule}>
+            <Button onClick={handleAddRule} className="bg-blue-600 hover:bg-blue-700 text-white">
               <Plus className="h-4 w-4 mr-2" />
               Add Rule
             </Button>
           </div>
         </div>
-      </div>
-
-      <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-8">
-        <div className="space-y-6">
-          {/* Info Card */}
-          <Card className="bg-blue-50 border-blue-200">
-            <CardHeader>
-              <CardTitle className="text-blue-900">About Advanced Rules</CardTitle>
-            </CardHeader>
-            <CardContent className="text-sm text-blue-800 space-y-2">
-              <p>• <strong>Tag-based rules:</strong> Apply custom retention to media with specific tags</p>
-              <p>• <strong>Episode limit rules:</strong> Auto-delete old TV episodes beyond a max count</p>
-              <p>• <strong>User-based rules:</strong> Custom retention for content requested by specific users</p>
-              <p>• Rules are evaluated in the order they appear in the config file</p>
-            </CardContent>
-          </Card>
-
-          {/* Rules List */}
-          {rules.length === 0 ? (
-            <Card>
-              <CardContent className="py-12 text-center text-gray-500">
-                <Settings className="h-12 w-12 mx-auto mb-4 text-gray-400" />
-                <p className="text-lg font-medium">No advanced rules configured</p>
-                <p className="mt-2">Click "Add Rule" to create your first rule</p>
-              </CardContent>
-            </Card>
-          ) : (
-            <div className="grid gap-4">
-              {rules.map((rule) => (
-                <Card key={rule.name}>
-                  <CardHeader>
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-3">
-                        <CardTitle>{rule.name}</CardTitle>
-                        <Badge variant={rule.enabled ? 'default' : 'secondary'}>
-                          {rule.enabled ? 'Enabled' : 'Disabled'}
-                        </Badge>
-                        <Badge variant="outline">{rule.type}</Badge>
-                      </div>
-                      <div className="flex gap-2">
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          onClick={() => handleToggleRule(rule.name, rule.enabled)}
-                        >
-                          {rule.enabled ? 'Disable' : 'Enable'}
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          onClick={() => handleEditRule(rule)}
-                        >
-                          <Edit2 className="h-4 w-4" />
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          onClick={() => handleDeleteRule(rule.name)}
-                        >
-                          <Trash2 className="h-4 w-4 text-red-500" />
-                        </Button>
-                      </div>
-                    </div>
-                  </CardHeader>
-                  <CardContent>
-                    <RuleDetails rule={rule} />
-                  </CardContent>
-                </Card>
-              ))}
-            </div>
-          )}
+        {/* Info Card */}
+        <div className="bg-blue-900/20 border border-blue-900/50 rounded-md p-4">
+          <h3 className="text-blue-400 font-semibold mb-3">About Advanced Rules</h3>
+          <div className="text-sm text-gray-300 space-y-2">
+            <p>• <strong className="text-white">Tag-based rules:</strong> Apply custom retention to media with specific tags</p>
+            <p>• <strong className="text-white">Episode limit rules:</strong> Auto-delete old TV episodes beyond a max count</p>
+            <p>• <strong className="text-white">User-based rules:</strong> Custom retention for content requested by specific users</p>
+            <p>• Rules are evaluated in the order they appear in the config file</p>
+          </div>
         </div>
+
+        {/* Rules List */}
+        {rules.length === 0 ? (
+          <div className="bg-[#1a1a1a] border border-[#333] rounded-md py-12 text-center">
+            <Settings className="h-12 w-12 mx-auto mb-4 text-gray-500" />
+            <p className="text-lg font-medium text-white">No advanced rules configured</p>
+            <p className="mt-2 text-gray-400">Click "Add Rule" to create your first rule</p>
+          </div>
+        ) : (
+          <div className="grid gap-4">
+            {rules.map((rule) => (
+              <div key={rule.name} className="bg-[#1a1a1a] border border-[#333] rounded-md">
+                <div className="p-4 border-b border-[#333]">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <h3 className="text-lg font-semibold text-white">{rule.name}</h3>
+                      <Badge variant="outline" className={rule.enabled ? 'bg-green-900/20 text-green-400 border-green-900/50' : 'bg-[#262626] text-gray-400 border-[#444]'}>
+                        {rule.enabled ? 'Enabled' : 'Disabled'}
+                      </Badge>
+                      <Badge variant="outline" className="bg-[#262626] text-gray-300 border-[#444] capitalize">{rule.type}</Badge>
+                    </div>
+                    <div className="flex gap-2">
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => handleToggleRule(rule.name, rule.enabled)}
+                        className="text-gray-300 hover:text-white hover:bg-[#262626]"
+                      >
+                        {rule.enabled ? 'Disable' : 'Enable'}
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => handleEditRule(rule)}
+                        className="text-gray-300 hover:text-white hover:bg-[#262626]"
+                      >
+                        <Edit2 className="h-4 w-4" />
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => handleDeleteRule(rule.name)}
+                        className="text-red-400 hover:text-red-300 hover:bg-red-900/20"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+                <div className="p-4">
+                  <RuleDetails rule={rule} />
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Add/Edit Dialog */}
@@ -306,27 +294,27 @@ export default function RulesPage() {
 function RuleDetails({ rule }: { rule: AdvancedRule }) {
   if (rule.type === 'tag') {
     return (
-      <div className="space-y-1 text-sm">
-        <p><strong>Tag:</strong> {rule.tag}</p>
-        <p><strong>Retention:</strong> {rule.retention}</p>
+      <div className="space-y-1 text-sm text-gray-300">
+        <p><strong className="text-white">Tag:</strong> {rule.tag}</p>
+        <p><strong className="text-white">Retention:</strong> {rule.retention}</p>
       </div>
     );
   }
 
   if (rule.type === 'episode') {
     return (
-      <div className="space-y-1 text-sm">
-        <p><strong>Max Episodes:</strong> {rule.max_episodes}</p>
-        {rule.max_age && <p><strong>Max Age:</strong> {rule.max_age}</p>}
-        <p><strong>Require Watched:</strong> {rule.require_watched ? 'Yes' : 'No'}</p>
+      <div className="space-y-1 text-sm text-gray-300">
+        <p><strong className="text-white">Max Episodes:</strong> {rule.max_episodes}</p>
+        {rule.max_age && <p><strong className="text-white">Max Age:</strong> {rule.max_age}</p>}
+        <p><strong className="text-white">Require Watched:</strong> {rule.require_watched ? 'Yes' : 'No'}</p>
       </div>
     );
   }
 
   if (rule.type === 'user') {
     return (
-      <div className="space-y-2 text-sm">
-        <p><strong>Users:</strong></p>
+      <div className="space-y-2 text-sm text-gray-300">
+        <p><strong className="text-white">Users:</strong></p>
         <ul className="list-disc list-inside pl-4 space-y-1">
           {rule.users?.map((user, idx) => (
             <li key={idx}>

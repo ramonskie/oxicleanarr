@@ -1,14 +1,15 @@
-import { useNavigate } from 'react-router-dom';
+import { useParams } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiClient } from '@/lib/api';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
-import { Save, Settings, Clock, AlertTriangle, RefreshCw, Info, Eye, EyeOff } from 'lucide-react';
+import { Save, Clock, RefreshCw, Info, Eye, EyeOff } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { useState, useEffect } from 'react';
 import type { Config, UpdateConfigRequest, BaseIntegration } from '@/lib/types';
-import AppLayout from '@/components/AppHeader';
+import AppLayout from '@/components/AppLayout';
+import { ServiceStatusCard } from '@/components/ServiceStatusCard';
 import {
   Dialog,
   DialogContent,
@@ -17,10 +18,9 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 
 export default function ConfigurationPage() {
-  const navigate = useNavigate();
+  const { section = 'general' } = useParams<{ section: string }>();
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
@@ -32,7 +32,7 @@ export default function ConfigurationPage() {
   const [formData, setFormData] = useState<Partial<Config>>({});
   const [showRestartDialog, setShowRestartDialog] = useState(false);
   const [forceRestart, setForceRestart] = useState(false);
-  const [activeTab, setActiveTab] = useState('general');
+  // Section is now controlled by URL params, not local state
   
   // Track which API keys to show/hide
   const [showApiKeys, setShowApiKeys] = useState<Record<string, boolean>>({
@@ -55,6 +55,8 @@ export default function ConfigurationPage() {
   // Track password change
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+
+
 
   // Update formData when config loads
   useEffect(() => {
@@ -122,6 +124,8 @@ export default function ConfigurationPage() {
       });
     },
   });
+
+
 
   const handleSave = () => {
     if (!formData) return;
@@ -320,16 +324,14 @@ export default function ConfigurationPage() {
       <div className="container mx-auto px-4 py-6">
         <div className="flex justify-between items-center mb-6">
           <div className="flex items-center gap-4">
-            <Button variant="ghost" onClick={() => navigate('/')}>
-              ← Back
-            </Button>
-            <h1 className="text-3xl font-bold">Configuration</h1>
+            <h1 className="text-3xl font-bold">
+              {section === 'general' && 'General Settings'}
+              {section === 'integrations' && 'Integrations'}
+              {section === 'symlink' && 'Symlink Library'}
+              {section === 'admin' && 'Server & Admin'}
+            </h1>
           </div>
           <div className="flex gap-2">
-            <Button onClick={() => navigate('/rules')} variant="outline">
-              <Settings className="h-4 w-4 mr-2" />
-              Advanced Rules
-            </Button>
             <Button 
               onClick={() => setShowRestartDialog(true)} 
               variant="outline"
@@ -348,57 +350,20 @@ export default function ConfigurationPage() {
           </div>
         </div>
 
-        {/* Info Cards */}
-        <div className="grid gap-4 md:grid-cols-2 mb-6">
-          <Card className="bg-blue-50 border-blue-200">
-            <CardHeader>
-              <CardTitle className="text-blue-900 flex items-center gap-2">
-                <Info className="h-5 w-5" />
-                Configuration Hot-Reload
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="text-sm text-blue-800 space-y-2">
-              <p className="font-semibold">Changes that take effect immediately (no restart needed):</p>
-              <ul className="list-disc list-inside pl-2 space-y-1">
-                <li>Application settings (dry run, deletion settings, leaving soon days)</li>
-                <li>Sync intervals and auto-start</li>
-                <li>Default retention rules</li>
-                <li>Advanced rules</li>
-              </ul>
-            </CardContent>
-          </Card>
-
-          <Card className="bg-orange-50 border-orange-200">
-            <CardHeader>
-              <CardTitle className="text-orange-900 flex items-center gap-2">
-                <AlertTriangle className="h-5 w-5" />
-                Configuration Changes Requiring Restart
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="text-sm text-orange-800 space-y-2">
-              <p className="font-semibold">Changes that require application restart:</p>
-              <ul className="list-disc list-inside pl-2 space-y-1">
-                <li>Integration settings (Jellyfin, Radarr, Sonarr, Jellyseerr, Jellystat)</li>
-                <li>Symlink library configuration</li>
-                <li>Server settings (host, port)</li>
-                <li>Admin settings (username, password, auth toggle)</li>
-              </ul>
-              <p className="mt-2 font-semibold">Use the "Restart Application" button after saving these changes.</p>
-            </CardContent>
-          </Card>
+        {/* Compact Info Banner */}
+        <div className="mb-6 p-3 bg-[#1a1a1a] border border-[#333] rounded-md text-sm text-gray-400">
+          <div className="flex items-start gap-3">
+            <Info className="h-4 w-4 mt-0.5 text-blue-400 flex-shrink-0" />
+            <div className="flex-1">
+              <span className="text-gray-300">Most settings apply immediately.</span>
+              <span className="text-orange-400 ml-2">Integrations, Symlink Library, and Server/Admin changes require restart.</span>
+            </div>
+          </div>
         </div>
 
-        <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-          <TabsList className="grid w-full grid-cols-4">
-            <TabsTrigger value="general">General</TabsTrigger>
-            <TabsTrigger value="integrations">Integrations</TabsTrigger>
-            <TabsTrigger value="symlink">Symlink Library</TabsTrigger>
-            <TabsTrigger value="server">Server & Admin</TabsTrigger>
-          </TabsList>
-
-          {/* General Tab */}
-          {activeTab === 'general' && (
-          <TabsContent value="general" className="space-y-6">
+        {/* General Section */}
+        {section === 'general' && (
+          <div className="space-y-6">
             {/* App Settings */}
           <Card>
             <CardHeader>
@@ -547,17 +512,22 @@ export default function ConfigurationPage() {
               </div>
             </CardContent>
           </Card>
-          </TabsContent>
-          )}
+          </div>
+        )}
 
-          {/* Integrations Tab */}
-          {activeTab === 'integrations' && (
-          <TabsContent value="integrations" className="space-y-6">
+        {/* Integrations Section */}
+        {section === 'integrations' && (
+          <div className="space-y-6">
             <div className="mb-4">
               <h2 className="text-xl font-bold mb-2">Integration Settings</h2>
               <p className="text-sm text-muted-foreground">
                 Configure external service integrations. Changes require application restart.
               </p>
+            </div>
+
+            {/* Services Status */}
+            <div className="mb-6">
+              <ServiceStatusCard />
             </div>
 
             {/* Jellyfin Integration */}
@@ -568,12 +538,14 @@ export default function ConfigurationPage() {
           {renderIntegrationSection('Sonarr', 'sonarr', formData.integrations?.sonarr)}
           {renderIntegrationSection('Jellyseerr', 'jellyseerr', formData.integrations?.jellyseerr)}
           {renderIntegrationSection('Jellystat', 'jellystat', formData.integrations?.jellystat)}
-          </TabsContent>
-          )}
+          </div>
+        )}
 
-          {/* Symlink Library Tab */}
-          {activeTab === 'symlink' && (
-          <TabsContent value="symlink" className="space-y-6">
+
+
+        {/* Symlink Library Section */}
+        {section === 'symlink' && (
+          <div className="space-y-6">
             <div className="mb-4">
               <h2 className="text-xl font-bold mb-2">Symlink Library Configuration</h2>
               <p className="text-sm text-muted-foreground">
@@ -659,12 +631,12 @@ export default function ConfigurationPage() {
               </div>
             </CardContent>
           </Card>
-          </TabsContent>
-          )}
+          </div>
+        )}
 
-          {/* Server & Admin Tab */}
-          {activeTab === 'server' && (
-          <TabsContent value="server" className="space-y-6">
+        {/* Server & Admin Section */}
+        {section === 'admin' && (
+          <div className="space-y-6">
             <div className="mb-4">
               <h2 className="text-xl font-bold mb-2">Server & Admin Settings</h2>
               <p className="text-sm text-muted-foreground">
@@ -773,9 +745,8 @@ export default function ConfigurationPage() {
               </div>
             </CardContent>
           </Card>
-          </TabsContent>
-          )}
-        </Tabs>
+          </div>
+        )}
       </div>
 
       {/* Restart Confirmation Dialog */}
