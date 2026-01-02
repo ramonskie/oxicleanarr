@@ -78,6 +78,7 @@ docker pull ghcr.io/ramonskie/oxicleanarr:latest
 ```bash
 docker run -d \
   --name oxicleanarr \
+  --restart unless-stopped \
   -p 8080:8080 \
   -v /path/to/config:/app/config \
   -v /path/to/data:/app/data \
