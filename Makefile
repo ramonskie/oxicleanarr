@@ -1,4 +1,4 @@
-.PHONY: build run clean test dev dev-full dev-test install help secrets-scan setup-hooks
+.PHONY: build run clean test test-integration test-integration-up test-integration-down test-all dev dev-full dev-test install help secrets-scan setup-hooks
 
 # Binary name
 BINARY_NAME=oxicleanarr
@@ -51,8 +51,32 @@ clean:
 
 # Run tests
 test:
-	@echo "Running tests..."
-	@go test -v ./...
+	@echo "Running unit tests..."
+	@go test -v ./internal/...
+
+# Start integration test environment (containers + infrastructure setup)
+test-integration-up:
+	@echo "Building Docker image and starting integration test environment..."
+	@KEEP_TEST_ENV=1 go test -v ./test/integration/... -run TestIntegrationSuite/InfrastructureSetup -timeout 10m
+	@echo ""
+	@echo "✅ Integration test environment is ready"
+	@echo "   Jellyfin: http://localhost:8096"
+	@echo "   Radarr:   http://localhost:7878"
+	@echo "   OxiCleanarr: http://localhost:9709"
+	@echo ""
+	@echo "Run 'make test-integration' to run tests"
+	@echo "Run 'make test-integration-down' to stop"
+
+# Stop integration test containers
+test-integration-down:
+	@echo "Stopping integration test containers..."
+	@cd test/assets && docker-compose down -v --remove-orphans
+	@echo "Cleanup complete"
+
+# Run integration tests (requires environment to be running via test-integration-up)
+test-integration:
+	@echo "Running integration tests..."
+	@go test -v ./test/integration/... -run TestIntegrationSuite -timeout 10m
 
 # Install dependencies
 install:
@@ -115,17 +139,21 @@ help:
 	@echo "OxiCleanarr - Media Cleanup Automation Tool"
 	@echo ""
 	@echo "Usage:"
-	@echo "  make build         - Build the application"
-	@echo "  make run           - Build and run the application"
-	@echo "  make dev           - Run backend in development mode (no binary)"
-	@echo "  make dev-full      - Run backend + frontend with hot reload"
-	@echo "  make dev-test      - Run with test config + frontend (hot reload)"
-	@echo "  make test          - Run tests"
-	@echo "  make clean         - Remove build artifacts"
-	@echo "  make install       - Install/update dependencies"
-	@echo "  make fmt           - Format code"
-	@echo "  make lint          - Lint code"
-	@echo "  make secrets-scan  - Scan codebase for secrets/API keys"
-	@echo "  make setup-hooks   - Setup git hooks for secret scanning"
-	@echo "  make setup         - Setup config for first run"
-	@echo "  make help          - Show this help message"
+	@echo "  make build                - Build the application"
+	@echo "  make run                  - Build and run the application"
+	@echo "  make dev                  - Run backend in development mode (no binary)"
+	@echo "  make dev-full             - Run backend + frontend with hot reload"
+	@echo "  make dev-test             - Run with test config + frontend (hot reload)"
+	@echo "  make test                 - Run unit tests"
+	@echo "  make test-integration     - Run integration tests (containers must be running)"
+	@echo "  make test-integration-up  - Start containers + run infrastructure setup"
+	@echo "  make test-integration-down - Stop integration test containers"
+	@echo "  make test-all             - Run unit + integration tests (full cycle)"
+	@echo "  make clean                - Remove build artifacts"
+	@echo "  make install              - Install/update dependencies"
+	@echo "  make fmt                  - Format code"
+	@echo "  make lint                 - Lint code"
+	@echo "  make secrets-scan         - Scan codebase for secrets/API keys"
+	@echo "  make setup-hooks          - Setup git hooks for secret scanning"
+	@echo "  make setup                - Setup config for first run"
+	@echo "  make help                 - Show this help message"
