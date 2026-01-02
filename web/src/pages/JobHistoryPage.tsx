@@ -135,14 +135,14 @@ export default function JobHistoryPage() {
             </p>
             <div className="flex flex-col items-center gap-2 text-sm text-gray-400">
               <p>Sync jobs are created automatically based on your schedule, or you can:</p>
-              <Button 
-                variant="outline" 
-                size="sm" 
-                onClick={() => navigate('/settings')}
-                className="mt-2 bg-[#262626] border-[#444] text-gray-300 hover:bg-[#333] hover:text-white"
-              >
-                Configure Sync Settings
-              </Button>
+                <Button 
+                  variant="outline" 
+                  size="sm" 
+                  onClick={() => navigate('/settings/general')}
+                  className="mt-2 bg-[#262626] border-[#444] text-gray-300 hover:bg-[#333] hover:text-white"
+                >
+                  Configure Sync Settings
+                </Button>
             </div>
           </div>
         ) : (
