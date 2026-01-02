@@ -43,12 +43,32 @@
 *Review items scheduled for deletion and manage exclusions*
 
 ### Job History
-![Job History](docs/screenshots/job-history.png)
+![Job History](docs/screenshots/activity.png)
 *Track all sync operations and cleanup jobs with detailed history*
 
 ### Job Details
 ![Job Details](docs/screenshots/job-details.png)
 *Detailed view of job execution with statistics and timing information*
+
+### Settings - General
+![Settings General](docs/screenshots/settings-general.png)
+*Configure general application settings and sync intervals*
+
+### Settings - Integrations
+![Settings Integrations](docs/screenshots/settings-integrations.png)
+*Connect and configure external services (Jellyfin, Radarr, Sonarr, etc.)*
+
+### Settings - Advanced Rules
+![Settings Advanced Rules](docs/screenshots/settings-advanced-rules.png)
+*Create tag-based, user-based, and watched-based cleanup rules*
+
+### Settings - Symlink Library
+![Settings Symlink Library](docs/screenshots/settings-symlink-library.png)
+*Configure "Leaving Soon" library symlink settings*
+
+### Settings - Server Admin
+![Settings Server Admin](docs/screenshots/settings-server-admin.png)
+*Administrative controls including application restart and maintenance*
 
 </details>
 
