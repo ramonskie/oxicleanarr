@@ -614,6 +614,89 @@ func CheckSymlinks(t *testing.T, jellyfinAPIKey string, symlinkDir string, expec
 	require.Failf(t, "Symlink count mismatch", "Symlink count mismatch: %d (expected: %d)", actualCount, expectedCount)
 }
 
+// WaitForSymlinkCount polls the Jellyfin plugin API until the symlink count
+// reaches expectedCount or maxWait elapses. When the count is stuck below the
+// expected value, it triggers a new full sync every retriggerEvery polls so
+// that Jellyfin's eventually-consistent TMDB metadata (e.g. Schindler's List
+// getting its provider ID populated after the initial library scan) can be
+// picked up by OxiCleanarr without waiting for the background ticker.
+func WaitForSymlinkCount(t *testing.T, client *TestClient, jellyfinAPIKey string, symlinkDir string, expectedCount int, maxWait time.Duration) {
+	t.Helper()
+
+	const (
+		pollInterval   = 2 * time.Second
+		retriggerEvery = 3 // trigger a new sync after this many stuck polls
+	)
+
+	movieDir := filepath.Join(symlinkDir, "movies")
+	reqURL := fmt.Sprintf("%s/api/oxicleanarr/symlinks/list?directory=%s&api_key=%s",
+		JellyfinURL, url.QueryEscape(movieDir), jellyfinAPIKey)
+
+	deadline := time.Now().Add(maxWait)
+	attempt := 0
+	stuckPolls := 0
+	lastCount := -1
+
+	for time.Now().Before(deadline) {
+		attempt++
+		resp, err := http.Get(reqURL)
+		if err != nil {
+			t.Logf("WaitForSymlinkCount attempt %d: request error: %v", attempt, err)
+			time.Sleep(pollInterval)
+			continue
+		}
+		body, err := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		if err != nil {
+			t.Logf("WaitForSymlinkCount attempt %d: read error: %v", attempt, err)
+			time.Sleep(pollInterval)
+			continue
+		}
+
+		var listResp struct {
+			Count        int      `json:"Count"`
+			SymlinkNames []string `json:"SymlinkNames"`
+		}
+		if err := json.Unmarshal(body, &listResp); err != nil {
+			t.Logf("WaitForSymlinkCount attempt %d: parse error: %v", attempt, err)
+			time.Sleep(pollInterval)
+			continue
+		}
+
+		t.Logf("WaitForSymlinkCount attempt %d: %d/%d symlinks present", attempt, listResp.Count, expectedCount)
+
+		if listResp.Count == expectedCount {
+			t.Logf("✅ Symlink count reached %d after %d attempt(s)", expectedCount, attempt)
+			for _, name := range listResp.SymlinkNames {
+				t.Logf("  %s", name)
+			}
+			return
+		}
+
+		// Track whether the count is stuck (not progressing toward expected).
+		// Jellyfin's TMDB metadata is eventually-consistent: some items (e.g.
+		// Schindler's List) may not yet have a provider ID on the first sync, so
+		// OxiCleanarr skips them. Triggering another sync gives OxiCleanarr a
+		// second chance once Jellyfin has finished populating metadata.
+		if listResp.Count == lastCount {
+			stuckPolls++
+		} else {
+			stuckPolls = 0
+		}
+		lastCount = listResp.Count
+
+		if stuckPolls > 0 && stuckPolls%retriggerEvery == 0 {
+			t.Logf("WaitForSymlinkCount: count stuck at %d for %d polls, triggering re-sync", lastCount, stuckPolls)
+			client.TriggerSync()
+		}
+
+		time.Sleep(pollInterval)
+	}
+
+	// Final authoritative check (will produce a clear failure message)
+	CheckSymlinks(t, jellyfinAPIKey, symlinkDir, expectedCount)
+}
+
 // CheckJellyfinLibrary verifies Jellyfin virtual folder state
 func CheckJellyfinLibrary(t *testing.T, apiKey string, libraryName string, expectedExists bool) {
 	t.Logf("Checking Jellyfin virtual folders for library: %s", libraryName)

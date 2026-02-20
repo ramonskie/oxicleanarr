@@ -8,9 +8,9 @@ services:
     container_name: oxicleanarr-test-media-init
     user: "0:0"
     volumes:
-      - ./test-media:/source:ro
-      - test-media:/target
-    command: sh -c "echo 'Copying test media to volume...'; mkdir -p /target && cp -rf /source/movies /target/ && chown -R 1000:1000 /target && chmod -R 755 /target && echo 'Test media copied successfully'; exit 0"
+      - ./test-media:/source:ro,z
+      - test-media:/target:z
+    command: sh -c "echo 'Copying test media to volume...'; mkdir -p /target/movies && cp -rf /source/movies/. /target/movies/ && chown -R 1000:1000 /target/movies && chmod -R 755 /target/movies && echo 'Test media copied successfully'"
     networks:
       - oxicleanarr-test
 
@@ -24,7 +24,7 @@ services:
     volumes:
       - jellyfin-config:/config
       - jellyfin-cache:/cache
-      - test-media:/media:rw
+      - test-media:/media:rw,z
       - ./leaving-soon:/app/leaving-soon
     environment:
       - PUID=1000
@@ -49,7 +49,7 @@ services:
       - "7878:7878"
     volumes:
       - radarr-config:/config
-      - test-media:/media:rw
+      - test-media:/media:rw,z
     environment:
       - PUID=1000
       - PGID=1000

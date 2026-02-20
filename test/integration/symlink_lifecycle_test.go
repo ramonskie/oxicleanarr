@@ -92,15 +92,15 @@ func testSymlinkLifecycle(t *testing.T) {
 		t.Logf("Items scheduled for deletion: %d", scheduledCount)
 		require.Greater(t, scheduledCount, 0, "Expected items scheduled for deletion with 7d retention")
 
-		// Step 8: Wait for symlink creation to complete
-		t.Logf("Waiting 5 seconds for symlink creation...")
-		time.Sleep(5 * time.Second)
+		// Step 8: Wait for symlink creation to complete.
+		// Jellyfin's TMDB metadata is eventually-consistent: on the first sync after
+		// a restart some movies (e.g. Schindler's List) may not yet have a Jellyfin ID
+		// mapping, so their symlinks are created by the next sync. Poll until all
+		// expected symlinks appear (up to 30 s) rather than relying on a fixed sleep.
+		t.Logf("Waiting for %d symlinks to appear in: %s (up to 60s)", Phase1Expected, SymlinkDir)
+		WaitForSymlinkCount(t, client, jellyfinAPIKey, SymlinkDir, Phase1Expected, 60*time.Second)
 
-		// Step 9: Verify symlinks were created via Jellyfin plugin API
-		t.Logf("Checking symlinks in: %s", SymlinkDir)
-		CheckSymlinks(t, jellyfinAPIKey, SymlinkDir, Phase1Expected)
-
-		// Step 10: Verify Jellyfin library was created
+		// Step 9: Verify Jellyfin library was created
 		CheckJellyfinLibrary(t, jellyfinAPIKey, moviesLibraryName, true)
 
 		t.Logf("=== Phase 1 Complete ===")
