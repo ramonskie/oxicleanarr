@@ -34,8 +34,10 @@ type SyncConfig struct {
 
 // RulesConfig holds simple retention rules
 type RulesConfig struct {
-	MovieRetention string `mapstructure:"movie_retention" yaml:"movie_retention" json:"movie_retention"`
-	TVRetention    string `mapstructure:"tv_retention" yaml:"tv_retention" json:"tv_retention"`
+	MovieRetention    string `mapstructure:"movie_retention" yaml:"movie_retention" json:"movie_retention"`
+	TVRetention       string `mapstructure:"tv_retention" yaml:"tv_retention" json:"tv_retention"`
+	RetentionBase     string `mapstructure:"retention_base" yaml:"retention_base,omitempty" json:"retention_base,omitempty"`             // "last_watched_or_added" (default), "last_watched", "added"
+	UnwatchedBehavior string `mapstructure:"unwatched_behavior" yaml:"unwatched_behavior,omitempty" json:"unwatched_behavior,omitempty"` // "added" (default), "never"
 }
 
 // ServerConfig holds HTTP server settings
@@ -98,15 +100,17 @@ type JellystatConfig struct {
 
 // AdvancedRule represents tag-based, episode, or user-based rules
 type AdvancedRule struct {
-	Name           string     `mapstructure:"name" yaml:"name" json:"name"`
-	Type           string     `mapstructure:"type" yaml:"type" json:"type"`
-	Enabled        bool       `mapstructure:"enabled" yaml:"enabled" json:"enabled"`
-	Tag            string     `mapstructure:"tag" yaml:"tag,omitempty" json:"tag,omitempty"`
-	Retention      string     `mapstructure:"retention" yaml:"retention,omitempty" json:"retention,omitempty"`
-	MaxEpisodes    int        `mapstructure:"max_episodes" yaml:"max_episodes,omitempty" json:"max_episodes,omitempty"`
-	MaxAge         string     `mapstructure:"max_age" yaml:"max_age,omitempty" json:"max_age,omitempty"`
-	RequireWatched bool       `mapstructure:"require_watched" yaml:"require_watched,omitempty" json:"require_watched,omitempty"`
-	Users          []UserRule `mapstructure:"users" yaml:"users,omitempty" json:"users,omitempty"`
+	Name              string     `mapstructure:"name" yaml:"name" json:"name"`
+	Type              string     `mapstructure:"type" yaml:"type" json:"type"`
+	Enabled           bool       `mapstructure:"enabled" yaml:"enabled" json:"enabled"`
+	Tag               string     `mapstructure:"tag" yaml:"tag,omitempty" json:"tag,omitempty"`
+	Retention         string     `mapstructure:"retention" yaml:"retention,omitempty" json:"retention,omitempty"`
+	RetentionBase     string     `mapstructure:"retention_base" yaml:"retention_base,omitempty" json:"retention_base,omitempty"`             // per-rule override: "last_watched_or_added", "last_watched", "added"
+	UnwatchedBehavior string     `mapstructure:"unwatched_behavior" yaml:"unwatched_behavior,omitempty" json:"unwatched_behavior,omitempty"` // per-rule override: "added", "never"
+	MaxEpisodes       int        `mapstructure:"max_episodes" yaml:"max_episodes,omitempty" json:"max_episodes,omitempty"`
+	MaxAge            string     `mapstructure:"max_age" yaml:"max_age,omitempty" json:"max_age,omitempty"`
+	RequireWatched    bool       `mapstructure:"require_watched" yaml:"require_watched,omitempty" json:"require_watched,omitempty"`
+	Users             []UserRule `mapstructure:"users" yaml:"users,omitempty" json:"users,omitempty"`
 }
 
 // UserRule represents a user-based cleanup rule

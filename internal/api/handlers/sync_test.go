@@ -10,6 +10,7 @@ import (
 	"github.com/ramonskie/oxicleanarr/internal/cache"
 	"github.com/ramonskie/oxicleanarr/internal/config"
 	"github.com/ramonskie/oxicleanarr/internal/services"
+	"github.com/ramonskie/oxicleanarr/internal/services/rules"
 	"github.com/ramonskie/oxicleanarr/internal/storage"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -44,8 +45,8 @@ func newTestSyncEngineForAPI(t *testing.T) *services.SyncEngine {
 	exclusions, err := storage.NewExclusionsFile(tmpDir)
 	require.NoError(t, err)
 
-	rules := services.NewRulesEngine(cfg, exclusions)
-	engine := services.NewSyncEngine(cfg, cacheInstance, jobs, exclusions, rules)
+	rulesEngine := rules.NewRulesEngine(exclusions, nil)
+	engine := services.NewSyncEngine(cfg, cacheInstance, jobs, exclusions, rulesEngine)
 
 	return engine
 }

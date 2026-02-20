@@ -38,6 +38,11 @@ type Media struct {
 	RequestedByEmail    *string `json:"requested_by_email,omitempty"`
 	WatchedByUsers      []int   `json:"watched_by_users,omitempty"`
 
+	// Episode-level cleanup (TV shows only)
+	// Non-empty = EpisodeRule targets these specific Sonarr episode file IDs for deletion.
+	// Empty = whole-item deletion (standard behavior).
+	EpisodeFileIDs []int `json:"episode_file_ids,omitempty"`
+
 	// Source system IDs
 	JellyfinID string `json:"jellyfin_id,omitempty"`
 	RadarrID   int    `json:"radarr_id,omitempty"`

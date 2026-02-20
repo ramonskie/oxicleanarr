@@ -13,6 +13,7 @@ import (
 	"github.com/ramonskie/oxicleanarr/internal/clients"
 	"github.com/ramonskie/oxicleanarr/internal/config"
 	"github.com/ramonskie/oxicleanarr/internal/models"
+	"github.com/ramonskie/oxicleanarr/internal/services/rules"
 	"github.com/ramonskie/oxicleanarr/internal/storage"
 	"github.com/rs/zerolog/log"
 )
@@ -23,7 +24,7 @@ type SyncEngine struct {
 	cache      *cache.Cache
 	jobs       *storage.JobsFile
 	exclusions *storage.ExclusionsFile
-	rules      *RulesEngine
+	rules      *rules.RulesEngine
 
 	jellyfinClient        *clients.JellyfinClient
 	radarrClient          *clients.RadarrClient
@@ -48,14 +49,14 @@ func NewSyncEngine(
 	cacheInstance *cache.Cache,
 	jobs *storage.JobsFile,
 	exclusions *storage.ExclusionsFile,
-	rules *RulesEngine,
+	rulesEngine *rules.RulesEngine,
 ) *SyncEngine {
 	engine := &SyncEngine{
 		config:       cfg,
 		cache:        cacheInstance,
 		jobs:         jobs,
 		exclusions:   exclusions,
-		rules:        rules,
+		rules:        rulesEngine,
 		mediaLibrary: make(map[string]models.Media),
 		stopChan:     make(chan struct{}),
 	}
@@ -889,18 +890,14 @@ func (e *SyncEngine) applyRetentionRules() {
 	defer e.mediaLibraryLock.Unlock()
 
 	for id, media := range e.mediaLibrary {
-		_, deleteAfter, reason := e.rules.EvaluateMedia(&media)
+		verdict := e.rules.Evaluate(&media)
 
-		// Update media with deletion date
-		media.DeleteAfter = deleteAfter
-		if !deleteAfter.IsZero() {
-			daysUntilDue := int(time.Until(deleteAfter).Hours() / 24)
-			media.DaysUntilDue = daysUntilDue
-
-			// Set deletion reason for all items with deletion dates (both future and overdue)
-			media.DeletionReason = e.rules.GenerateDeletionReason(&media, deleteAfter, reason)
+		// Update media with deletion date and human-readable reason from verdict
+		media.DeleteAfter = verdict.DeleteAfter
+		if !verdict.DeleteAfter.IsZero() {
+			media.DaysUntilDue = int(time.Until(verdict.DeleteAfter).Hours() / 24)
+			media.DeletionReason = FormatDeletionReason(verdict, &media)
 		} else {
-			// Clear deletion info when no deletion is scheduled
 			media.DaysUntilDue = 0
 			media.DeletionReason = ""
 		}

@@ -15,6 +15,7 @@ import (
 	"github.com/ramonskie/oxicleanarr/internal/cache"
 	"github.com/ramonskie/oxicleanarr/internal/config"
 	"github.com/ramonskie/oxicleanarr/internal/services"
+	"github.com/ramonskie/oxicleanarr/internal/services/rules"
 	"github.com/ramonskie/oxicleanarr/internal/storage"
 	"github.com/ramonskie/oxicleanarr/internal/utils"
 	"github.com/rs/zerolog/log"
@@ -75,9 +76,8 @@ func main() {
 	authService := services.NewAuthService(cfg)
 	log.Info().Msg("Authentication service initialized")
 
-	// Initialize rules engine
-	rulesEngine := services.NewRulesEngine(cfg, exclusionsFile)
-	rulesEngine.UseGlobalConfig() // Enable hot-reload support
+	// Initialize rules engine (nil diskMonitor = disk threshold feature disabled)
+	rulesEngine := rules.NewRulesEngine(exclusionsFile, nil)
 	log.Info().Msg("Rules engine initialized")
 
 	// Initialize sync engine
