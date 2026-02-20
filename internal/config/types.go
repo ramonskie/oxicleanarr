@@ -20,9 +20,17 @@ type AdminConfig struct {
 
 // AppConfig holds general application settings
 type AppConfig struct {
-	DryRun          bool `mapstructure:"dry_run" yaml:"dry_run" json:"dry_run"`
-	EnableDeletion  bool `mapstructure:"enable_deletion" yaml:"enable_deletion" json:"enable_deletion"`
-	LeavingSoonDays int  `mapstructure:"leaving_soon_days" yaml:"leaving_soon_days" json:"leaving_soon_days"`
+	DryRun          bool                `mapstructure:"dry_run" yaml:"dry_run" json:"dry_run"`
+	EnableDeletion  bool                `mapstructure:"enable_deletion" yaml:"enable_deletion" json:"enable_deletion"`
+	LeavingSoonDays int                 `mapstructure:"leaving_soon_days" yaml:"leaving_soon_days" json:"leaving_soon_days"`
+	DiskThreshold   DiskThresholdConfig `mapstructure:"disk_threshold" yaml:"disk_threshold,omitempty" json:"disk_threshold,omitempty"`
+}
+
+// DiskThresholdConfig holds disk-space threshold settings for conditional rule activation
+type DiskThresholdConfig struct {
+	Enabled     bool   `mapstructure:"enabled" yaml:"enabled" json:"enabled"`
+	FreeSpaceGB int    `mapstructure:"free_space_gb" yaml:"free_space_gb" json:"free_space_gb"`
+	CheckSource string `mapstructure:"check_source" yaml:"check_source,omitempty" json:"check_source,omitempty"` // "radarr" (default), "sonarr", "lowest"
 }
 
 // SyncConfig holds sync scheduler settings

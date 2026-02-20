@@ -164,6 +164,13 @@ func (e *RulesEngine) evaluateWithContext(ctx EvalContext) RuleVerdict {
 	}
 }
 
+// SetDiskMonitor injects a DiskMonitor into the engine after construction.
+// Called by SyncEngine after it creates the DiskMonitor so that Evaluate()
+// can gate scheduling decisions on real disk status.
+func (e *RulesEngine) SetDiskMonitor(m DiskMonitor) {
+	e.diskMonitor = m
+}
+
 // getDiskStatus returns the current disk status for use in EvalContext.
 // Returns nil if disk monitoring is disabled.
 func (e *RulesEngine) getDiskStatus() *DiskStatus {

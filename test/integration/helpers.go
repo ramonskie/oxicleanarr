@@ -1828,3 +1828,62 @@ func RemoveAdvancedRules(t *testing.T, configPath string) {
 
 	t.Logf("Advanced rules removed from config")
 }
+
+// UpdateDiskThreshold enables or disables the disk_threshold section in the config file.
+// When enabled=true, it sets free_space_gb and check_source.
+// When enabled=false, it removes the disk_threshold section entirely (or sets enabled: false).
+func UpdateDiskThreshold(t *testing.T, configPath string, enabled bool, freeSpaceGB int, checkSource string) {
+	t.Helper()
+	t.Logf("Updating disk_threshold: enabled=%v, free_space_gb=%d, check_source=%s", enabled, freeSpaceGB, checkSource)
+
+	content, err := os.ReadFile(configPath)
+	require.NoError(t, err)
+
+	var cfg map[string]interface{}
+	err = yaml.Unmarshal(content, &cfg)
+	require.NoError(t, err, "Failed to parse YAML config")
+
+	app, ok := cfg["app"].(map[string]interface{})
+	require.True(t, ok, "app section not found in config")
+
+	if enabled {
+		app["disk_threshold"] = map[string]interface{}{
+			"enabled":       true,
+			"free_space_gb": freeSpaceGB,
+			"check_source":  checkSource,
+		}
+	} else {
+		delete(app, "disk_threshold")
+	}
+
+	newContent, err := yaml.Marshal(cfg)
+	require.NoError(t, err, "Failed to marshal YAML config")
+
+	err = os.WriteFile(configPath, newContent, 0644)
+	require.NoError(t, err)
+
+	t.Logf("disk_threshold config updated")
+}
+
+// GetDiskStatus queries the OxiCleanarr /api/system/disk endpoint and returns the response body.
+func (tc *TestClient) GetDiskStatus() (map[string]interface{}, error) {
+	tc.t.Helper()
+
+	resp, err := tc.Get("/api/system/disk")
+	if err != nil {
+		return nil, fmt.Errorf("failed to query disk status: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		bodyBytes, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("unexpected status %d: %s", resp.StatusCode, string(bodyBytes))
+	}
+
+	var result map[string]interface{}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("failed to decode disk status: %w", err)
+	}
+
+	return result, nil
+}

@@ -20,11 +20,12 @@ import (
 
 // SyncEngine handles media synchronization and cleanup operations
 type SyncEngine struct {
-	config     *config.Config
-	cache      *cache.Cache
-	jobs       *storage.JobsFile
-	exclusions *storage.ExclusionsFile
-	rules      *rules.RulesEngine
+	config      *config.Config
+	cache       *cache.Cache
+	jobs        *storage.JobsFile
+	exclusions  *storage.ExclusionsFile
+	rules       *rules.RulesEngine
+	diskMonitor *DiskMonitor
 
 	jellyfinClient        *clients.JellyfinClient
 	radarrClient          *clients.RadarrClient
@@ -76,6 +77,14 @@ func NewSyncEngine(
 	}
 	if cfg.Integrations.Jellystat.Enabled {
 		engine.jellystatClient = clients.NewJellystatClient(cfg.Integrations.Jellystat)
+	}
+
+	// Initialize disk monitor if disk threshold feature is enabled.
+	// Inject it into the rules engine so that Evaluate() can gate on real disk status.
+	if cfg.App.DiskThreshold.Enabled {
+		engine.diskMonitor = NewDiskMonitor(engine.radarrClient, engine.sonarrClient)
+		rulesEngine.SetDiskMonitor(engine.diskMonitor)
+		log.Info().Msg("Disk monitor initialized")
 	}
 
 	// Initialize symlink library manager if enabled
@@ -315,6 +324,13 @@ func (e *SyncEngine) FullSync(ctx context.Context) error {
 
 	// Apply exclusions from file
 	e.applyExclusions()
+
+	// Update disk status before applying retention rules (non-fatal on failure)
+	if e.diskMonitor != nil {
+		if err := e.diskMonitor.Update(ctx); err != nil {
+			log.Warn().Err(err).Msg("Failed to update disk status, rules will use last known state")
+		}
+	}
 
 	// Apply retention rules to all media
 	e.applyRetentionRules()
@@ -852,6 +868,11 @@ func (e *SyncEngine) syncJellystat(ctx context.Context) error {
 		Msg("Jellystat sync completed")
 
 	return nil
+}
+
+// GetDiskMonitor returns the disk monitor instance (may be nil if disabled).
+func (e *SyncEngine) GetDiskMonitor() *DiskMonitor {
+	return e.diskMonitor
 }
 
 // GetMediaList returns all synced media items

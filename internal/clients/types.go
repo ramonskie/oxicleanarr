@@ -213,6 +213,19 @@ type JellystatHistoryItem struct {
 	ActivityDateInserted time.Time `json:"ActivityDateInserted"` // Last watched timestamp
 }
 
+// SystemStatus represents Radarr/Sonarr system status response
+type SystemStatus struct {
+	Version string `json:"version"`
+}
+
+// DiskSpace represents a mounted volume's space information
+type DiskSpace struct {
+	Path       string `json:"path"`
+	Label      string `json:"label"`
+	FreeSpace  int64  `json:"freeSpace"`  // Bytes
+	TotalSpace int64  `json:"totalSpace"` // Bytes
+}
+
 // OxiCleanarr Bridge Plugin Types
 // These types are used for communicating with the Jellyfin OxiCleanarr Bridge Plugin
 

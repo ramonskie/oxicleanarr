@@ -125,3 +125,39 @@ func (h *SystemHandler) GetInfo(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(info)
 }
+
+// GetDiskStatus handles GET /api/system/disk
+func (h *SystemHandler) GetDiskStatus(w http.ResponseWriter, r *http.Request) {
+	dm := h.syncEngine.GetDiskMonitor()
+	if dm == nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"enabled": false,
+			"message": "Disk threshold monitoring is not enabled",
+		})
+		return
+	}
+
+	status := dm.GetStatus()
+	if status == nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"enabled": false,
+			"message": "Disk threshold monitoring is disabled",
+		})
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"enabled":            status.Enabled,
+		"free_space_gb":      status.FreeSpaceGB,
+		"total_space_gb":     status.TotalSpaceGB,
+		"threshold_gb":       status.ThresholdGB,
+		"threshold_breached": status.ThresholdBreached,
+		"check_source":       status.CheckSource,
+	})
+}

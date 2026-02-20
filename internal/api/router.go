@@ -109,6 +109,7 @@ func NewRouter(deps *RouterDependencies) *chi.Mux {
 			r.Post("/system/restart", systemHandler.Restart)
 			r.Get("/system/health", systemHandler.HealthCheck)
 			r.Get("/system/info", systemHandler.GetInfo)
+			r.Get("/system/disk", systemHandler.GetDiskStatus)
 			r.Get("/system/services", servicesHandler.CheckStatus)
 		})
 	})

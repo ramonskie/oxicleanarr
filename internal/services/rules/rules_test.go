@@ -1295,6 +1295,224 @@ func TestEngine_TagRule_RequireWatched_Protects(t *testing.T) {
 	assert.Equal(t, ProtectedByRule, v.ProtectionReason)
 }
 
+// ── DiskThreshold — engine integration (gate wired through RulesEngine) ───────
+
+// mockDiskMonitor implements the DiskMonitor interface for testing.
+type mockDiskMonitor struct {
+	status *DiskStatus
+}
+
+func (m *mockDiskMonitor) GetStatus() *DiskStatus { return m.status }
+
+// buildEngineWithDisk constructs a RulesEngine with a wired DiskMonitor,
+// exercising the full Evaluate() path including getDiskStatus().
+func buildEngineWithDisk(cfg *config.Config, exclusions *storage.ExclusionsFile, monitor DiskMonitor) *RulesEngine {
+	e := buildEngine(cfg, exclusions)
+	e.diskMonitor = monitor
+	return e
+}
+
+// evalFull calls engine.Evaluate() (the public method that reads config.Get() and
+// getDiskStatus()) after setting the global config so config.Get() is non-nil.
+// t.Cleanup restores the previous global config.
+func evalFull(t *testing.T, e *RulesEngine, cfg *config.Config, media *models.Media) RuleVerdict {
+	t.Helper()
+	config.SetTestConfig(cfg)
+	t.Cleanup(func() { config.SetTestConfig(nil) })
+	return e.Evaluate(media)
+}
+
+// evalFullPreview is like evalFull but calls EvaluateForPreview.
+func evalFullPreview(t *testing.T, e *RulesEngine, cfg *config.Config, media *models.Media) RuleVerdict {
+	t.Helper()
+	config.SetTestConfig(cfg)
+	t.Cleanup(func() { config.SetTestConfig(nil) })
+	return e.EvaluateForPreview(media)
+}
+
+func TestEngine_DiskThreshold_GateBlocksWhenDiskOK(t *testing.T) {
+	cfg := mockConfig("90d", "120d", 14)
+	excl := mockExclusions()
+	monitor := &mockDiskMonitor{status: &DiskStatus{
+		Enabled:           true,
+		FreeSpaceGB:       600,
+		ThresholdGB:       500,
+		ThresholdBreached: false,
+		CheckSource:       "radarr",
+	}}
+	engine := buildEngineWithDisk(cfg, excl, monitor)
+
+	// Movie added 120 days ago — would normally be past 90d retention
+	media := mockMedia("movie-1", models.MediaTypeMovie, 120, -1, false)
+	v := evalFull(t, engine, cfg, &media)
+
+	assert.True(t, v.IsProtected, "disk OK should protect media from deletion")
+	assert.Equal(t, ProtectedDiskOK, v.ProtectionReason)
+	assert.Equal(t, "disk_threshold", v.ProtectingRule)
+	assert.True(t, v.DeleteAfter.IsZero(), "no deletion date should be set when disk is OK")
+}
+
+func TestEngine_DiskThreshold_GateOpensWhenBreached(t *testing.T) {
+	cfg := mockConfig("90d", "120d", 14)
+	excl := mockExclusions()
+	monitor := &mockDiskMonitor{status: &DiskStatus{
+		Enabled:           true,
+		FreeSpaceGB:       400,
+		ThresholdGB:       500,
+		ThresholdBreached: true,
+		CheckSource:       "radarr",
+	}}
+	engine := buildEngineWithDisk(cfg, excl, monitor)
+
+	// Movie added 120 days ago — past 90d retention, gate is open
+	media := mockMedia("movie-1", models.MediaTypeMovie, 120, -1, false)
+	v := evalFull(t, engine, cfg, &media)
+
+	assert.False(t, v.IsProtected, "breached threshold should allow deletion")
+	assert.False(t, v.DeleteAfter.IsZero(), "deletion date should be set when threshold breached")
+	assert.True(t, v.ShouldDelete(), "overdue media should be scheduled for deletion")
+	assert.Equal(t, SourceStandardRetention, v.ScheduleSource)
+}
+
+func TestEngine_DiskThreshold_DisabledIsTransparent(t *testing.T) {
+	cfg := mockConfig("90d", "120d", 14)
+	excl := mockExclusions()
+	// DiskStatus present but Enabled=false — should be fully transparent
+	monitor := &mockDiskMonitor{status: &DiskStatus{
+		Enabled:           false,
+		ThresholdBreached: false,
+	}}
+	engine := buildEngineWithDisk(cfg, excl, monitor)
+
+	// Movie past retention — standard rule should apply
+	media := mockMedia("movie-1", models.MediaTypeMovie, 120, -1, false)
+	v := evalFull(t, engine, cfg, &media)
+
+	assert.False(t, v.IsProtected)
+	assert.True(t, v.ShouldDelete(), "disabled disk gate should not block standard retention")
+	assert.Equal(t, SourceStandardRetention, v.ScheduleSource)
+}
+
+func TestEngine_DiskThreshold_NilMonitorIsTransparent(t *testing.T) {
+	cfg := mockConfig("90d", "120d", 14)
+	excl := mockExclusions()
+	// nil diskMonitor = feature disabled entirely
+	engine := buildEngineWithDisk(cfg, excl, nil)
+
+	media := mockMedia("movie-1", models.MediaTypeMovie, 120, -1, false)
+	v := evalFull(t, engine, cfg, &media)
+
+	assert.False(t, v.IsProtected)
+	assert.True(t, v.ShouldDelete(), "nil disk monitor should not block standard retention")
+	assert.Equal(t, SourceStandardRetention, v.ScheduleSource)
+}
+
+func TestEngine_DiskThreshold_ExclusionBeatsGate(t *testing.T) {
+	cfg := mockConfig("90d", "120d", 14)
+	excl := mockExclusions()
+	excl.Add(storage.ExclusionItem{ExternalID: "movie-1", Reason: "user keep"})
+
+	// Disk is OK — gate would protect, but exclusion should win first
+	monitor := &mockDiskMonitor{status: &DiskStatus{
+		Enabled:           true,
+		ThresholdBreached: false,
+	}}
+	engine := buildEngineWithDisk(cfg, excl, monitor)
+
+	media := mockMedia("movie-1", models.MediaTypeMovie, 120, -1, false)
+	v := evalFull(t, engine, cfg, &media)
+
+	assert.True(t, v.IsProtected)
+	// Exclusion rule runs before disk threshold — it must win
+	assert.Equal(t, ProtectedExcluded, v.ProtectionReason)
+	assert.Equal(t, "exclusion", v.ProtectingRule)
+}
+
+func TestEngine_DiskThreshold_AppliesToTVShows(t *testing.T) {
+	cfg := mockConfig("90d", "120d", 14)
+	excl := mockExclusions()
+	monitor := &mockDiskMonitor{status: &DiskStatus{
+		Enabled:           true,
+		FreeSpaceGB:       600,
+		ThresholdGB:       500,
+		ThresholdBreached: false,
+	}}
+	engine := buildEngineWithDisk(cfg, excl, monitor)
+
+	// TV show past 120d retention — gate should block it too (ScopeAll)
+	media := mockMedia("tv-1", models.MediaTypeTVShow, 150, -1, false)
+	v := evalFull(t, engine, cfg, &media)
+
+	assert.True(t, v.IsProtected, "disk gate should apply to TV shows (ScopeAll)")
+	assert.Equal(t, ProtectedDiskOK, v.ProtectionReason)
+	assert.Equal(t, "disk_threshold", v.ProtectingRule)
+}
+
+func TestEngine_DiskThreshold_PreviewBypassesGate(t *testing.T) {
+	cfg := mockConfig("90d", "120d", 14)
+	excl := mockExclusions()
+	// Disk is healthy — gate would block in normal Evaluate()
+	monitor := &mockDiskMonitor{status: &DiskStatus{
+		Enabled:           true,
+		FreeSpaceGB:       600,
+		ThresholdGB:       500,
+		ThresholdBreached: false,
+	}}
+	engine := buildEngineWithDisk(cfg, excl, monitor)
+
+	// Movie past retention — EvaluateForPreview must ignore the gate
+	media := mockMedia("movie-1", models.MediaTypeMovie, 120, -1, false)
+
+	// Normal Evaluate: gate blocks
+	v := evalFull(t, engine, cfg, &media)
+	assert.True(t, v.IsProtected, "Evaluate should be blocked by disk gate")
+
+	// Preview: gate bypassed — item should be scheduled
+	vPreview := evalFullPreview(t, engine, cfg, &media)
+	assert.False(t, vPreview.IsProtected, "EvaluateForPreview must bypass disk gate")
+	assert.False(t, vPreview.DeleteAfter.IsZero(), "preview should show deletion date regardless of disk state")
+	assert.Equal(t, SourceStandardRetention, vPreview.ScheduleSource)
+}
+
+func TestEngine_DiskThreshold_GateBlocksWithinRetention(t *testing.T) {
+	cfg := mockConfig("90d", "120d", 14)
+	excl := mockExclusions()
+	monitor := &mockDiskMonitor{status: &DiskStatus{
+		Enabled:           true,
+		ThresholdBreached: false,
+	}}
+	engine := buildEngineWithDisk(cfg, excl, monitor)
+
+	// Movie within retention — would be scheduled but not yet due
+	// With disk OK gate, it should still be protected (gate fires first)
+	media := mockMedia("movie-1", models.MediaTypeMovie, 30, -1, false)
+	v := evalFull(t, engine, cfg, &media)
+
+	assert.True(t, v.IsProtected)
+	assert.Equal(t, ProtectedDiskOK, v.ProtectionReason)
+}
+
+func TestEngine_DiskThreshold_BreachedAllowsMultipleMediaTypes(t *testing.T) {
+	cfg := mockConfig("90d", "120d", 14)
+	excl := mockExclusions()
+	monitor := &mockDiskMonitor{status: &DiskStatus{
+		Enabled:           true,
+		FreeSpaceGB:       200,
+		ThresholdGB:       500,
+		ThresholdBreached: true,
+	}}
+	engine := buildEngineWithDisk(cfg, excl, monitor)
+
+	movie := mockMedia("movie-1", models.MediaTypeMovie, 120, -1, false)
+	tv := mockMedia("tv-1", models.MediaTypeTVShow, 150, -1, false)
+
+	vMovie := evalFull(t, engine, cfg, &movie)
+	vTV := evalFull(t, engine, cfg, &tv)
+
+	assert.True(t, vMovie.ShouldDelete(), "movie should be deletable when threshold breached")
+	assert.True(t, vTV.ShouldDelete(), "TV show should be deletable when threshold breached")
+}
+
 // ── DiskThreshold (shell — always nil DiskStatus in tests) ────────────────────
 
 func TestDiskThresholdRule_NilStatus(t *testing.T) {

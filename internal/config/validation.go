@@ -166,6 +166,31 @@ func Validate(cfg *Config) error {
 		}
 	}
 
+	// Validate disk threshold config
+	if cfg.App.DiskThreshold.Enabled {
+		if cfg.App.DiskThreshold.FreeSpaceGB <= 0 {
+			errors = append(errors, ValidationError{
+				Field:   "app.disk_threshold.free_space_gb",
+				Message: "must be a positive integer",
+			})
+		}
+
+		validSources := []string{"radarr", "sonarr", "lowest"}
+		if cfg.App.DiskThreshold.CheckSource != "" && !contains(validSources, cfg.App.DiskThreshold.CheckSource) {
+			errors = append(errors, ValidationError{
+				Field:   "app.disk_threshold.check_source",
+				Message: fmt.Sprintf("must be one of: %v", validSources),
+			})
+		}
+
+		if !cfg.Integrations.Radarr.Enabled && !cfg.Integrations.Sonarr.Enabled {
+			errors = append(errors, ValidationError{
+				Field:   "app.disk_threshold",
+				Message: "requires at least one of Radarr or Sonarr to be enabled",
+			})
+		}
+	}
+
 	// Validate port range
 	if cfg.Server.Port < 1 || cfg.Server.Port > 65535 {
 		errors = append(errors, ValidationError{
@@ -215,4 +240,14 @@ func isValidDuration(duration string) bool {
 		return true
 	}
 	return durationRegex.MatchString(duration)
+}
+
+// contains checks if a string slice contains a given value
+func contains(slice []string, value string) bool {
+	for _, s := range slice {
+		if s == value {
+			return true
+		}
+	}
+	return false
 }
