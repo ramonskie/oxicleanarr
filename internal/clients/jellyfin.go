@@ -859,3 +859,51 @@ func (c *JellyfinClient) DeleteDirectory(ctx context.Context, path string, force
 
 	return &deleteResp, nil
 }
+
+// Image Proxy Methods
+
+// ProxyImage fetches an image from Jellyfin and returns the response body and content type.
+// The caller is responsible for closing the returned ReadCloser.
+// maxWidth and quality are optional sizing hints (pass 0 to omit).
+func (c *JellyfinClient) ProxyImage(ctx context.Context, itemID, imageType string, maxWidth, quality int) (io.ReadCloser, string, error) {
+	imgURL := fmt.Sprintf("%s/Items/%s/Images/%s?api_key=%s", c.baseURL, itemID, imageType, c.apiKey)
+
+	if maxWidth > 0 {
+		imgURL += fmt.Sprintf("&maxWidth=%d", maxWidth)
+	}
+	if quality > 0 {
+		imgURL += fmt.Sprintf("&quality=%d", quality)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, "GET", imgURL, nil)
+	if err != nil {
+		return nil, "", fmt.Errorf("creating image request: %w", err)
+	}
+
+	resp, err := c.client.Do(req)
+	if err != nil {
+		return nil, "", fmt.Errorf("fetching image: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		resp.Body.Close()
+		return nil, "", fmt.Errorf("image not found (status %d)", resp.StatusCode)
+	}
+
+	contentType := resp.Header.Get("Content-Type")
+	if contentType == "" {
+		contentType = "image/jpeg"
+	}
+
+	// Limit response body to 10MB to prevent unbounded reads
+	const maxImageSize = 10 << 20 // 10MB
+	limitedBody := struct {
+		io.Reader
+		io.Closer
+	}{
+		Reader: io.LimitReader(resp.Body, maxImageSize),
+		Closer: resp.Body,
+	}
+
+	return limitedBody, contentType, nil
+}

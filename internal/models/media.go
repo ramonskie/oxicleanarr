@@ -50,6 +50,9 @@ type Media struct {
 	TMDBID     int    `json:"tmdb_id,omitempty"`
 	TVDBID     int    `json:"tvdb_id,omitempty"`
 
+	// Image availability (populated from Jellyfin during sync)
+	HasPoster bool `json:"has_poster,omitempty"` // true when Jellyfin has a primary image for this item
+
 	// Jellyfin matching status
 	JellyfinMatchStatus  string `json:"jellyfin_match_status,omitempty"`  // "matched", "not_found", "metadata_mismatch"
 	JellyfinMismatchInfo string `json:"jellyfin_mismatch_info,omitempty"` // Details about the mismatch

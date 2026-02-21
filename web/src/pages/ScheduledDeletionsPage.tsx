@@ -13,9 +13,11 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { Film, Tv, HardDrive, AlertTriangle, Info, Trash2, Clock } from 'lucide-react';
+import { HardDrive, AlertTriangle, Info, Trash2, Clock } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import AppLayout from '@/components/AppLayout';
+import { MediaPoster } from '@/components/MediaPoster';
+import { hasPoster } from '@/lib/imageUtils';
 
 type MediaType = 'all' | 'movies' | 'shows';
 type SortField = 'title' | 'year' | 'days_overdue' | 'file_size';
@@ -127,6 +129,7 @@ export default function ScheduledDeletionsPage() {
           requested_by_username: item.requested_by_username,
           requested_by_email: item.requested_by_email,
           tags: item.tags,
+          has_poster: item.has_poster,
         } as DeletionCandidate;
       });
   })();
@@ -455,11 +458,12 @@ export default function ScheduledDeletionsPage() {
                   <div className="flex justify-between items-start gap-4">
                     <div className="flex-1">
                       <div className="flex items-center gap-2 mb-2">
-                        {item.type === 'movie' ? (
-                          <Film className="h-5 w-5 text-blue-500" />
-                        ) : (
-                          <Tv className="h-5 w-5 text-purple-500" />
-                        )}
+                        <MediaPoster
+                          mediaId={item.id}
+                          mediaType={item.type === 'tv_show' ? 'show' : 'movie'}
+                          hasPoster={hasPoster(item)}
+                          size="small"
+                        />
                         <h3 className="text-lg font-semibold text-white">
                           {item.title}
                           {item.year && (

@@ -615,6 +615,8 @@ func (e *SyncEngine) syncJellyfin(ctx context.Context) error {
 			if !jm.UserData.LastPlayedDate.IsZero() {
 				media.LastWatched = jm.UserData.LastPlayedDate
 			}
+			// Build image URLs (without API key — proxy adds it at request time)
+			media.HasPoster = true
 			media.JellyfinMatchStatus = "matched"
 			media.JellyfinMismatchInfo = ""
 			movieMatched++
@@ -675,6 +677,8 @@ func (e *SyncEngine) syncJellyfin(ctx context.Context) error {
 			if !js.UserData.LastPlayedDate.IsZero() {
 				media.LastWatched = js.UserData.LastPlayedDate
 			}
+			// Flag poster availability (proxy fetches from Jellyfin at request time)
+			media.HasPoster = true
 			media.JellyfinMatchStatus = "matched"
 			media.JellyfinMismatchInfo = ""
 			showMatched++
@@ -875,6 +879,11 @@ func (e *SyncEngine) GetDiskMonitor() *DiskMonitor {
 	return e.diskMonitor
 }
 
+// GetJellyfinClient returns the Jellyfin client instance (may be nil if disabled).
+func (e *SyncEngine) GetJellyfinClient() *clients.JellyfinClient {
+	return e.jellyfinClient
+}
+
 // GetMediaList returns all synced media items
 func (e *SyncEngine) GetMediaList() []models.Media {
 	e.mediaLibraryLock.RLock()
@@ -992,6 +1001,7 @@ func (e *SyncEngine) CalculateDeletionInfo() (int, []map[string]interface{}) {
 				"days_overdue": daysOverdue,
 				"reason":       media.DeletionReason,
 				"last_watched": media.LastWatched,
+				"has_poster":   media.HasPoster,
 				// Requester information
 				"is_requested":          media.IsRequested,
 				"requested_by_user_id":  media.RequestedByUserID,

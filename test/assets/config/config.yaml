@@ -7,7 +7,7 @@ app:
     leaving_soon_days: 14
 integrations:
     jellyfin:
-        api_key: placeholder-will-be-set-by-test
+        api_key: 196148272a104e8baefee5dd5711baae
         enabled: true
         symlink_library:
             base_path: /data/media/leaving-soon
@@ -19,13 +19,13 @@ integrations:
     jellyseerr:
         api_key: mock-api-key
         enabled: false
-        url: http://mock-server-url-set-at-runtime
+        url: http://127.0.0.1:45809
     jellystat:
         api_key: mock-api-key
-        enabled: false
-        url: http://mock-server-url-set-at-runtime
+        enabled: true
+        url: http://host.docker.internal:34987
     radarr:
-        api_key: placeholder-will-be-set-by-test
+        api_key: b0e46ea6322241b290d1ccc9782bbcee
         enabled: true
         url: http://oxicleanarr-test-radarr:7878
     sonarr:
@@ -33,8 +33,8 @@ integrations:
         enabled: false
         url: http://oxicleanarr-test-sonarr:8989
 rules:
-    movie_retention: 7d
-    tv_retention: 120d
+    movie_retention: 30d
+    tv_retention: 60d
 server:
     host: 0.0.0.0
     port: 9709

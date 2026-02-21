@@ -9,6 +9,8 @@ import { Film, Shield, ShieldOff, AlertTriangle, Clock, Monitor } from 'lucide-r
 import { useToast } from '@/hooks/use-toast';
 import { useMemo, useState } from 'react';
 import AppLayout from '@/components/AppLayout';
+import { MediaPoster } from '@/components/MediaPoster';
+import { hasPoster } from '@/lib/imageUtils';
 
 export default function DashboardPage() {
   const navigate = useNavigate();
@@ -260,10 +262,12 @@ export default function DashboardPage() {
                                 <tr key={item.id} className="hover:bg-[#262626] transition-colors">
                                     <td className="px-6 py-4 font-medium text-white">
                                         <div className="flex items-center gap-3">
-                                            {/* Placeholder Icon */}
-                                            <div className="w-8 h-8 rounded bg-[#333] flex items-center justify-center text-gray-500">
-                                                {item.type === 'movie' ? <Film className="h-4 w-4" /> : <Monitor className="h-4 w-4" />}
-                                            </div>
+                                            <MediaPoster
+                                              mediaId={item.id}
+                                              mediaType={item.type}
+                                              hasPoster={hasPoster(item)}
+                                              size="tiny"
+                                            />
                                             <div>
                                                 <div className="font-medium text-white">{item.title}</div>
                                                 <div className="text-xs text-gray-500">{item.year}</div>
@@ -331,9 +335,12 @@ export default function DashboardPage() {
                                 <tr key={item.id} className="hover:bg-[#262626] transition-colors">
                                     <td className="px-6 py-4 font-medium text-white">
                                         <div className="flex items-center gap-3">
-                                            <div className="w-8 h-8 rounded bg-[#333] flex items-center justify-center text-gray-500">
-                                                {item.type === 'movie' ? <Film className="h-4 w-4" /> : <Monitor className="h-4 w-4" />}
-                                            </div>
+                                            <MediaPoster
+                                              mediaId={item.id}
+                                              mediaType={item.type}
+                                              hasPoster={hasPoster(item)}
+                                              size="tiny"
+                                            />
                                             <div>
                                                 <div className="font-medium text-white">{item.title}</div>
                                                 <div className="text-xs text-gray-500">{item.year}</div>

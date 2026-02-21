@@ -2,7 +2,9 @@ package handlers
 
 import (
 	"encoding/json"
+	"io"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/ramonskie/oxicleanarr/internal/config"
@@ -240,7 +242,83 @@ func (h *MediaHandler) DeleteMedia(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// sortMedia sorts media by the given field and order
+// ProxyPoster handles GET /api/media/{id}/poster
+// Proxies the poster image from Jellyfin, adding the API key server-side
+// so the frontend never sees the Jellyfin credentials.
+// Optional query params: maxWidth (int), quality (int), type (Primary|Backdrop).
+func (h *MediaHandler) ProxyPoster(w http.ResponseWriter, r *http.Request) {
+	// Extract media ID from path
+	path := strings.TrimPrefix(r.URL.Path, "/api/media/")
+	parts := strings.Split(path, "/")
+	if len(parts) < 2 || parts[0] == "" {
+		http.Error(w, "Media ID required", http.StatusBadRequest)
+		return
+	}
+	id := parts[0]
+
+	// Look up the media item to get its JellyfinID
+	media, found := h.syncEngine.GetMediaByID(id)
+	if !found {
+		http.Error(w, "Media not found", http.StatusNotFound)
+		return
+	}
+
+	if media.JellyfinID == "" {
+		http.Error(w, "No Jellyfin ID for this media", http.StatusNotFound)
+		return
+	}
+
+	// Get the Jellyfin client
+	jellyfinClient := h.syncEngine.GetJellyfinClient()
+	if jellyfinClient == nil {
+		http.Error(w, "Jellyfin integration not configured", http.StatusServiceUnavailable)
+		return
+	}
+
+	// Parse optional query parameters
+	imageType := r.URL.Query().Get("type")
+	if imageType == "" {
+		imageType = "Primary"
+	}
+	// Validate image type to prevent path traversal
+	if imageType != "Primary" && imageType != "Backdrop" {
+		http.Error(w, "Invalid image type", http.StatusBadRequest)
+		return
+	}
+
+	maxWidth := 0
+	if mw := r.URL.Query().Get("maxWidth"); mw != "" {
+		if v, err := strconv.Atoi(mw); err == nil && v > 0 && v <= 1920 {
+			maxWidth = v
+		}
+	}
+
+	quality := 0
+	if q := r.URL.Query().Get("quality"); q != "" {
+		if v, err := strconv.Atoi(q); err == nil && v > 0 && v <= 100 {
+			quality = v
+		}
+	}
+
+	// Proxy the image from Jellyfin
+	body, contentType, err := jellyfinClient.ProxyImage(r.Context(), media.JellyfinID, imageType, maxWidth, quality)
+	if err != nil {
+		log.Debug().Err(err).Str("media_id", id).Str("jellyfin_id", media.JellyfinID).Msg("Failed to proxy image")
+		http.Error(w, "Image not available", http.StatusNotFound)
+		return
+	}
+	defer body.Close()
+
+	// Set caching headers (images rarely change)
+	w.Header().Set("Content-Type", contentType)
+	w.Header().Set("Cache-Control", "public, max-age=86400") // 24 hours
+	w.WriteHeader(http.StatusOK)
+
+	if _, err := io.Copy(w, body); err != nil {
+		log.Debug().Err(err).Str("media_id", id).Msg("Error streaming image to client")
+	}
+}
+
 func sortMedia(media []models.Media, sortBy, order string) []models.Media {
 	if len(media) == 0 {
 		return media

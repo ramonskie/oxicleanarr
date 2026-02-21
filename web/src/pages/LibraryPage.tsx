@@ -10,6 +10,8 @@ import { useSearchParams, useNavigate } from 'react-router-dom';
 import { Shield, ShieldOff, Search, Monitor, Film, Filter, User } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import AppLayout from '@/components/AppLayout';
+import { MediaPoster } from '@/components/MediaPoster';
+import { hasPoster } from '@/lib/imageUtils';
 
 type MediaType = 'all' | 'movies' | 'shows';
 type SortField = 'title' | 'year' | 'last_watched' | 'deletion_date';
@@ -428,10 +430,12 @@ export default function LibraryPage() {
                   <tr key={item.id} className="hover:bg-[#262626] transition-colors group">
                     <td className="px-6 py-4 font-medium text-white">
                       <div className="flex items-center gap-3">
-                         {/* Placeholder Poster */}
-                         <div className="w-8 h-12 bg-[#333] rounded flex items-center justify-center flex-shrink-0">
-                            {item.type === 'movie' ? <Film className="h-4 w-4 text-gray-500" /> : <Monitor className="h-4 w-4 text-gray-500" />}
-                         </div>
+                         <MediaPoster
+                           mediaId={item.id}
+                           mediaType={item.type}
+                           hasPoster={hasPoster(item)}
+                           size="tiny"
+                         />
                          <div>
                             <div className="flex items-center gap-2">
                                 <span className="line-clamp-1">{item.title}</span>

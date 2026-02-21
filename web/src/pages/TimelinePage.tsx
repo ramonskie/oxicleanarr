@@ -3,10 +3,12 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiClient } from '@/lib/api';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Film, Tv, Clock, Shield, ShieldOff, Calendar } from 'lucide-react';
+import { Clock, Shield, ShieldOff, Calendar } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import type { MediaItem } from '@/lib/types';
 import AppLayout from '@/components/AppLayout';
+import { MediaPoster } from '@/components/MediaPoster';
+import { hasPoster } from '@/lib/imageUtils';
 
 interface GroupedMedia {
   date: string;
@@ -187,11 +189,12 @@ export default function TimelinePage() {
                         >
                           <div className="flex items-center justify-between">
                             <div className="flex items-center gap-4 flex-1 min-w-0">
-                              {item.type === 'movie' ? (
-                                <Film className="h-8 w-8 text-blue-500 flex-shrink-0" />
-                              ) : (
-                                <Tv className="h-8 w-8 text-purple-500 flex-shrink-0" />
-                              )}
+                              <MediaPoster
+                                mediaId={item.id}
+                                mediaType={item.type}
+                                hasPoster={hasPoster(item)}
+                                size="small"
+                              />
                               <div className="flex-1 min-w-0">
                                 <h4 className="font-medium truncate text-white">{item.title}</h4>
                                 <div className="flex items-center gap-2 mt-1">
