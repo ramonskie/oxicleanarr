@@ -120,10 +120,27 @@ export interface AdminConfig {
   disable_auth: boolean;
 }
 
+export interface DiskThresholdConfig {
+  enabled: boolean;
+  free_space_gb: number;
+  check_source: 'radarr' | 'sonarr' | 'lowest';
+}
+
 export interface AppConfig {
   dry_run: boolean;
   enable_deletion: boolean;
   leaving_soon_days: number;
+  disk_threshold: DiskThresholdConfig;
+}
+
+export interface DiskStatus {
+  enabled: boolean;
+  free_space_gb?: number;
+  total_space_gb?: number;
+  threshold_gb?: number;
+  threshold_breached?: boolean;
+  check_source?: string;
+  message?: string;
 }
 
 export interface SyncConfig {
@@ -191,7 +208,7 @@ export interface UserRule {
 
 export interface UpdateConfigRequest {
   admin?: Partial<AdminConfig & { password?: string }>;
-  app?: AppConfig;
+  app?: Partial<AppConfig>;
   sync?: SyncConfig;
   rules?: RulesConfig;
   server?: ServerConfig;

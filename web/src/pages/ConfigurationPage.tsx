@@ -4,10 +4,10 @@ import { apiClient } from '@/lib/api';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
-import { Save, Clock, RefreshCw, Info, Eye, EyeOff } from 'lucide-react';
+import { Save, Clock, RefreshCw, Info, Eye, EyeOff, HardDrive } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { useState, useEffect } from 'react';
-import type { Config, UpdateConfigRequest, BaseIntegration } from '@/lib/types';
+import type { Config, UpdateConfigRequest, BaseIntegration, DiskThresholdConfig } from '@/lib/types';
 import AppLayout from '@/components/AppLayout';
 import { ServiceStatusCard } from '@/components/ServiceStatusCard';
 import {
@@ -141,7 +141,10 @@ export default function ConfigurationPage() {
     }
     
     const updateReq: UpdateConfigRequest = {
-      app: formData.app,
+      app: {
+        ...formData.app,
+        disk_threshold: formData.app?.disk_threshold,
+      },
       sync: formData.sync,
       rules: formData.rules,
       server: formData.server,
@@ -215,6 +218,19 @@ export default function ConfigurationPage() {
             [field]: value,
           } as any,
         } as any,
+      } as any,
+    }));
+  };
+
+  const handleDiskThresholdChange = (field: keyof DiskThresholdConfig, value: any) => {
+    setFormData(prev => ({
+      ...prev,
+      app: {
+        ...prev.app,
+        disk_threshold: {
+          ...prev.app?.disk_threshold,
+          [field]: value,
+        } as DiskThresholdConfig,
       } as any,
     }));
   };
@@ -510,6 +526,80 @@ export default function ConfigurationPage() {
                   />
                 </div>
               </div>
+            </CardContent>
+          </Card>
+
+          {/* Disk Threshold */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <HardDrive className="h-5 w-5" />
+                Disk Threshold
+              </CardTitle>
+              <CardDescription>
+                Gate deletions based on available disk space. When enabled, retention rules only trigger
+                deletions when free space falls below the threshold (hot-reload enabled).
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="grid gap-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <label className="text-sm font-medium">Enable Disk Threshold</label>
+                    <p className="text-sm text-gray-500">
+                      Only delete media when free disk space is below the threshold
+                    </p>
+                  </div>
+                  <input
+                    type="checkbox"
+                    checked={formData.app?.disk_threshold?.enabled || false}
+                    onChange={(e) => handleDiskThresholdChange('enabled', e.target.checked)}
+                    className="h-4 w-4"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-sm font-medium">Free Space Threshold (GB)</label>
+                  <p className="text-sm text-gray-500 mb-2">
+                    Deletions are gated until free space drops below this value
+                  </p>
+                  <Input
+                    type="number"
+                    value={formData.app?.disk_threshold?.free_space_gb || 100}
+                    onChange={(e) => handleDiskThresholdChange('free_space_gb', parseInt(e.target.value))}
+                    min="1"
+                    disabled={!formData.app?.disk_threshold?.enabled}
+                  />
+                </div>
+
+                <div>
+                  <label className="text-sm font-medium">Check Source</label>
+                  <p className="text-sm text-gray-500 mb-2">
+                    Which service to query for disk space. Use "lowest" to pick the most constrained volume across both.
+                  </p>
+                  <select
+                    value={formData.app?.disk_threshold?.check_source || 'radarr'}
+                    onChange={(e) => handleDiskThresholdChange('check_source', e.target.value)}
+                    disabled={!formData.app?.disk_threshold?.enabled}
+                    className="w-full h-9 rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    <option value="radarr">Radarr</option>
+                    <option value="sonarr">Sonarr</option>
+                    <option value="lowest">Lowest (most constrained)</option>
+                  </select>
+                </div>
+              </div>
+
+              {formData.app?.disk_threshold?.enabled && (
+                <div className="mt-2 p-3 bg-blue-950/30 border border-blue-900/40 rounded-md text-sm text-blue-300">
+                  <p>
+                    When disk threshold is active, media will only be deleted when free space on the{' '}
+                    <strong>{formData.app.disk_threshold.check_source || 'radarr'}</strong> volume drops below{' '}
+                    <strong>{formData.app.disk_threshold.free_space_gb || 100} GB</strong>.
+                    The "Leaving Soon" library always shows upcoming deletions regardless of disk state.
+                  </p>
+                </div>
+              )}
             </CardContent>
           </Card>
           </div>

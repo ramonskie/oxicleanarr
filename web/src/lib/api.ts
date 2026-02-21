@@ -10,7 +10,8 @@ import type {
   Config,
   UpdateConfigRequest,
   RulesListResponse,
-  AdvancedRule
+  AdvancedRule,
+  DiskStatus
 } from './types';
 import type { ServiceStatusResponse } from './types-services';
 
@@ -266,6 +267,10 @@ class ApiClient {
 
   async getServiceStatus(): Promise<ServiceStatusResponse> {
     return this.request<ServiceStatusResponse>('/system/services');
+  }
+
+  async getDiskStatus(): Promise<DiskStatus> {
+    return this.request<DiskStatus>('/system/disk');
   }
 }
 
