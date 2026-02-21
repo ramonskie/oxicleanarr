@@ -56,6 +56,8 @@ func (r *StandardRule) Protect(ctx EvalContext) *ProtectionStatus {
 }
 
 // Schedule applies movie_retention / tv_retention using the configured base time.
+// When retention_base=last_watched and unwatched_behavior=added and unwatched_retention
+// is configured, unwatched items use unwatched_retention instead of movie/tv_retention.
 func (r *StandardRule) Schedule(ctx EvalContext) (time.Time, ScheduleSource) {
 	cfg := ctx.Config
 
@@ -64,6 +66,23 @@ func (r *StandardRule) Schedule(ctx EvalContext) (time.Time, ScheduleSource) {
 		retentionStr = cfg.Rules.MovieRetention
 	} else {
 		retentionStr = cfg.Rules.TVRetention
+	}
+
+	// Use unwatched_retention for unwatched items when configured.
+	// Only applies when retention_base=last_watched AND unwatched_behavior=added.
+	retentionBase := cfg.Rules.RetentionBase
+	if retentionBase == "" {
+		retentionBase = RetentionBaseLastWatchedOrAdded
+	}
+	unwatchedBehavior := cfg.Rules.UnwatchedBehavior
+	if unwatchedBehavior == "" {
+		unwatchedBehavior = UnwatchedBehaviorAdded
+	}
+	if retentionBase == RetentionBaseLastWatched &&
+		unwatchedBehavior == UnwatchedBehaviorAdded &&
+		cfg.Rules.UnwatchedRetention != "" &&
+		ctx.Media.LastWatched.IsZero() {
+		retentionStr = cfg.Rules.UnwatchedRetention
 	}
 
 	duration, err := parseDuration(retentionStr)

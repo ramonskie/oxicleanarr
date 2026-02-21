@@ -152,6 +152,9 @@ export interface SyncConfig {
 export interface RulesConfig {
   movie_retention: string;
   tv_retention: string;
+  retention_base?: string;        // "last_watched_or_added" | "last_watched" | "added"
+  unwatched_behavior?: string;    // "added" | "never"
+  unwatched_retention?: string;   // e.g. "180d" — only used when retention_base=last_watched AND unwatched_behavior=added
 }
 
 export interface ServerConfig {
@@ -192,6 +195,8 @@ export interface AdvancedRule {
   enabled: boolean;
   tag?: string;
   retention?: string;
+  retention_base?: string;        // per-rule override: "last_watched_or_added" | "last_watched" | "added"
+  unwatched_behavior?: string;    // per-rule override: "added" | "never"
   max_episodes?: number;
   max_age?: string;
   require_watched?: boolean;

@@ -2,6 +2,7 @@ package integration
 
 import (
 	"encoding/json"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"sync"
@@ -10,9 +11,10 @@ import (
 
 // MockJellystatServer creates a mock HTTP server that simulates Jellystat API responses
 type MockJellystatServer struct {
-	Server    *httptest.Server
-	MovieIDs  map[string]string // maps movie title to Jellyfin ID
-	HistoryMu sync.RWMutex      // protects MovieIDs
+	Server         *httptest.Server
+	MovieIDs       map[string]string    // maps movie title to Jellyfin ID
+	WatchOverrides map[string]time.Time // per-title watch timestamp overrides (set by SetWatchTimestamp)
+	HistoryMu      sync.RWMutex         // protects MovieIDs and WatchOverrides
 }
 
 // jellystatHistoryResponse matches the /api/getHistory endpoint response
@@ -38,7 +40,11 @@ type jellystatHistoryItem struct {
 	ActivityDateInserted time.Time `json:"ActivityDateInserted"`
 }
 
-// NewMockJellystatServer creates and starts a new mock Jellystat server
+// NewMockJellystatServer creates and starts a new mock Jellystat server.
+// The server binds to 0.0.0.0 (all interfaces) so it is reachable from Docker
+// containers via host.docker.internal:<port>. The URL() method returns an
+// http://127.0.0.1:<port> address so that convertMockURLForDocker can rewrite
+// it to host.docker.internal for use inside Docker containers.
 func NewMockJellystatServer() *MockJellystatServer {
 	mock := &MockJellystatServer{
 		MovieIDs: make(map[string]string),
@@ -48,7 +54,24 @@ func NewMockJellystatServer() *MockJellystatServer {
 	mux.HandleFunc("/", mock.handleRoot)
 	mux.HandleFunc("/api/getHistory", mock.handleGetHistory)
 
-	mock.Server = httptest.NewServer(mux)
+	// Bind to 0.0.0.0 so Docker containers can reach us via host.docker.internal.
+	// httptest.NewServer binds to 127.0.0.1 only, which is unreachable from Docker
+	// because host.docker.internal resolves to the host's external IP, not loopback.
+	listener, err := net.Listen("tcp", "0.0.0.0:0")
+	if err != nil {
+		panic("mock_jellystat: failed to listen on 0.0.0.0: " + err.Error())
+	}
+
+	srv := httptest.NewUnstartedServer(mux)
+	srv.Listener = listener
+	srv.Start()
+
+	// Override the server URL to use 127.0.0.1 instead of [::] so that
+	// convertMockURLForDocker("127.0.0.1" → "host.docker.internal") works correctly.
+	_, port, _ := net.SplitHostPort(listener.Addr().String())
+	srv.URL = "http://127.0.0.1:" + port
+
+	mock.Server = srv
 	return mock
 }
 
@@ -58,6 +81,20 @@ func (m *MockJellystatServer) SetMovieIDs(movieIDs map[string]string) {
 	m.HistoryMu.Lock()
 	defer m.HistoryMu.Unlock()
 	m.MovieIDs = movieIDs
+}
+
+// SetWatchTimestamp overrides the watch timestamp for a specific movie title.
+// This allows individual test scenarios to simulate re-watch events without
+// rebuilding the entire mock server. Pass the movie title as it appears in
+// the history items (e.g., "Pulp Fiction").
+func (m *MockJellystatServer) SetWatchTimestamp(movieTitle string, watchedAt time.Time) {
+	m.HistoryMu.Lock()
+	defer m.HistoryMu.Unlock()
+
+	if m.WatchOverrides == nil {
+		m.WatchOverrides = make(map[string]time.Time)
+	}
+	m.WatchOverrides[movieTitle] = watchedAt
 }
 
 // Close shuts down the mock server
@@ -107,6 +144,15 @@ func (m *MockJellystatServer) handleGetHistory(w http.ResponseWriter, r *http.Re
 		return fallback
 	}
 
+	// getWatchTime returns the watch timestamp for a movie title, applying any
+	// per-title override set via SetWatchTimestamp before falling back to the default.
+	getWatchTime := func(title string, defaultOffset time.Duration) time.Time {
+		if override, ok := m.WatchOverrides[title]; ok {
+			return override
+		}
+		return now.Add(defaultOffset)
+	}
+
 	// Note: NowPlayingItemID should match Jellyfin item IDs from the actual test setup
 	// These will be matched during syncJellystat by comparing against media.JellyfinID
 	historyItems := []jellystatHistoryItem{
@@ -121,7 +167,7 @@ func (m *MockJellystatServer) handleGetHistory(w http.ResponseWriter, r *http.Re
 			EpisodeID:            "",
 			SeasonID:             "",
 			PlaybackDuration:     7200,
-			ActivityDateInserted: now.Add(-10 * 24 * time.Hour),
+			ActivityDateInserted: getWatchTime("Fight Club", -10*24*time.Hour),
 		},
 		// Pulp Fiction - watched 60 days ago (old)
 		{
@@ -134,7 +180,7 @@ func (m *MockJellystatServer) handleGetHistory(w http.ResponseWriter, r *http.Re
 			EpisodeID:            "",
 			SeasonID:             "",
 			PlaybackDuration:     9240,
-			ActivityDateInserted: now.Add(-60 * 24 * time.Hour),
+			ActivityDateInserted: getWatchTime("Pulp Fiction", -60*24*time.Hour),
 		},
 		// Inception - watched 5 days ago (recent)
 		{
@@ -147,7 +193,7 @@ func (m *MockJellystatServer) handleGetHistory(w http.ResponseWriter, r *http.Re
 			EpisodeID:            "",
 			SeasonID:             "",
 			PlaybackDuration:     8880,
-			ActivityDateInserted: now.Add(-5 * 24 * time.Hour),
+			ActivityDateInserted: getWatchTime("Inception", -5*24*time.Hour),
 		},
 		// The Dark Knight - watched 30 days ago
 		{
@@ -160,7 +206,7 @@ func (m *MockJellystatServer) handleGetHistory(w http.ResponseWriter, r *http.Re
 			EpisodeID:            "",
 			SeasonID:             "",
 			PlaybackDuration:     9120,
-			ActivityDateInserted: now.Add(-30 * 24 * time.Hour),
+			ActivityDateInserted: getWatchTime("The Dark Knight", -30*24*time.Hour),
 		},
 		// Interstellar - watched 45 days ago
 		{
@@ -173,7 +219,7 @@ func (m *MockJellystatServer) handleGetHistory(w http.ResponseWriter, r *http.Re
 			EpisodeID:            "",
 			SeasonID:             "",
 			PlaybackDuration:     10140,
-			ActivityDateInserted: now.Add(-45 * 24 * time.Hour),
+			ActivityDateInserted: getWatchTime("Interstellar", -45*24*time.Hour),
 		},
 		// Forrest Gump - watched 90 days ago (very old)
 		{
@@ -186,7 +232,7 @@ func (m *MockJellystatServer) handleGetHistory(w http.ResponseWriter, r *http.Re
 			EpisodeID:            "",
 			SeasonID:             "",
 			PlaybackDuration:     8520,
-			ActivityDateInserted: now.Add(-90 * 24 * time.Hour),
+			ActivityDateInserted: getWatchTime("Forrest Gump", -90*24*time.Hour),
 		},
 		// Schindler's List - never watched (no activity record)
 		// This is intentionally omitted to test unwatched media behavior

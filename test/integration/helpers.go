@@ -219,6 +219,59 @@ func (tc *TestClient) GetScheduledCount() int {
 	return len(result.Items)
 }
 
+// TriggerSyncAndGetSummary triggers a full sync, waits for it to complete,
+// then fetches the latest job and returns its summary map.
+// This is the correct way to count overdue items (scheduled_deletions) and
+// inspect would_delete candidates, since /api/media/leaving-soon only shows
+// items within the leaving_soon_days window (not yet overdue).
+func (tc *TestClient) TriggerSyncAndGetSummary() map[string]interface{} {
+	tc.t.Helper()
+	tc.TriggerSync()
+
+	job, err := tc.WaitForJobCompletion(30 * time.Second)
+	require.NoError(tc.t, err, "Failed to wait for job completion")
+
+	summary, ok := job["summary"].(map[string]interface{})
+	require.True(tc.t, ok, "Job summary not found in latest job")
+	return summary
+}
+
+// GetJobScheduledCount triggers a sync and returns the scheduled_deletions count
+// from the job summary. Unlike GetScheduledCount (which uses /api/media/leaving-soon
+// and only shows items within the leaving_soon_days window), this counts ALL items
+// whose deletion date has passed — including overdue items.
+func (tc *TestClient) GetJobScheduledCount() int {
+	tc.t.Helper()
+	summary := tc.TriggerSyncAndGetSummary()
+
+	scheduledDeletions, ok := summary["scheduled_deletions"].(float64)
+	if !ok {
+		return 0
+	}
+	return int(scheduledDeletions)
+}
+
+// GetJobWouldDelete triggers a sync and returns the would_delete list from the
+// job summary. Each entry is a map with fields: id, title, year, reason, etc.
+// This includes ALL items past their deletion date, not just leaving-soon items.
+func (tc *TestClient) GetJobWouldDelete() []map[string]interface{} {
+	tc.t.Helper()
+	summary := tc.TriggerSyncAndGetSummary()
+
+	raw, ok := summary["would_delete"].([]interface{})
+	if !ok {
+		return nil
+	}
+
+	items := make([]map[string]interface{}, 0, len(raw))
+	for _, v := range raw {
+		if item, ok := v.(map[string]interface{}); ok {
+			items = append(items, item)
+		}
+	}
+	return items
+}
+
 // GetMovies returns all movies from the API
 func (tc *TestClient) GetMovies() []map[string]interface{} {
 	resp, err := tc.Get("/api/media/movies")

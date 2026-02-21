@@ -1564,3 +1564,444 @@ func TestDiskThresholdRule_ThresholdBreached(t *testing.T) {
 	}
 	assert.Nil(t, r.Protect(ctx), "breached threshold must return nil (allow deletion)")
 }
+
+// ── getRetentionBaseTime tests ────────────────────────────────────────────────
+
+func TestGetRetentionBaseTime_LastWatchedOrAdded_Watched(t *testing.T) {
+	now := time.Now()
+	media := &models.Media{
+		AddedAt:     now.AddDate(0, 0, -100),
+		LastWatched: now.AddDate(0, 0, -10),
+	}
+	cfg := &config.Config{}
+
+	baseTime, neverDelete := getRetentionBaseTime(media, RetentionBaseLastWatchedOrAdded, "", cfg)
+
+	assert.False(t, neverDelete)
+	// Should use LastWatched, not AddedAt
+	assert.WithinDuration(t, media.LastWatched, baseTime, time.Second)
+}
+
+func TestGetRetentionBaseTime_LastWatchedOrAdded_Unwatched(t *testing.T) {
+	now := time.Now()
+	media := &models.Media{
+		AddedAt: now.AddDate(0, 0, -100),
+		// LastWatched is zero
+	}
+	cfg := &config.Config{}
+
+	baseTime, neverDelete := getRetentionBaseTime(media, RetentionBaseLastWatchedOrAdded, "", cfg)
+
+	assert.False(t, neverDelete)
+	// Falls back to AddedAt
+	assert.WithinDuration(t, media.AddedAt, baseTime, time.Second)
+}
+
+func TestGetRetentionBaseTime_LastWatched_Watched(t *testing.T) {
+	now := time.Now()
+	media := &models.Media{
+		AddedAt:     now.AddDate(0, 0, -100),
+		LastWatched: now.AddDate(0, 0, -5),
+	}
+	cfg := &config.Config{}
+
+	baseTime, neverDelete := getRetentionBaseTime(media, RetentionBaseLastWatched, UnwatchedBehaviorAdded, cfg)
+
+	assert.False(t, neverDelete)
+	assert.WithinDuration(t, media.LastWatched, baseTime, time.Second)
+}
+
+func TestGetRetentionBaseTime_LastWatched_Unwatched_Added(t *testing.T) {
+	now := time.Now()
+	media := &models.Media{
+		AddedAt: now.AddDate(0, 0, -100),
+		// LastWatched is zero
+	}
+	cfg := &config.Config{}
+
+	baseTime, neverDelete := getRetentionBaseTime(media, RetentionBaseLastWatched, UnwatchedBehaviorAdded, cfg)
+
+	assert.False(t, neverDelete)
+	// Falls back to AddedAt
+	assert.WithinDuration(t, media.AddedAt, baseTime, time.Second)
+}
+
+func TestGetRetentionBaseTime_LastWatched_Unwatched_Never(t *testing.T) {
+	now := time.Now()
+	media := &models.Media{
+		AddedAt: now.AddDate(0, 0, -100),
+		// LastWatched is zero
+	}
+	cfg := &config.Config{}
+
+	baseTime, neverDelete := getRetentionBaseTime(media, RetentionBaseLastWatched, UnwatchedBehaviorNever, cfg)
+
+	assert.True(t, neverDelete, "unwatched_behavior=never + unwatched item must signal never-delete")
+	assert.True(t, baseTime.IsZero())
+}
+
+func TestGetRetentionBaseTime_Added_IgnoresWatchActivity(t *testing.T) {
+	now := time.Now()
+	media := &models.Media{
+		AddedAt:     now.AddDate(0, 0, -60),
+		LastWatched: now.AddDate(0, 0, -1), // watched very recently
+	}
+	cfg := &config.Config{}
+
+	baseTime, neverDelete := getRetentionBaseTime(media, RetentionBaseAdded, "", cfg)
+
+	assert.False(t, neverDelete)
+	// Must use AddedAt, ignoring the recent watch
+	assert.WithinDuration(t, media.AddedAt, baseTime, time.Second)
+}
+
+func TestGetRetentionBaseTime_FutureBaseTimeClamped(t *testing.T) {
+	now := time.Now()
+	media := &models.Media{
+		AddedAt: now.AddDate(0, 0, 10), // future AddedAt (clock skew)
+	}
+	cfg := &config.Config{}
+
+	baseTime, neverDelete := getRetentionBaseTime(media, RetentionBaseAdded, "", cfg)
+
+	assert.False(t, neverDelete)
+	// Must be clamped to now (not in the future)
+	assert.False(t, baseTime.After(now.Add(time.Second)), "future base time must be clamped to now")
+}
+
+func TestGetRetentionBaseTime_DefaultsFromGlobalConfig(t *testing.T) {
+	now := time.Now()
+	media := &models.Media{
+		AddedAt: now.AddDate(0, 0, -50),
+		// LastWatched is zero
+	}
+	cfg := &config.Config{
+		Rules: config.RulesConfig{
+			RetentionBase:     RetentionBaseLastWatched,
+			UnwatchedBehavior: UnwatchedBehaviorNever,
+		},
+	}
+
+	// Pass empty strings — should fall back to global config
+	baseTime, neverDelete := getRetentionBaseTime(media, "", "", cfg)
+
+	assert.True(t, neverDelete, "should inherit unwatched_behavior=never from global config")
+	assert.True(t, baseTime.IsZero())
+}
+
+// ── StandardRule.Protect tests ────────────────────────────────────────────────
+
+func TestStandardRule_Protect_UnwatchedNever(t *testing.T) {
+	r := NewStandardRule()
+	media := mockMedia("m1", models.MediaTypeMovie, 100, -1, false) // never watched
+	cfg := &config.Config{
+		Rules: config.RulesConfig{
+			MovieRetention:    "30d",
+			TVRetention:       "60d",
+			RetentionBase:     RetentionBaseLastWatched,
+			UnwatchedBehavior: UnwatchedBehaviorNever,
+		},
+	}
+	ctx := EvalContext{Media: &media, Config: cfg}
+
+	result := r.Protect(ctx)
+
+	require.NotNil(t, result, "unwatched item with unwatched_behavior=never must be protected")
+	assert.Equal(t, ProtectedUnwatched, *result)
+}
+
+func TestStandardRule_Protect_WatchedNotProtected(t *testing.T) {
+	r := NewStandardRule()
+	media := mockMedia("m1", models.MediaTypeMovie, 100, 5, false) // watched 5 days ago
+	cfg := &config.Config{
+		Rules: config.RulesConfig{
+			MovieRetention:    "30d",
+			TVRetention:       "60d",
+			RetentionBase:     RetentionBaseLastWatched,
+			UnwatchedBehavior: UnwatchedBehaviorNever,
+		},
+	}
+	ctx := EvalContext{Media: &media, Config: cfg}
+
+	result := r.Protect(ctx)
+
+	assert.Nil(t, result, "watched item must not be protected by unwatched_behavior=never")
+}
+
+func TestStandardRule_Protect_DefaultBehaviorNoProtection(t *testing.T) {
+	r := NewStandardRule()
+	media := mockMedia("m1", models.MediaTypeMovie, 100, -1, false) // never watched
+	cfg := &config.Config{
+		Rules: config.RulesConfig{
+			MovieRetention: "30d",
+			TVRetention:    "60d",
+			// RetentionBase defaults to last_watched_or_added
+			// UnwatchedBehavior defaults to added
+		},
+	}
+	ctx := EvalContext{Media: &media, Config: cfg}
+
+	result := r.Protect(ctx)
+
+	assert.Nil(t, result, "default config must not protect unwatched items")
+}
+
+// ── StandardRule.Schedule tests ───────────────────────────────────────────────
+
+func TestStandardRule_Schedule_LastWatchedOrAdded_Watched(t *testing.T) {
+	r := NewStandardRule()
+	now := time.Now()
+	media := models.Media{
+		ID:          "m1",
+		Type:        models.MediaTypeMovie,
+		AddedAt:     now.AddDate(0, 0, -100),
+		LastWatched: now.AddDate(0, 0, -10),
+		WatchCount:  1,
+	}
+	cfg := &config.Config{
+		Rules: config.RulesConfig{
+			MovieRetention: "30d",
+			TVRetention:    "60d",
+			// default: last_watched_or_added
+		},
+	}
+	ctx := EvalContext{Media: &media, Config: cfg}
+
+	deleteAfter, source := r.Schedule(ctx)
+
+	assert.Equal(t, SourceStandardRetention, source)
+	// 10 days ago + 30d = 20 days from now
+	expected := now.AddDate(0, 0, -10+30)
+	assert.WithinDuration(t, expected, deleteAfter, 2*time.Second)
+}
+
+func TestStandardRule_Schedule_Added_IgnoresWatch(t *testing.T) {
+	r := NewStandardRule()
+	now := time.Now()
+	media := models.Media{
+		ID:          "m1",
+		Type:        models.MediaTypeMovie,
+		AddedAt:     now.AddDate(0, 0, -60),
+		LastWatched: now.AddDate(0, 0, -1), // watched very recently
+		WatchCount:  1,
+	}
+	cfg := &config.Config{
+		Rules: config.RulesConfig{
+			MovieRetention: "30d",
+			TVRetention:    "60d",
+			RetentionBase:  RetentionBaseAdded,
+		},
+	}
+	ctx := EvalContext{Media: &media, Config: cfg}
+
+	deleteAfter, source := r.Schedule(ctx)
+
+	assert.Equal(t, SourceStandardRetention, source)
+	// 60 days ago + 30d = 30 days ago (overdue)
+	expected := now.AddDate(0, 0, -60+30)
+	assert.WithinDuration(t, expected, deleteAfter, 2*time.Second)
+	assert.True(t, deleteAfter.Before(now), "should be overdue (added 60d ago, retention 30d)")
+}
+
+func TestStandardRule_Schedule_UnwatchedRetention(t *testing.T) {
+	r := NewStandardRule()
+	now := time.Now()
+	addedAt := now.Add(-100 * 24 * time.Hour)
+	media := models.Media{
+		ID:      "m1",
+		Type:    models.MediaTypeMovie,
+		AddedAt: addedAt,
+		// LastWatched is zero — unwatched
+	}
+	cfg := &config.Config{
+		Rules: config.RulesConfig{
+			MovieRetention:     "30d",
+			TVRetention:        "60d",
+			RetentionBase:      RetentionBaseLastWatched,
+			UnwatchedBehavior:  UnwatchedBehaviorAdded,
+			UnwatchedRetention: "180d",
+		},
+	}
+	ctx := EvalContext{Media: &media, Config: cfg}
+
+	deleteAfter, source := r.Schedule(ctx)
+
+	assert.Equal(t, SourceStandardRetention, source)
+	// Uses unwatched_retention (180d) not movie_retention (30d)
+	// AddedAt 100 days ago + 180d = 80 days from now
+	expected := addedAt.Add(180 * 24 * time.Hour)
+	assert.WithinDuration(t, expected, deleteAfter, 2*time.Second)
+	assert.True(t, deleteAfter.After(now), "should not be overdue with 180d unwatched retention")
+}
+
+func TestStandardRule_Schedule_UnwatchedRetention_WatchedItemUsesNormalRetention(t *testing.T) {
+	r := NewStandardRule()
+	now := time.Now()
+	media := models.Media{
+		ID:          "m1",
+		Type:        models.MediaTypeMovie,
+		AddedAt:     now.AddDate(0, 0, -100),
+		LastWatched: now.AddDate(0, 0, -40), // watched 40 days ago
+		WatchCount:  1,
+	}
+	cfg := &config.Config{
+		Rules: config.RulesConfig{
+			MovieRetention:     "30d",
+			TVRetention:        "60d",
+			RetentionBase:      RetentionBaseLastWatched,
+			UnwatchedBehavior:  UnwatchedBehaviorAdded,
+			UnwatchedRetention: "180d",
+		},
+	}
+	ctx := EvalContext{Media: &media, Config: cfg}
+
+	deleteAfter, source := r.Schedule(ctx)
+
+	assert.Equal(t, SourceStandardRetention, source)
+	// Watched item uses movie_retention (30d), not unwatched_retention (180d)
+	// LastWatched 40 days ago + 30d = 10 days ago (overdue)
+	expected := now.AddDate(0, 0, -40+30)
+	assert.WithinDuration(t, expected, deleteAfter, 2*time.Second)
+	assert.True(t, deleteAfter.Before(now), "watched item should be overdue")
+}
+
+func TestRetentionReset_OnWatch(t *testing.T) {
+	// Simulate: media was overdue, then user watches it — re-evaluate shows not overdue
+	now := time.Now()
+	cfg := &config.Config{
+		Rules: config.RulesConfig{
+			MovieRetention: "30d",
+			TVRetention:    "60d",
+		},
+	}
+	exclusions := mockExclusions()
+	engine := buildEngine(cfg, exclusions)
+
+	// Step 1: media watched 40 days ago — overdue with 30d retention
+	mediaOverdue := mockMedia("m1", models.MediaTypeMovie, 100, 40, false)
+	verdict1 := eval(engine, cfg, &mediaOverdue)
+	assert.False(t, verdict1.IsProtected)
+	assert.True(t, verdict1.ShouldDelete(), "should be overdue: watched 40d ago, retention 30d")
+
+	// Step 2: user watches again (1 day ago) — re-evaluate
+	mediaRewatched := mediaOverdue
+	mediaRewatched.LastWatched = now.AddDate(0, 0, -1)
+	verdict2 := eval(engine, cfg, &mediaRewatched)
+	assert.False(t, verdict2.IsProtected)
+	assert.False(t, verdict2.ShouldDelete(), "should NOT be overdue after re-watch 1 day ago")
+}
+
+// ── Engine-level retention_base integration tests ─────────────────────────────
+
+func TestEngine_UnwatchedBehaviorNever_ProtectsItem(t *testing.T) {
+	cfg := &config.Config{
+		Rules: config.RulesConfig{
+			MovieRetention:    "30d",
+			TVRetention:       "60d",
+			RetentionBase:     RetentionBaseLastWatched,
+			UnwatchedBehavior: UnwatchedBehaviorNever,
+		},
+	}
+	exclusions := mockExclusions()
+	engine := buildEngine(cfg, exclusions)
+
+	media := mockMedia("m1", models.MediaTypeMovie, 100, -1, false) // never watched
+	verdict := eval(engine, cfg, &media)
+
+	assert.True(t, verdict.IsProtected, "unwatched item must be protected with unwatched_behavior=never")
+	assert.Equal(t, ProtectedUnwatched, verdict.ProtectionReason)
+}
+
+func TestEngine_RetentionBase_Added_IgnoresWatch(t *testing.T) {
+	cfg := &config.Config{
+		Rules: config.RulesConfig{
+			MovieRetention: "30d",
+			TVRetention:    "60d",
+			RetentionBase:  RetentionBaseAdded,
+		},
+	}
+	exclusions := mockExclusions()
+	engine := buildEngine(cfg, exclusions)
+
+	// Added 60 days ago, watched 1 day ago — with retention_base=added, watch is ignored
+	media := mockMedia("m1", models.MediaTypeMovie, 60, 1, false)
+	verdict := eval(engine, cfg, &media)
+
+	assert.False(t, verdict.IsProtected)
+	assert.True(t, verdict.ShouldDelete(), "should be overdue: added 60d ago, retention 30d, watch ignored")
+}
+
+func TestEngine_RetentionBase_LastWatched_WatchedItemScheduled(t *testing.T) {
+	cfg := &config.Config{
+		Rules: config.RulesConfig{
+			MovieRetention:    "30d",
+			TVRetention:       "60d",
+			RetentionBase:     RetentionBaseLastWatched,
+			UnwatchedBehavior: UnwatchedBehaviorNever,
+		},
+	}
+	exclusions := mockExclusions()
+	engine := buildEngine(cfg, exclusions)
+
+	// Watched 40 days ago — overdue with 30d retention
+	media := mockMedia("m1", models.MediaTypeMovie, 100, 40, false)
+	verdict := eval(engine, cfg, &media)
+
+	assert.False(t, verdict.IsProtected)
+	assert.True(t, verdict.ShouldDelete(), "watched item 40d ago with 30d retention should be overdue")
+}
+
+func TestEngine_UnwatchedRetention_SeparateRetentionForUnwatched(t *testing.T) {
+	cfg := &config.Config{
+		Rules: config.RulesConfig{
+			MovieRetention:     "30d",
+			TVRetention:        "60d",
+			RetentionBase:      RetentionBaseLastWatched,
+			UnwatchedBehavior:  UnwatchedBehaviorAdded,
+			UnwatchedRetention: "180d",
+		},
+	}
+	exclusions := mockExclusions()
+	engine := buildEngine(cfg, exclusions)
+
+	// Added 100 days ago, never watched — should use 180d unwatched_retention
+	media := mockMedia("m1", models.MediaTypeMovie, 100, -1, false)
+	verdict := eval(engine, cfg, &media)
+
+	assert.False(t, verdict.IsProtected)
+	assert.False(t, verdict.ShouldDelete(), "100d old unwatched item should not be overdue with 180d unwatched_retention")
+}
+
+func TestEngine_PerRule_TagRule_RetentionBaseOverride(t *testing.T) {
+	// Global: retention_base=added (pure age-based)
+	// Tag rule: retention_base=last_watched, unwatched_behavior=never
+	cfg := &config.Config{
+		Rules: config.RulesConfig{
+			MovieRetention: "30d",
+			TVRetention:    "60d",
+			RetentionBase:  RetentionBaseAdded,
+		},
+		AdvancedRules: []config.AdvancedRule{
+			{
+				Name:              "premium",
+				Type:              "tag",
+				Enabled:           true,
+				Tag:               "premium",
+				Retention:         "90d",
+				RetentionBase:     RetentionBaseLastWatched,
+				UnwatchedBehavior: UnwatchedBehaviorNever,
+			},
+		},
+	}
+	exclusions := mockExclusions()
+	engine := buildEngine(cfg, exclusions)
+
+	// Premium-tagged movie, watched 1 day ago, added 60 days ago
+	media := mockMedia("m1", models.MediaTypeMovie, 60, 1, false)
+	media.Tags = []string{"premium"}
+	verdict := eval(engine, cfg, &media)
+
+	assert.False(t, verdict.IsProtected)
+	assert.False(t, verdict.ShouldDelete(), "premium tag rule: watched 1d ago with 90d retention should not be overdue")
+	assert.Equal(t, SourceTagRule, verdict.ScheduleSource)
+}

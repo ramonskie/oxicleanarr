@@ -42,10 +42,11 @@ type SyncConfig struct {
 
 // RulesConfig holds simple retention rules
 type RulesConfig struct {
-	MovieRetention    string `mapstructure:"movie_retention" yaml:"movie_retention" json:"movie_retention"`
-	TVRetention       string `mapstructure:"tv_retention" yaml:"tv_retention" json:"tv_retention"`
-	RetentionBase     string `mapstructure:"retention_base" yaml:"retention_base,omitempty" json:"retention_base,omitempty"`             // "last_watched_or_added" (default), "last_watched", "added"
-	UnwatchedBehavior string `mapstructure:"unwatched_behavior" yaml:"unwatched_behavior,omitempty" json:"unwatched_behavior,omitempty"` // "added" (default), "never"
+	MovieRetention     string `mapstructure:"movie_retention" yaml:"movie_retention" json:"movie_retention"`
+	TVRetention        string `mapstructure:"tv_retention" yaml:"tv_retention" json:"tv_retention"`
+	RetentionBase      string `mapstructure:"retention_base" yaml:"retention_base,omitempty" json:"retention_base,omitempty"`                // "last_watched_or_added" (default), "last_watched", "added"
+	UnwatchedBehavior  string `mapstructure:"unwatched_behavior" yaml:"unwatched_behavior,omitempty" json:"unwatched_behavior,omitempty"`    // "added" (default), "never"
+	UnwatchedRetention string `mapstructure:"unwatched_retention" yaml:"unwatched_retention,omitempty" json:"unwatched_retention,omitempty"` // separate retention for unwatched items (only when retention_base=last_watched AND unwatched_behavior=added)
 }
 
 // ServerConfig holds HTTP server settings

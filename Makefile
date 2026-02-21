@@ -57,7 +57,7 @@ test:
 # Start integration test environment (containers + infrastructure setup)
 test-integration-up:
 	@echo "Building Docker image and starting integration test environment..."
-	@KEEP_TEST_ENV=1 go test -v ./test/integration/... -run TestIntegrationSuite/InfrastructureSetup -timeout 10m
+	@KEEP_TEST_ENV=1 go test -v -count=1 ./test/integration/... -run TestIntegrationSuite/InfrastructureSetup -timeout 10m
 	@echo ""
 	@echo "✅ Integration test environment is ready"
 	@echo "   Jellyfin: http://localhost:8096"
@@ -76,7 +76,7 @@ test-integration-down:
 # Run integration tests (requires environment to be running via test-integration-up)
 test-integration:
 	@echo "Running integration tests..."
-	@go test -v ./test/integration/... -run TestIntegrationSuite -timeout 10m
+	@go test -v -count=1 ./test/integration/... -run TestIntegrationSuite -timeout 10m
 
 # Install dependencies
 install:

@@ -1005,7 +1005,10 @@ func (e *SyncEngine) CalculateDeletionInfo() (int, []map[string]interface{}) {
 	return scheduledCount, wouldDelete
 }
 
-// ExecuteDeletions performs actual deletion of overdue media items
+// ExecuteDeletions performs actual deletion of overdue media items.
+// Before each deletion, a pre-deletion safety check refreshes the watch state from
+// Jellystat to catch any watch activity that occurred after the last evaluation.
+// If the item was watched since evaluation, deletion is skipped (fail-safe).
 func (e *SyncEngine) ExecuteDeletions(ctx context.Context, candidates []map[string]interface{}) (int, []map[string]interface{}) {
 	deletedCount := 0
 	deletedItems := make([]map[string]interface{}, 0)
@@ -1014,11 +1017,56 @@ func (e *SyncEngine) ExecuteDeletions(ctx context.Context, candidates []map[stri
 		Int("candidates", len(candidates)).
 		Msg("Executing deletions for overdue items")
 
+	// Pre-fetch watch history once for all candidates to avoid O(candidates × pages) HTTP calls.
+	var watchStateMap map[string]time.Time
+	if e.jellystatClient != nil {
+		var err error
+		watchStateMap, err = e.buildWatchStateMap(ctx)
+		if err != nil {
+			log.Warn().
+				Err(err).
+				Msg("Pre-deletion safety check failed — skipping all deletions for safety")
+			return 0, deletedItems
+		}
+	}
+
 	for _, candidate := range candidates {
 		mediaID, ok := candidate["id"].(string)
 		if !ok {
 			log.Warn().Interface("candidate", candidate).Msg("Invalid media ID in deletion candidate")
 			continue
+		}
+
+		// Pre-deletion safety check: refresh watch state from Jellystat to catch
+		// any watch activity that occurred between evaluation and deletion.
+		// Skip the check for episode-level deletions (count/age-based, not watch-based).
+		media, found := e.GetMediaByID(mediaID)
+		if !found {
+			log.Warn().Str("media_id", mediaID).Msg("Media not found in library, skipping deletion")
+			continue
+		}
+
+		if watchStateMap != nil && media.JellyfinID != "" {
+			latestWatched := watchStateMap[media.JellyfinID]
+
+			if latestWatched.After(media.LastWatched) {
+				// Watch activity detected since last evaluation — re-evaluate with fresh data.
+				updatedMedia := media
+				updatedMedia.LastWatched = latestWatched
+				if updatedMedia.WatchCount == 0 {
+					updatedMedia.WatchCount = 1
+				}
+
+				verdict := e.rules.Evaluate(&updatedMedia)
+				if verdict.IsProtected || verdict.DeleteAfter.After(time.Now()) {
+					log.Info().
+						Str("media_id", mediaID).
+						Str("title", media.Title).
+						Time("new_last_watched", latestWatched).
+						Msg("Watch activity extended retention — skipping deletion")
+					continue
+				}
+			}
 		}
 
 		// Attempt deletion
@@ -1047,6 +1095,30 @@ func (e *SyncEngine) ExecuteDeletions(ctx context.Context, candidates []map[stri
 		Msg("Deletion execution completed")
 
 	return deletedCount, deletedItems
+}
+
+// buildWatchStateMap fetches the full watch history from Jellystat once and returns
+// a map of jellyfinID → latest watch timestamp. This avoids repeated full-history
+// fetches when checking multiple deletion candidates.
+func (e *SyncEngine) buildWatchStateMap(ctx context.Context) (map[string]time.Time, error) {
+	history, err := e.jellystatClient.GetHistory(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("fetching watch history from Jellystat: %w", err)
+	}
+
+	watchMap := make(map[string]time.Time, len(history))
+	for _, item := range history {
+		if item.ActivityDateInserted.After(watchMap[item.NowPlayingItemID]) {
+			watchMap[item.NowPlayingItemID] = item.ActivityDateInserted
+		}
+	}
+
+	log.Debug().
+		Int("unique_items", len(watchMap)).
+		Int("history_entries", len(history)).
+		Msg("Built watch state map for pre-deletion safety check")
+
+	return watchMap, nil
 }
 
 // GetMediaLibrary returns the internal media library map (for testing purposes)

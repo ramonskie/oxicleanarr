@@ -129,6 +129,17 @@ func TestIntegrationSuite(t *testing.T) {
 		testAdvancedRulesWatched(t)
 	})
 
+	// Run retention_base lifecycle tests (uses existing environment)
+	t.Run("RetentionBaseLifecycle", func(t *testing.T) {
+		// If infrastructure wasn't set up (due to -run filter), set it up now
+		if !infrastructureReady {
+			t.Log("⚠️  Infrastructure not ready (filtered by -run), setting up now...")
+			testInfrastructureSetup(t)
+			infrastructureReady = true
+		}
+		testRetentionBaseLifecycle(t)
+	})
+
 	// Run disk threshold lifecycle tests (uses existing environment, non-destructive)
 	t.Run("DiskThresholdLifecycle", func(t *testing.T) {
 		// If infrastructure wasn't set up (due to -run filter), set it up now

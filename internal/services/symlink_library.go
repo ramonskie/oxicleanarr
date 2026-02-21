@@ -115,12 +115,7 @@ func (m *SymlinkLibraryManager) filterScheduledMedia(mediaLibrary map[string]mod
 	tvShows := make([]models.Media, 0)
 	now := time.Now()
 
-	// Get leaving_soon_days from config
-	cfg := config.Get()
-	if cfg == nil {
-		cfg = m.config
-	}
-	leavingSoonDays := cfg.App.LeavingSoonDays
+	leavingSoonDays := m.config.App.LeavingSoonDays
 
 	skippedExcluded := 0
 	skippedNoDeleteDate := 0

@@ -525,6 +525,68 @@ export default function ConfigurationPage() {
                     placeholder="60d"
                   />
                 </div>
+
+                <div>
+                  <label className="text-sm font-medium">Retention Base</label>
+                  <p className="text-sm text-gray-500 mb-2">
+                    When to start the retention countdown.
+                    <span className="block mt-1 text-xs">
+                      <strong>last_watched_or_added</strong> — use last watch date, fall back to added date (default)<br />
+                      <strong>last_watched</strong> — only start retention after first watch<br />
+                      <strong>added</strong> — pure age-based cleanup, ignores watch activity
+                    </span>
+                  </p>
+                  <select
+                    value={formData.rules?.retention_base || ''}
+                    onChange={(e) => handleInputChange('rules', 'retention_base', e.target.value || undefined)}
+                    className="w-full border border-input rounded-md px-3 py-2 bg-background text-sm"
+                  >
+                    <option value="">last_watched_or_added (default)</option>
+                    <option value="last_watched_or_added">last_watched_or_added</option>
+                    <option value="last_watched">last_watched</option>
+                    <option value="added">added</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="text-sm font-medium">Unwatched Behaviour</label>
+                  <p className="text-sm text-gray-500 mb-2">
+                    What to do with items that have never been watched.
+                    Only relevant when Retention Base is <strong>last_watched</strong>.
+                    <span className="block mt-1 text-xs">
+                      <strong>added</strong> — use added date for unwatched items (default)<br />
+                      <strong>never</strong> — never delete unwatched items
+                    </span>
+                  </p>
+                  <select
+                    value={formData.rules?.unwatched_behavior || ''}
+                    onChange={(e) => handleInputChange('rules', 'unwatched_behavior', e.target.value || undefined)}
+                    disabled={formData.rules?.retention_base !== 'last_watched'}
+                    className="w-full border border-input rounded-md px-3 py-2 bg-background text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    <option value="">added (default)</option>
+                    <option value="added">added</option>
+                    <option value="never">never</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="text-sm font-medium">Unwatched Retention</label>
+                  <p className="text-sm text-gray-500 mb-2">
+                    Separate retention period for unwatched items (e.g., "180d").
+                    Only used when Retention Base is <strong>last_watched</strong> and Unwatched Behaviour is <strong>added</strong>.
+                  </p>
+                  <Input
+                    type="text"
+                    value={formData.rules?.unwatched_retention || ''}
+                    onChange={(e) => handleInputChange('rules', 'unwatched_retention', e.target.value || undefined)}
+                    placeholder="180d"
+                    disabled={
+                      formData.rules?.retention_base !== 'last_watched' ||
+                      (formData.rules?.unwatched_behavior !== undefined && formData.rules?.unwatched_behavior !== 'added')
+                    }
+                  />
+                </div>
               </div>
             </CardContent>
           </Card>

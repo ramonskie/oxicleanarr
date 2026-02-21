@@ -297,6 +297,12 @@ function RuleDetails({ rule }: { rule: AdvancedRule }) {
       <div className="space-y-1 text-sm text-gray-300">
         <p><strong className="text-white">Tag:</strong> {rule.tag}</p>
         <p><strong className="text-white">Retention:</strong> {rule.retention}</p>
+        {rule.retention_base && (
+          <p><strong className="text-white">Retention Base:</strong> {rule.retention_base}</p>
+        )}
+        {rule.unwatched_behavior && (
+          <p><strong className="text-white">Unwatched Behaviour:</strong> {rule.unwatched_behavior}</p>
+        )}
       </div>
     );
   }
@@ -314,6 +320,12 @@ function RuleDetails({ rule }: { rule: AdvancedRule }) {
   if (rule.type === 'user') {
     return (
       <div className="space-y-2 text-sm text-gray-300">
+        {rule.retention_base && (
+          <p><strong className="text-white">Retention Base:</strong> {rule.retention_base}</p>
+        )}
+        {rule.unwatched_behavior && (
+          <p><strong className="text-white">Unwatched Behaviour:</strong> {rule.unwatched_behavior}</p>
+        )}
         <p><strong className="text-white">Users:</strong></p>
         <ul className="list-disc list-inside pl-4 space-y-1">
           {rule.users?.map((user, idx) => (
@@ -348,6 +360,8 @@ function RuleDialog({
     enabled: rule?.enabled ?? true,
     tag: rule?.tag || '',
     retention: rule?.retention || '90d',
+    retention_base: rule?.retention_base || '',
+    unwatched_behavior: rule?.unwatched_behavior || '',
     max_episodes: rule?.max_episodes || 10,
     max_age: rule?.max_age || '',
     require_watched: rule?.require_watched ?? false,
@@ -374,12 +388,17 @@ function RuleDialog({
     if (formData.type === 'tag') {
       ruleData.tag = formData.tag;
       ruleData.retention = formData.retention;
+      if (formData.retention_base) ruleData.retention_base = formData.retention_base;
+      if (formData.unwatched_behavior) ruleData.unwatched_behavior = formData.unwatched_behavior;
     } else if (formData.type === 'episode') {
       ruleData.max_episodes = formData.max_episodes;
       ruleData.max_age = formData.max_age;
       ruleData.require_watched = formData.require_watched;
+      // retention_base and unwatched_behavior are not supported on episode rules
     } else if (formData.type === 'user') {
       ruleData.users = formData.users;
+      if (formData.retention_base) ruleData.retention_base = formData.retention_base;
+      if (formData.unwatched_behavior) ruleData.unwatched_behavior = formData.unwatched_behavior;
     }
 
     onSave(ruleData);
@@ -478,6 +497,34 @@ function RuleDialog({
                 />
                 <p className="text-xs text-gray-500 mt-1">e.g., "30d", "90d", "180d"</p>
               </div>
+              <div>
+                <label className="text-sm font-medium">Retention Base (optional)</label>
+                <select
+                  value={formData.retention_base || ''}
+                  onChange={(e) => setFormData({ ...formData, retention_base: e.target.value || undefined })}
+                  className="w-full border border-input rounded-md px-3 py-2 bg-background text-sm"
+                >
+                  <option value="">— use global default —</option>
+                  <option value="last_watched_or_added">last_watched_or_added</option>
+                  <option value="last_watched">last_watched</option>
+                  <option value="added">added</option>
+                </select>
+                <p className="text-xs text-gray-500 mt-1">Override the global retention_base for this tag rule</p>
+              </div>
+              <div>
+                <label className="text-sm font-medium">Unwatched Behaviour (optional)</label>
+                <select
+                  value={formData.unwatched_behavior || ''}
+                  onChange={(e) => setFormData({ ...formData, unwatched_behavior: e.target.value || undefined })}
+                  disabled={formData.retention_base !== 'last_watched'}
+                  className="w-full border border-input rounded-md px-3 py-2 bg-background text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  <option value="">— use global default —</option>
+                  <option value="added">added</option>
+                  <option value="never">never</option>
+                </select>
+                <p className="text-xs text-gray-500 mt-1">Override unwatched_behavior for this tag rule (only when Retention Base is last_watched)</p>
+              </div>
             </>
           )}
 
@@ -517,6 +564,35 @@ function RuleDialog({
 
           {formData.type === 'user' && (
             <>
+              <div>
+                <label className="text-sm font-medium">Retention Base (optional)</label>
+                <select
+                  value={formData.retention_base || ''}
+                  onChange={(e) => setFormData({ ...formData, retention_base: e.target.value || undefined })}
+                  className="w-full border border-input rounded-md px-3 py-2 bg-background text-sm"
+                >
+                  <option value="">— use global default —</option>
+                  <option value="last_watched_or_added">last_watched_or_added</option>
+                  <option value="last_watched">last_watched</option>
+                  <option value="added">added</option>
+                </select>
+                <p className="text-xs text-gray-500 mt-1">Override the global retention_base for this user rule</p>
+              </div>
+              <div>
+                <label className="text-sm font-medium">Unwatched Behaviour (optional)</label>
+                <select
+                  value={formData.unwatched_behavior || ''}
+                  onChange={(e) => setFormData({ ...formData, unwatched_behavior: e.target.value || undefined })}
+                  disabled={formData.retention_base !== 'last_watched'}
+                  className="w-full border border-input rounded-md px-3 py-2 bg-background text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  <option value="">— use global default —</option>
+                  <option value="added">added</option>
+                  <option value="never">never</option>
+                </select>
+                <p className="text-xs text-gray-500 mt-1">Override unwatched_behavior for this user rule (only when Retention Base is last_watched)</p>
+              </div>
+
               <div className="border rounded-md p-4 space-y-3">
                 <p className="text-sm font-medium">Users</p>
                 {formData.users && formData.users.length > 0 ? (

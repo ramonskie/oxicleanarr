@@ -101,6 +101,32 @@ func Validate(cfg *Config) error {
 		errors = validateIntegration(errors, "integrations.jellystat", cfg.Integrations.Jellystat.URL, cfg.Integrations.Jellystat.APIKey)
 	}
 
+	// Validate retention_base
+	validRetentionBases := []string{"last_watched_or_added", "last_watched", "added"}
+	if cfg.Rules.RetentionBase != "" && !contains(validRetentionBases, cfg.Rules.RetentionBase) {
+		errors = append(errors, ValidationError{
+			Field:   "rules.retention_base",
+			Message: fmt.Sprintf("must be one of: %v", validRetentionBases),
+		})
+	}
+
+	// Validate unwatched_behavior
+	validUnwatchedBehaviors := []string{"added", "never"}
+	if cfg.Rules.UnwatchedBehavior != "" && !contains(validUnwatchedBehaviors, cfg.Rules.UnwatchedBehavior) {
+		errors = append(errors, ValidationError{
+			Field:   "rules.unwatched_behavior",
+			Message: fmt.Sprintf("must be one of: %v", validUnwatchedBehaviors),
+		})
+	}
+
+	// Validate unwatched_retention format
+	if cfg.Rules.UnwatchedRetention != "" && !isValidDuration(cfg.Rules.UnwatchedRetention) {
+		errors = append(errors, ValidationError{
+			Field:   "rules.unwatched_retention",
+			Message: fmt.Sprintf("invalid duration format %q (use formats like '180d', '90d')", cfg.Rules.UnwatchedRetention),
+		})
+	}
+
 	// Validate duration formats
 	if !isValidDuration(cfg.Rules.MovieRetention) {
 		errors = append(errors, ValidationError{
@@ -130,6 +156,36 @@ func Validate(cfg *Config) error {
 					Field:   fmt.Sprintf("%s.max_age", prefix),
 					Message: fmt.Sprintf("invalid duration format %q", rule.MaxAge),
 				})
+			}
+
+			// Validate per-rule retention_base and unwatched_behavior values
+			if rule.RetentionBase != "" && !contains(validRetentionBases, rule.RetentionBase) {
+				errors = append(errors, ValidationError{
+					Field:   fmt.Sprintf("%s.retention_base", prefix),
+					Message: fmt.Sprintf("must be one of: %v", validRetentionBases),
+				})
+			}
+			if rule.UnwatchedBehavior != "" && !contains(validUnwatchedBehaviors, rule.UnwatchedBehavior) {
+				errors = append(errors, ValidationError{
+					Field:   fmt.Sprintf("%s.unwatched_behavior", prefix),
+					Message: fmt.Sprintf("must be one of: %v", validUnwatchedBehaviors),
+				})
+			}
+
+			// retention_base and unwatched_behavior are not supported on episode rules
+			if rule.Type == "episode" {
+				if rule.RetentionBase != "" {
+					errors = append(errors, ValidationError{
+						Field:   fmt.Sprintf("%s.retention_base", prefix),
+						Message: "retention_base is not supported on episode rules (use max_episodes, max_age, or episode_delete_strategy instead)",
+					})
+				}
+				if rule.UnwatchedBehavior != "" {
+					errors = append(errors, ValidationError{
+						Field:   fmt.Sprintf("%s.unwatched_behavior", prefix),
+						Message: "unwatched_behavior is not supported on episode rules",
+					})
+				}
 			}
 
 			// Validate user rules
