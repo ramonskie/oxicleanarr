@@ -7,7 +7,7 @@ app:
     leaving_soon_days: 14
 integrations:
     jellyfin:
-        api_key: 196148272a104e8baefee5dd5711baae
+        api_key: your-jellyfin-api-key-here
         enabled: true
         symlink_library:
             base_path: /data/media/leaving-soon
@@ -17,24 +17,24 @@ integrations:
             tv_library_name: Test - Leaving Soon TV
         url: http://oxicleanarr-test-jellyfin:8096
     jellyseerr:
-        api_key: mock-api-key
+        api_key: your-jellyfin-api-key-here
         enabled: false
-        url: http://127.0.0.1:45809
+        url: http://127.0.0.1:44007
     jellystat:
-        api_key: mock-api-key
-        enabled: true
-        url: http://host.docker.internal:34987
+        api_key: your-jellyfin-api-key-here
+        enabled: false
+        url: http://host.docker.internal:45787
     radarr:
-        api_key: b0e46ea6322241b290d1ccc9782bbcee
+        api_key: your-radarr-api-key-here
         enabled: true
         url: http://oxicleanarr-test-radarr:7878
     sonarr:
-        api_key: ""
+        api_key: your-sonarr-api-key-here
         enabled: false
         url: http://oxicleanarr-test-sonarr:8989
 rules:
-    movie_retention: 30d
-    tv_retention: 60d
+    movie_retention: 7d
+    tv_retention: 120d
 server:
     host: 0.0.0.0
     port: 9709

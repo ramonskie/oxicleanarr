@@ -202,6 +202,23 @@ func (tc *TestClient) GetMovieCount() int {
 	return len(result.Items)
 }
 
+// GetTVShowCount returns the number of TV shows in the library
+func (tc *TestClient) GetTVShowCount() int {
+	resp, err := tc.Get("/api/media/shows")
+	require.NoError(tc.t, err)
+	defer resp.Body.Close()
+
+	require.Equal(tc.t, http.StatusOK, resp.StatusCode)
+
+	var result struct {
+		Items []interface{} `json:"items"`
+	}
+	err = json.NewDecoder(resp.Body).Decode(&result)
+	require.NoError(tc.t, err)
+
+	return len(result.Items)
+}
+
 // GetScheduledCount returns the number of items scheduled for deletion
 func (tc *TestClient) GetScheduledCount() int {
 	resp, err := tc.Get("/api/media/leaving-soon")
@@ -357,11 +374,13 @@ func UpdateDryRun(t *testing.T, configPath string, dryRun bool) {
 
 // UpdateConfigAPIKeys updates Jellyfin and Radarr API keys in the config file
 func UpdateConfigAPIKeys(t *testing.T, configPath, jellyfinKey, radarrKey string) {
-	UpdateConfigAPIKeysWithExtras(t, configPath, jellyfinKey, radarrKey, "", "")
+	UpdateConfigAPIKeysWithExtras(t, configPath, jellyfinKey, radarrKey, "", "", "")
 }
 
-// UpdateConfigAPIKeysWithExtras updates all service API keys in the config file
-func UpdateConfigAPIKeysWithExtras(t *testing.T, configPath, jellyfinKey, radarrKey, jellyseerrKey, jellystatKey string) {
+// UpdateConfigAPIKeysWithExtras updates all service API keys in the config file.
+// Pass an empty string for any optional key (jellyseerrKey, jellystatKey, sonarrKey)
+// to leave that integration unchanged.
+func UpdateConfigAPIKeysWithExtras(t *testing.T, configPath, jellyfinKey, radarrKey, jellyseerrKey, jellystatKey, sonarrKey string) {
 	t.Logf("Updating config API keys...")
 
 	// Read config file
@@ -373,10 +392,12 @@ func UpdateConfigAPIKeysWithExtras(t *testing.T, configPath, jellyfinKey, radarr
 	inRadarrSection := false
 	inJellyseerrSection := false
 	inJellystatSection := false
+	inSonarrSection := false
 	jellyfinUpdated := false
 	radarrUpdated := false
 	jellyseerrUpdated := false
 	jellystatUpdated := false
+	sonarrUpdated := false
 
 	for i, line := range lines {
 		trimmed := strings.TrimSpace(line)
@@ -387,38 +408,43 @@ func UpdateConfigAPIKeysWithExtras(t *testing.T, configPath, jellyfinKey, radarr
 			inRadarrSection = false
 			inJellyseerrSection = false
 			inJellystatSection = false
+			inSonarrSection = false
 			continue
 		} else if strings.HasPrefix(trimmed, "radarr:") {
 			inRadarrSection = true
 			inJellyfinSection = false
 			inJellyseerrSection = false
 			inJellystatSection = false
+			inSonarrSection = false
 			continue
 		} else if strings.HasPrefix(trimmed, "jellyseerr:") {
 			inJellyseerrSection = true
 			inJellyfinSection = false
 			inRadarrSection = false
 			inJellystatSection = false
+			inSonarrSection = false
 			continue
 		} else if strings.HasPrefix(trimmed, "jellystat:") {
 			inJellystatSection = true
 			inJellyfinSection = false
 			inRadarrSection = false
 			inJellyseerrSection = false
+			inSonarrSection = false
 			continue
 		} else if strings.HasPrefix(trimmed, "sonarr:") {
-			// Exit all sections when hitting other integrations (siblings)
+			inSonarrSection = true
 			inJellyfinSection = false
 			inRadarrSection = false
 			inJellyseerrSection = false
 			inJellystatSection = false
 			continue
 		} else if strings.HasSuffix(trimmed, ":") && !strings.HasPrefix(line, " ") {
-			// New top-level section
+			// New top-level section — exit all integration sections
 			inJellyfinSection = false
 			inRadarrSection = false
 			inJellyseerrSection = false
 			inJellystatSection = false
+			inSonarrSection = false
 		}
 
 		// Update enabled: false to enabled: true for Jellyfin
@@ -431,7 +457,7 @@ func UpdateConfigAPIKeysWithExtras(t *testing.T, configPath, jellyfinKey, radarr
 		// Update Jellyfin API key
 		if inJellyfinSection && strings.HasPrefix(trimmed, "api_key:") {
 			indent := len(line) - len(strings.TrimLeft(line, " "))
-			lines[i] = fmt.Sprintf("%s%sapi_key: \"%s\"", strings.Repeat(" ", indent), "", jellyfinKey)
+			lines[i] = fmt.Sprintf("%s%sapi_key: %s", strings.Repeat(" ", indent), "", jellyfinKey)
 			jellyfinUpdated = true
 			t.Logf("Updated Jellyfin API key")
 			continue
@@ -455,7 +481,7 @@ func UpdateConfigAPIKeysWithExtras(t *testing.T, configPath, jellyfinKey, radarr
 			}
 			if strings.HasPrefix(trimmed, "api_key:") {
 				indent := len(line) - len(strings.TrimLeft(line, " "))
-				lines[i] = fmt.Sprintf("%s%sapi_key: \"%s\"", strings.Repeat(" ", indent), "", jellyseerrKey)
+				lines[i] = fmt.Sprintf("%s%sapi_key: %s", strings.Repeat(" ", indent), "", jellyseerrKey)
 				jellyseerrUpdated = true
 				t.Logf("Updated Jellyseerr API key")
 				continue
@@ -477,7 +503,7 @@ func UpdateConfigAPIKeysWithExtras(t *testing.T, configPath, jellyfinKey, radarr
 			}
 			if strings.HasPrefix(trimmed, "api_key:") {
 				indent := len(line) - len(strings.TrimLeft(line, " "))
-				lines[i] = fmt.Sprintf("%s%sapi_key: \"%s\"", strings.Repeat(" ", indent), "", jellystatKey)
+				lines[i] = fmt.Sprintf("%s%sapi_key: %s", strings.Repeat(" ", indent), "", jellystatKey)
 				jellystatUpdated = true
 				t.Logf("Updated Jellystat API key")
 				continue
@@ -486,6 +512,28 @@ func UpdateConfigAPIKeysWithExtras(t *testing.T, configPath, jellyfinKey, radarr
 				indent := len(line) - len(strings.TrimLeft(line, " "))
 				lines[i] = fmt.Sprintf("%s%surl: \"http://jellystat:3000\"", strings.Repeat(" ", indent), "")
 				t.Logf("Updated Jellystat URL")
+				continue
+			}
+		}
+
+		// Update Sonarr API key, URL, and enable it (only if key provided)
+		if inSonarrSection && sonarrKey != "" {
+			if strings.Contains(trimmed, "enabled:") && strings.Contains(trimmed, "false") {
+				lines[i] = strings.Replace(line, "false", "true", 1)
+				t.Logf("Enabled Sonarr integration")
+				continue
+			}
+			if strings.HasPrefix(trimmed, "api_key:") {
+				indent := len(line) - len(strings.TrimLeft(line, " "))
+				lines[i] = fmt.Sprintf("%s%sapi_key: %s", strings.Repeat(" ", indent), "", sonarrKey)
+				sonarrUpdated = true
+				t.Logf("Updated Sonarr API key")
+				continue
+			}
+			if strings.HasPrefix(trimmed, "url:") {
+				indent := len(line) - len(strings.TrimLeft(line, " "))
+				lines[i] = fmt.Sprintf("%s%surl: \"http://oxicleanarr-test-sonarr:8989\"", strings.Repeat(" ", indent), "")
+				t.Logf("Updated Sonarr URL")
 				continue
 			}
 		}
@@ -500,6 +548,9 @@ func UpdateConfigAPIKeysWithExtras(t *testing.T, configPath, jellyfinKey, radarr
 	}
 	if jellystatKey != "" {
 		require.True(t, jellystatUpdated, "Failed to update Jellystat API key")
+	}
+	if sonarrKey != "" {
+		require.True(t, sonarrUpdated, "Failed to update Sonarr API key")
 	}
 
 	// Write updated config
@@ -1784,99 +1835,61 @@ type AdvancedRuleConfig struct {
 	RequireWatched bool
 }
 
-// AddAdvancedRule adds an advanced rule to config file
+// AddAdvancedRule adds an advanced rule to the config file using YAML round-trip
+// to ensure all field values are correctly typed (no raw string appending).
 func AddAdvancedRule(t *testing.T, configPath string, rule AdvancedRuleConfig) {
 	t.Helper()
 	t.Logf("Adding advanced rule: %s (type: %s, tag: %s)", rule.Name, rule.Type, rule.Tag)
 
-	// Read config file
 	content, err := os.ReadFile(configPath)
 	require.NoError(t, err)
 
-	lines := strings.Split(string(content), "\n")
+	var cfg map[string]interface{}
+	err = yaml.Unmarshal(content, &cfg)
+	require.NoError(t, err, "Failed to parse YAML config")
 
-	// Find where to insert advanced_rules section (after integrations section)
-	insertIndex := -1
-	for i := len(lines) - 1; i >= 0; i-- {
-		if strings.TrimSpace(lines[i]) != "" {
-			insertIndex = i + 1
-			break
-		}
+	ruleMap := map[string]interface{}{
+		"name":            rule.Name,
+		"type":            rule.Type,
+		"enabled":         rule.Enabled,
+		"require_watched": rule.RequireWatched,
 	}
-
-	require.True(t, insertIndex > 0, "Could not find insertion point for advanced_rules")
-
-	// Build rule YAML
-	ruleYAML := []string{
-		"",
-		"advanced_rules:",
-		fmt.Sprintf("  - name: \"%s\"", rule.Name),
-		fmt.Sprintf("    type: %s", rule.Type),
-		fmt.Sprintf("    enabled: %v", rule.Enabled),
-	}
-
 	if rule.Tag != "" {
-		ruleYAML = append(ruleYAML, fmt.Sprintf("    tag: %s", rule.Tag))
+		ruleMap["tag"] = rule.Tag
 	}
 	if rule.Retention != "" {
-		ruleYAML = append(ruleYAML, fmt.Sprintf("    retention: %s", rule.Retention))
+		ruleMap["retention"] = rule.Retention
 	}
-	ruleYAML = append(ruleYAML, fmt.Sprintf("    require_watched: %v", rule.RequireWatched))
 
-	// Insert rule at end of file
-	newLines := append(lines[:insertIndex], append(ruleYAML, lines[insertIndex:]...)...)
+	cfg["advanced_rules"] = []interface{}{ruleMap}
 
-	// Write updated config
-	newContent := strings.Join(newLines, "\n")
-	err = os.WriteFile(configPath, []byte(newContent), 0644)
+	newContent, err := yaml.Marshal(cfg)
+	require.NoError(t, err, "Failed to marshal YAML config")
+
+	err = os.WriteFile(configPath, newContent, 0644)
 	require.NoError(t, err)
 
 	t.Logf("Advanced rule added to config")
 }
 
-// RemoveAdvancedRules removes all advanced rules from config
+// RemoveAdvancedRules removes all advanced rules from the config using YAML round-trip.
 func RemoveAdvancedRules(t *testing.T, configPath string) {
 	t.Helper()
 	t.Logf("Removing advanced rules from config")
 
-	// Read config file
 	content, err := os.ReadFile(configPath)
 	require.NoError(t, err)
 
-	lines := strings.Split(string(content), "\n")
-	inAdvancedRules := false
-	newLines := []string{}
+	var cfg map[string]interface{}
+	err = yaml.Unmarshal(content, &cfg)
+	require.NoError(t, err, "Failed to parse YAML config")
 
-	for _, line := range lines {
-		trimmed := strings.TrimSpace(line)
+	delete(cfg, "advanced_rules")
 
-		// Start of advanced_rules section
-		if strings.HasPrefix(trimmed, "advanced_rules:") {
-			inAdvancedRules = true
-			continue
-		}
+	newContent, err := yaml.Marshal(cfg)
+	require.NoError(t, err, "Failed to marshal YAML config")
 
-		// End of advanced_rules section (new top-level section or empty line after rules)
-		if inAdvancedRules {
-			if strings.HasSuffix(trimmed, ":") && !strings.HasPrefix(line, " ") {
-				// New top-level section
-				inAdvancedRules = false
-				newLines = append(newLines, line)
-			} else if !strings.HasPrefix(line, " ") && trimmed != "" {
-				// Non-indented non-empty line (shouldn't happen but handle it)
-				inAdvancedRules = false
-				newLines = append(newLines, line)
-			}
-			// Skip lines that are part of advanced_rules
-			continue
-		}
-
-		newLines = append(newLines, line)
-	}
-
-	// Write updated config
-	newContent := strings.Join(newLines, "\n")
-	err = os.WriteFile(configPath, []byte(newContent), 0644)
+	err = os.WriteFile(configPath, newContent, 0644)
 	require.NoError(t, err)
 
 	t.Logf("Advanced rules removed from config")
@@ -1916,6 +1929,70 @@ func UpdateDiskThreshold(t *testing.T, configPath string, enabled bool, freeSpac
 	require.NoError(t, err)
 
 	t.Logf("disk_threshold config updated")
+}
+
+// resetConfigAPIKeysToPlaceholders resets all service API keys in the config file back to
+// safe placeholder values. This is called from TestMain (which has no *testing.T) so it
+// uses log.Fatal on error rather than require/t.Fatal.
+//
+// It uses the same line-based parser as UpdateConfigAPIKeysWithExtras so that the file
+// format is preserved exactly (no YAML round-trip reformatting).
+func resetConfigAPIKeysToPlaceholders(configPath string) {
+	content, err := os.ReadFile(configPath)
+	if err != nil {
+		fmt.Printf("WARN: resetConfigAPIKeysToPlaceholders: failed to read config: %v\n", err)
+		return
+	}
+
+	lines := strings.Split(string(content), "\n")
+	inJellyfinSection := false
+	inRadarrSection := false
+	inSonarrSection := false
+
+	for i, line := range lines {
+		trimmed := strings.TrimSpace(line)
+
+		// Track which integration section we're in (mirrors UpdateConfigAPIKeysWithExtras logic).
+		switch {
+		case strings.HasPrefix(trimmed, "jellyfin:"):
+			inJellyfinSection, inRadarrSection, inSonarrSection = true, false, false
+			continue
+		case strings.HasPrefix(trimmed, "radarr:"):
+			inJellyfinSection, inRadarrSection, inSonarrSection = false, true, false
+			continue
+		case strings.HasPrefix(trimmed, "sonarr:"):
+			inJellyfinSection, inRadarrSection, inSonarrSection = false, false, true
+			continue
+		case strings.HasSuffix(trimmed, ":") && !strings.HasPrefix(line, " "):
+			// New top-level section — exit all integration sections.
+			inJellyfinSection, inRadarrSection, inSonarrSection = false, false, false
+		}
+
+		indent := strings.Repeat(" ", len(line)-len(strings.TrimLeft(line, " ")))
+
+		if inJellyfinSection && strings.HasPrefix(trimmed, "api_key:") {
+			lines[i] = indent + "api_key: your-jellyfin-api-key-here"
+		}
+		if inRadarrSection && strings.HasPrefix(trimmed, "api_key:") {
+			lines[i] = indent + "api_key: your-radarr-api-key-here"
+		}
+		if inSonarrSection {
+			if strings.HasPrefix(trimmed, "api_key:") {
+				lines[i] = indent + "api_key: your-sonarr-api-key-here"
+			}
+			// Sonarr is disabled in the template; restore that state.
+			if strings.HasPrefix(trimmed, "enabled:") && strings.Contains(trimmed, "true") {
+				lines[i] = strings.Replace(line, "true", "false", 1)
+			}
+		}
+	}
+
+	if err := os.WriteFile(configPath, []byte(strings.Join(lines, "\n")), 0644); err != nil {
+		fmt.Printf("WARN: resetConfigAPIKeysToPlaceholders: failed to write config: %v\n", err)
+		return
+	}
+
+	fmt.Println("✅ Config API keys reset to placeholder values")
 }
 
 // GetDiskStatus queries the OxiCleanarr /api/system/disk endpoint and returns the response body.

@@ -111,6 +111,7 @@ type SonarrSeries struct {
 	Statistics SonarrStats `json:"statistics"`
 	Tags       []int       `json:"tags"`
 	TvdbId     int         `json:"tvdbId"`
+	Status     string      `json:"status"` // "continuing", "ended", "upcoming"
 }
 
 // SonarrTag represents a tag in Sonarr
@@ -131,10 +132,14 @@ type SonarrStats struct {
 type SonarrEpisode struct {
 	ID            int                `json:"id"`
 	SeriesID      int                `json:"seriesId"`
+	EpisodeFileID int                `json:"episodeFileId"`
 	EpisodeNumber int                `json:"episodeNumber"`
 	SeasonNumber  int                `json:"seasonNumber"`
 	Title         string             `json:"title"`
+	AirDate       string             `json:"airDate"`    // "YYYY-MM-DD" string from Sonarr
+	AirDateUTC    time.Time          `json:"airDateUtc"` // full UTC timestamp
 	HasFile       bool               `json:"hasFile"`
+	Monitored     bool               `json:"monitored"`
 	EpisodeFile   *SonarrEpisodeFile `json:"episodeFile,omitempty"`
 }
 

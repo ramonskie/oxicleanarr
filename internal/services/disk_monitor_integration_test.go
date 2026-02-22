@@ -160,7 +160,7 @@ func TestDiskThreshold_EndToEnd_DiskOK_BlocksDeletion(t *testing.T) {
 		Title:   "Old Movie",
 		AddedAt: timeAgo(120),
 	}
-	v := engine.Evaluate(&media)
+	v := engine.Evaluate(context.Background(), &media)
 
 	assert.True(t, v.IsProtected, "disk OK should protect overdue media")
 	assert.Equal(t, rules.ProtectedDiskOK, v.ProtectionReason)
@@ -190,7 +190,7 @@ func TestDiskThreshold_EndToEnd_DiskBreached_AllowsDeletion(t *testing.T) {
 		Title:   "Old Movie",
 		AddedAt: timeAgo(120),
 	}
-	v := engine.Evaluate(&media)
+	v := engine.Evaluate(context.Background(), &media)
 
 	assert.False(t, v.IsProtected, "breached threshold should allow deletion")
 	assert.True(t, v.ShouldDelete(), "overdue media should be scheduled for deletion")
@@ -219,7 +219,7 @@ func TestDiskThreshold_EndToEnd_StateTransition(t *testing.T) {
 	})
 	require.NoError(t, monitor.Update(context.Background()))
 
-	v1 := engine.Evaluate(&media)
+	v1 := engine.Evaluate(context.Background(), &media)
 	assert.False(t, v1.IsProtected, "step 1: breached → gate open")
 	assert.True(t, v1.ShouldDelete())
 
@@ -229,7 +229,7 @@ func TestDiskThreshold_EndToEnd_StateTransition(t *testing.T) {
 	})
 	require.NoError(t, monitor.Update(context.Background()))
 
-	v2 := engine.Evaluate(&media)
+	v2 := engine.Evaluate(context.Background(), &media)
 	assert.True(t, v2.IsProtected, "step 2: recovered → gate closed")
 	assert.Equal(t, rules.ProtectedDiskOK, v2.ProtectionReason)
 }
@@ -256,7 +256,7 @@ func TestDiskThreshold_EndToEnd_APIFailure_RetainsLastKnown(t *testing.T) {
 		Title:   "Old Movie",
 		AddedAt: timeAgo(120),
 	}
-	v1 := engine.Evaluate(&media)
+	v1 := engine.Evaluate(context.Background(), &media)
 	assert.True(t, v1.IsProtected, "disk OK: gate should be closed")
 
 	// Simulate API failure by closing the server
@@ -267,7 +267,7 @@ func TestDiskThreshold_EndToEnd_APIFailure_RetainsLastKnown(t *testing.T) {
 	assert.Error(t, updateErr, "expected error after server closed")
 
 	// Gate should still be closed (last known: disk OK)
-	v2 := engine.Evaluate(&media)
+	v2 := engine.Evaluate(context.Background(), &media)
 	assert.True(t, v2.IsProtected, "after API failure, last known state (OK) should be retained")
 	assert.Equal(t, rules.ProtectedDiskOK, v2.ProtectionReason)
 }
@@ -294,11 +294,11 @@ func TestDiskThreshold_EndToEnd_PreviewIgnoresGate(t *testing.T) {
 	}
 
 	// Normal path: gate blocks
-	vNormal := engine.Evaluate(&media)
+	vNormal := engine.Evaluate(context.Background(), &media)
 	assert.True(t, vNormal.IsProtected, "Evaluate: disk OK gate should block")
 
 	// Preview path: gate bypassed
-	vPreview := engine.EvaluateForPreview(&media)
+	vPreview := engine.EvaluateForPreview(context.Background(), &media)
 	assert.False(t, vPreview.IsProtected, "EvaluateForPreview must bypass disk gate")
 	assert.False(t, vPreview.DeleteAfter.IsZero(), "preview must show deletion date")
 	assert.Equal(t, rules.SourceStandardRetention, vPreview.ScheduleSource)

@@ -122,6 +122,32 @@ func (c *SonarrClient) DeleteSeries(ctx context.Context, id int, deleteFiles boo
 	return nil
 }
 
+// DeleteEpisodeFile deletes a specific episode file from Sonarr.
+// DELETE /api/v3/episodefile/{id}
+func (c *SonarrClient) DeleteEpisodeFile(ctx context.Context, episodeFileID int) error {
+	url := fmt.Sprintf("%s/api/v3/episodefile/%d", c.baseURL, episodeFileID)
+
+	req, err := http.NewRequestWithContext(ctx, "DELETE", url, nil)
+	if err != nil {
+		return fmt.Errorf("creating request: %w", err)
+	}
+
+	req.Header.Set("X-Api-Key", c.apiKey)
+
+	resp, err := c.client.Do(req)
+	if err != nil {
+		return fmt.Errorf("making request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusNoContent {
+		return fmt.Errorf("unexpected status code: %d", resp.StatusCode)
+	}
+
+	log.Info().Int("episode_file_id", episodeFileID).Msg("Deleted episode file from Sonarr")
+	return nil
+}
+
 // GetEpisodes fetches episodes for a series
 func (c *SonarrClient) GetEpisodes(ctx context.Context, seriesID int) ([]SonarrEpisode, error) {
 	url := fmt.Sprintf("%s/api/v3/episode?seriesId=%d", c.baseURL, seriesID)

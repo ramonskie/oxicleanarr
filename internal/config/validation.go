@@ -172,8 +172,9 @@ func Validate(cfg *Config) error {
 				})
 			}
 
-			// retention_base and unwatched_behavior are not supported on episode rules
+			// Episode rule validation
 			if rule.Type == "episode" {
+				// retention_base and unwatched_behavior are not supported on episode rules
 				if rule.RetentionBase != "" {
 					errors = append(errors, ValidationError{
 						Field:   fmt.Sprintf("%s.retention_base", prefix),
@@ -184,6 +185,31 @@ func Validate(cfg *Config) error {
 					errors = append(errors, ValidationError{
 						Field:   fmt.Sprintf("%s.unwatched_behavior", prefix),
 						Message: "unwatched_behavior is not supported on episode rules",
+					})
+				}
+
+				// At least one targeting criterion required
+				if rule.MaxEpisodes == 0 && rule.MaxAge == "" && len(rule.SeasonNumbers) == 0 {
+					errors = append(errors, ValidationError{
+						Field:   prefix,
+						Message: "episode rule must specify at least one of: max_episodes, max_age, season_numbers",
+					})
+				}
+
+				// Validate episode_delete_strategy
+				validStrategies := []string{"oldest_first", "by_age", "by_season_age"}
+				if rule.EpisodeDeleteStrategy != "" && !contains(validStrategies, rule.EpisodeDeleteStrategy) {
+					errors = append(errors, ValidationError{
+						Field:   fmt.Sprintf("%s.episode_delete_strategy", prefix),
+						Message: fmt.Sprintf("must be one of: %v", validStrategies),
+					})
+				}
+
+				// Episode rules require Sonarr integration
+				if !cfg.Integrations.Sonarr.Enabled {
+					errors = append(errors, ValidationError{
+						Field:   prefix,
+						Message: "episode rules require Sonarr integration to be enabled",
 					})
 				}
 			}

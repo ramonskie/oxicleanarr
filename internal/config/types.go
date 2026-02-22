@@ -120,6 +120,12 @@ type AdvancedRule struct {
 	MaxAge            string     `mapstructure:"max_age" yaml:"max_age,omitempty" json:"max_age,omitempty"`
 	RequireWatched    bool       `mapstructure:"require_watched" yaml:"require_watched,omitempty" json:"require_watched,omitempty"`
 	Users             []UserRule `mapstructure:"users" yaml:"users,omitempty" json:"users,omitempty"`
+
+	// Episode-specific fields (only valid when Type="episode")
+	SeasonNumbers           []int  `mapstructure:"season_numbers" yaml:"season_numbers,omitempty" json:"season_numbers,omitempty"`
+	ExcludeContinuingSeries bool   `mapstructure:"exclude_continuing_series" yaml:"exclude_continuing_series,omitempty" json:"exclude_continuing_series,omitempty"`
+	KeepLatestSeason        bool   `mapstructure:"keep_latest_season" yaml:"keep_latest_season,omitempty" json:"keep_latest_season,omitempty"`
+	EpisodeDeleteStrategy   string `mapstructure:"episode_delete_strategy" yaml:"episode_delete_strategy,omitempty" json:"episode_delete_strategy,omitempty"` // "oldest_first", "by_age", "by_season_age"
 }
 
 // UserRule represents a user-based cleanup rule

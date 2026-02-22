@@ -45,6 +45,15 @@ func TestMain(m *testing.M) {
 	// Run all tests
 	exitCode := m.Run()
 
+	// Reset config API keys to placeholders so real keys are never accidentally committed.
+	configPath := filepath.Join(assetsDir, "config", "config.yaml")
+	absConfigPath, err := filepath.Abs(configPath)
+	if err != nil {
+		fmt.Printf("WARN: failed to resolve config path for key reset: %v\n", err)
+	} else {
+		resetConfigAPIKeysToPlaceholders(absConfigPath)
+	}
+
 	// Cleanup after all tests (unless KEEP_TEST_ENV is set)
 	if os.Getenv("KEEP_TEST_ENV") != "" {
 		fmt.Println()
@@ -151,6 +160,17 @@ func TestIntegrationSuite(t *testing.T) {
 		testDiskThresholdLifecycle(t)
 	})
 
+	// Run episode cleanup lifecycle tests (uses existing environment, non-destructive)
+	t.Run("EpisodeCleanupLifecycle", func(t *testing.T) {
+		// If infrastructure wasn't set up (due to -run filter), set it up now
+		if !infrastructureReady {
+			t.Log("⚠️  Infrastructure not ready (filtered by -run), setting up now...")
+			testInfrastructureSetup(t)
+			infrastructureReady = true
+		}
+		testEpisodeCleanupLifecycle(t)
+	})
+
 	// Run deletion lifecycle tests LAST (uses existing environment, but destructive)
 	t.Run("DeletionLifecycle", func(t *testing.T) {
 		// If infrastructure wasn't set up (due to -run filter), set it up now
@@ -188,6 +208,14 @@ func testInfrastructureSetup(t *testing.T) {
 	}
 	t.Log("✅ Radarr is ready")
 
+	// Step 2b: Wait for Sonarr to be ready
+	t.Log("Step 2b: Waiting for Sonarr to be ready...")
+	sonarrURL := "http://localhost:8989"
+	if err := waitForDockerService(ctx, t, sonarrURL+"/ping", 60*time.Second); err != nil {
+		t.Fatalf("Sonarr failed to become ready: %v", err)
+	}
+	t.Log("✅ Sonarr is ready")
+
 	// Note: OxiCleanarr will start but crash due to missing API keys in config.
 	// We'll check its health after config is populated and it's restarted (Step 11).
 	oxicleanURL := "http://localhost:9709"
@@ -224,6 +252,14 @@ func testInfrastructureSetup(t *testing.T) {
 	}
 	t.Logf("✅ Radarr API key extracted: %s...", radarrAPIKey[:8])
 
+	// Step 3e: Extract Sonarr API key from Docker container
+	t.Log("Step 3e: Extracting Sonarr API key from container...")
+	sonarrAPIKey, err := GetSonarrAPIKeyFromContainer(t, "oxicleanarr-test-sonarr")
+	if err != nil {
+		t.Fatalf("Failed to extract Sonarr API key: %v", err)
+	}
+	t.Logf("✅ Sonarr API key extracted: %s...", sonarrAPIKey[:8])
+
 	// Step 3b: Verify OxiCleanarr plugin installation
 	t.Log("Step 3b: Verifying OxiCleanarr Bridge plugin status...")
 	if err := VerifyOxiCleanarrPlugin(t, jellyfinURL, jellyfinAPIKey); err != nil {
@@ -250,6 +286,13 @@ func testInfrastructureSetup(t *testing.T) {
 		t.Fatalf("Failed to import movies into Radarr: %v", err)
 	}
 	t.Log("✅ Radarr movies imported successfully")
+
+	// Step 5b: Import TV shows into Sonarr
+	t.Log("Step 5b: Importing TV shows into Sonarr...")
+	if err := EnsureSonarrSeriesExist(t, sonarrURL, sonarrAPIKey); err != nil {
+		t.Fatalf("Failed to import TV shows into Sonarr: %v", err)
+	}
+	t.Log("✅ Sonarr TV shows imported successfully")
 
 	// TODO Phase 2: Jellyfin scan and count validation
 	// Steps skipped for Phase 1 (infrastructure validation only)
@@ -300,7 +343,7 @@ func testInfrastructureSetup(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to resolve config path: %v", err)
 	}
-	UpdateConfigAPIKeysWithExtras(t, absConfigPath, jellyfinAPIKey, radarrAPIKey, jellyseerrAPIKey, jellystatAPIKey)
+	UpdateConfigAPIKeysWithExtras(t, absConfigPath, jellyfinAPIKey, radarrAPIKey, jellyseerrAPIKey, jellystatAPIKey, sonarrAPIKey)
 	t.Log("✅ Config updated with API keys")
 
 	// Step 11: Restart OxiCleanarr to reload config
@@ -356,6 +399,24 @@ func testInfrastructureSetup(t *testing.T) {
 	}
 	t.Log("✅ OxiCleanarr validation complete: 7 movies synced")
 
+	// Step 17: Verify OxiCleanarr synced TV shows from Sonarr
+	t.Log("Step 17: Verifying OxiCleanarr synced TV shows from Sonarr...")
+	expectedTVCount, err := GetSonarrSeriesCount(t, sonarrURL, sonarrAPIKey)
+	if err != nil {
+		t.Fatalf("Failed to get Sonarr series count: %v", err)
+	}
+	syncedTVCount := client.GetTVShowCount()
+	if syncedTVCount < expectedTVCount {
+		// Trigger another sync and re-check; Sonarr scan may still be in progress
+		t.Logf("TV shows not yet synced (%d/%d), triggering another sync...", syncedTVCount, expectedTVCount)
+		client.TriggerSync()
+		syncedTVCount = client.GetTVShowCount()
+	}
+	t.Logf("✅ OxiCleanarr synced %d/%d TV shows from Sonarr", syncedTVCount, expectedTVCount)
+	if syncedTVCount < expectedTVCount {
+		t.Fatalf("OxiCleanarr TV show count mismatch: expected %d, got %d", expectedTVCount, syncedTVCount)
+	}
+
 	// Infrastructure Setup Complete
 	t.Log("\n========================================")
 	t.Log("✅ Infrastructure Setup Test PASSED")
@@ -363,8 +424,9 @@ func testInfrastructureSetup(t *testing.T) {
 	t.Log("Summary:")
 	t.Logf("  - Jellyfin: Ready with OxiCleanarr plugin and %d movies (%s)", jellyfinCount, jellyfinURL)
 	t.Logf("  - Radarr: Ready with %d movies (%s)", radarrCount, radarrURL)
-	t.Logf("  - OxiCleanarr: Ready and synced %d movies (%s)", syncedMovieCount, oxicleanURL)
-	t.Logf("  - Data consistency: All 3 services validated with matching counts")
+	t.Logf("  - Sonarr: Ready with %d TV shows (%s)", expectedTVCount, sonarrURL)
+	t.Logf("  - OxiCleanarr: Ready and synced %d movies + %d TV shows (%s)", syncedMovieCount, syncedTVCount, oxicleanURL)
+	t.Logf("  - Data consistency: All services validated with matching counts")
 	t.Log("\nNext Steps:")
 	t.Log("  - Run TestSymlinkLifecycle to test symlink creation/cleanup")
 	t.Log("  - Run TestHideWhenEmpty to test empty library behavior")

@@ -1,6 +1,7 @@
 package rules
 
 import (
+	"context"
 	"testing"
 	"time"
 
@@ -1319,7 +1320,7 @@ func evalFull(t *testing.T, e *RulesEngine, cfg *config.Config, media *models.Me
 	t.Helper()
 	config.SetTestConfig(cfg)
 	t.Cleanup(func() { config.SetTestConfig(nil) })
-	return e.Evaluate(media)
+	return e.Evaluate(context.Background(), media)
 }
 
 // evalFullPreview is like evalFull but calls EvaluateForPreview.
@@ -1327,7 +1328,7 @@ func evalFullPreview(t *testing.T, e *RulesEngine, cfg *config.Config, media *mo
 	t.Helper()
 	config.SetTestConfig(cfg)
 	t.Cleanup(func() { config.SetTestConfig(nil) })
-	return e.EvaluateForPreview(media)
+	return e.EvaluateForPreview(context.Background(), media)
 }
 
 func TestEngine_DiskThreshold_GateBlocksWhenDiskOK(t *testing.T) {

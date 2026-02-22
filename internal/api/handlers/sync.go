@@ -115,16 +115,17 @@ func (h *SyncHandler) ExecuteDeletions(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Execute actual deletions
-	deletedCount, deletedItems := h.syncEngine.ExecuteDeletions(ctx, candidates)
+	deletedCount, episodeItemsProcessed, episodeFilesDeleted, deletedItems := h.syncEngine.ExecuteDeletions(ctx, candidates)
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(map[string]interface{}{
-		"success":         true,
-		"scheduled_count": scheduledCount,
-		"deleted_count":   deletedCount,
-		"failed_count":    len(candidates) - deletedCount,
-		"message":         "Deletion execution completed",
-		"deleted_items":   deletedItems,
+		"success":               true,
+		"scheduled_count":       scheduledCount,
+		"deleted_count":         deletedCount,
+		"episode_files_deleted": episodeFilesDeleted,
+		"failed_count":          len(candidates) - deletedCount - episodeItemsProcessed,
+		"message":               "Deletion execution completed",
+		"deleted_items":         deletedItems,
 	})
 }

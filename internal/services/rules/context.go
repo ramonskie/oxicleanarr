@@ -1,6 +1,8 @@
 package rules
 
 import (
+	"context"
+
 	"github.com/ramonskie/oxicleanarr/internal/config"
 	"github.com/ramonskie/oxicleanarr/internal/models"
 )
@@ -8,6 +10,11 @@ import (
 // EvalContext carries all inputs a rule needs to make a decision.
 // Rules are pure functions of their EvalContext — no hidden dependencies.
 type EvalContext struct {
+	// Ctx is the caller's context. Rules that make external API calls (e.g. EpisodeRule)
+	// must use this context so that cancellation and timeouts propagate correctly.
+	// Defaults to context.Background() when not explicitly set.
+	Ctx context.Context
+
 	Media  *models.Media
 	Config *config.Config
 

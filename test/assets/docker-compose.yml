@@ -10,7 +10,13 @@ services:
     volumes:
       - ./test-media:/source:ro,z
       - test-media:/target:z
-    command: sh -c "echo 'Copying test media to volume...'; mkdir -p /target/movies && cp -rf /source/movies/. /target/movies/ && chown -R 1000:1000 /target/movies && chmod -R 755 /target/movies && echo 'Test media copied successfully'"
+    command: >
+      sh -c "echo 'Copying test media to volume...';
+      mkdir -p /target/movies && cp -rf /source/movies/. /target/movies/ &&
+      mkdir -p /target/tvshows && cp -rf /source/tvshows/. /target/tvshows/ &&
+      chown -R 1000:1000 /target/movies /target/tvshows &&
+      chmod -R 755 /target/movies /target/tvshows &&
+      echo 'Test media copied successfully'"
     networks:
       - oxicleanarr-test
 
@@ -64,6 +70,30 @@ services:
       test-media-init:
         condition: service_completed_successfully
 
+  sonarr:
+    image: linuxserver/sonarr:latest
+    container_name: oxicleanarr-test-sonarr
+    networks:
+      - oxicleanarr-test
+    ports:
+      - "8989:8989"
+    volumes:
+      - sonarr-config:/config
+      - test-media:/media:rw,z
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=UTC
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8989/ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    depends_on:
+      test-media-init:
+        condition: service_completed_successfully
+
   oxicleanarr:
     build:
       context: ../..
@@ -90,6 +120,8 @@ services:
         condition: service_healthy
       radarr:
         condition: service_healthy
+      sonarr:
+        condition: service_healthy
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:9709/health"]
@@ -111,6 +143,8 @@ volumes:
     name: oxicleanarr-test-jellyfin-cache
   radarr-config:
     name: oxicleanarr-test-radarr-config
+  sonarr-config:
+    name: oxicleanarr-test-sonarr-config
   oxicleanarr-data:
     name: oxicleanarr-test-data
   oxicleanarr-logs:

@@ -48,10 +48,15 @@ func NewSymlinkLibraryManager(jellyfinClient JellyfinVirtualFolderClient, cfg *c
 // SyncLibraries synchronizes symlink-based Jellyfin libraries with scheduled deletions
 // Returns the total count of items added to leaving soon libraries
 func (m *SymlinkLibraryManager) SyncLibraries(ctx context.Context, mediaLibrary map[string]models.Media) (int, error) {
-	cfg := config.Get()
+	// Use the instance config (set at construction time) as the authoritative source.
+	// Fall back to global config only if instance config is nil (should not happen in practice).
+	cfg := m.config
 	if cfg == nil {
-		log.Debug().Msg("Config not available, using stored config")
-		cfg = m.config
+		cfg = config.Get()
+	}
+	if cfg == nil {
+		log.Debug().Msg("Config not available, skipping symlink library sync")
+		return 0, nil
 	}
 
 	// Check if symlink libraries are enabled
@@ -186,9 +191,12 @@ func (m *SymlinkLibraryManager) filterScheduledMedia(mediaLibrary map[string]mod
 
 // syncLibrary syncs a single symlink library (movies or TV shows)
 func (m *SymlinkLibraryManager) syncLibrary(ctx context.Context, libraryName, collectionType, symlinkDir string, items []models.Media) error {
-	cfg := config.Get()
+	cfg := m.config
 	if cfg == nil {
-		cfg = m.config
+		cfg = config.Get()
+	}
+	if cfg == nil {
+		return nil
 	}
 	dryRun := cfg.App.DryRun
 

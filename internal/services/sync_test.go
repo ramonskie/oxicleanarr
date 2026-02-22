@@ -747,8 +747,10 @@ func TestSyncEngine_ExecuteDeletions(t *testing.T) {
 		engine, _, _ := newTestSyncEngine(t)
 		ctx := context.Background()
 
-		deletedCount, deletedItems := engine.ExecuteDeletions(ctx, []map[string]interface{}{})
+		deletedCount, episodeItemsProcessed, episodeFilesDeleted, deletedItems := engine.ExecuteDeletions(ctx, []map[string]interface{}{})
 		assert.Equal(t, 0, deletedCount)
+		assert.Equal(t, 0, episodeItemsProcessed)
+		assert.Equal(t, 0, episodeFilesDeleted)
 		assert.Empty(t, deletedItems)
 	})
 
@@ -763,8 +765,10 @@ func TestSyncEngine_ExecuteDeletions(t *testing.T) {
 			},
 		}
 
-		deletedCount, deletedItems := engine.ExecuteDeletions(ctx, candidates)
+		deletedCount, episodeItemsProcessed, episodeFilesDeleted, deletedItems := engine.ExecuteDeletions(ctx, candidates)
 		assert.Equal(t, 0, deletedCount)
+		assert.Equal(t, 0, episodeItemsProcessed)
+		assert.Equal(t, 0, episodeFilesDeleted)
 		assert.Empty(t, deletedItems)
 	})
 
@@ -825,7 +829,7 @@ func TestSyncEngine_ExecuteDeletions(t *testing.T) {
 
 		// Note: This will fail in test because we don't have real Radarr
 		// But it verifies the logic flow
-		deletedCount, deletedItems := engine.ExecuteDeletions(ctx, candidates)
+		deletedCount, _, _, deletedItems := engine.ExecuteDeletions(ctx, candidates)
 
 		// Should attempt deletion but fail without real Radarr
 		assert.GreaterOrEqual(t, deletedCount, 0)

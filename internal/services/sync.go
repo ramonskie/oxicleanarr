@@ -71,6 +71,8 @@ func NewSyncEngine(
 	}
 	if cfg.Integrations.Sonarr.Enabled {
 		engine.sonarrClient = clients.NewSonarrClient(cfg.Integrations.Sonarr)
+		// Inject Sonarr client into rules engine so episode rules can make API calls.
+		rulesEngine.SetSonarrClient(engine.sonarrClient)
 	}
 	if cfg.Integrations.Jellyseerr.Enabled {
 		engine.jellyseerrClient = clients.NewJellyseerrClient(cfg.Integrations.Jellyseerr)
@@ -333,7 +335,7 @@ func (e *SyncEngine) FullSync(ctx context.Context) error {
 	}
 
 	// Apply retention rules to all media
-	e.applyRetentionRules()
+	e.applyRetentionRules(ctx)
 
 	// Sync symlink libraries for "Leaving Soon" items
 	leavingSoonCount := 0
@@ -358,9 +360,12 @@ func (e *SyncEngine) FullSync(ctx context.Context) error {
 
 	// Execute deletions if enabled and not in dry-run mode
 	deletedCount := 0
+	episodeFilesDeleted := 0
 	deletedItems := make([]map[string]interface{}, 0)
 	if e.config.App.EnableDeletion && !e.config.App.DryRun && len(wouldDelete) > 0 {
-		deletedCount, deletedItems = e.ExecuteDeletions(ctx, wouldDelete)
+		var episodeItemsProcessed int
+		deletedCount, episodeItemsProcessed, episodeFilesDeleted, deletedItems = e.ExecuteDeletions(ctx, wouldDelete)
+		_ = episodeItemsProcessed // job summary tracks episode_files_deleted, not episode items processed
 	}
 
 	// Update job
@@ -388,6 +393,9 @@ func (e *SyncEngine) FullSync(ctx context.Context) error {
 	if deletedCount > 0 {
 		job.Summary["deleted_count"] = deletedCount
 		job.Summary["deleted_items"] = deletedItems
+	}
+	if episodeFilesDeleted > 0 {
+		job.Summary["episode_files_deleted"] = episodeFilesDeleted
 	}
 
 	if lastErr != nil {
@@ -915,12 +923,12 @@ func (e *SyncEngine) GetMediaCount() int {
 }
 
 // applyRetentionRules evaluates retention rules for all media items
-func (e *SyncEngine) applyRetentionRules() {
+func (e *SyncEngine) applyRetentionRules(ctx context.Context) {
 	e.mediaLibraryLock.Lock()
 	defer e.mediaLibraryLock.Unlock()
 
 	for id, media := range e.mediaLibrary {
-		verdict := e.rules.Evaluate(&media)
+		verdict := e.rules.Evaluate(ctx, &media)
 
 		// Update media with deletion date and human-readable reason from verdict
 		media.DeleteAfter = verdict.DeleteAfter
@@ -942,7 +950,7 @@ func (e *SyncEngine) applyRetentionRules() {
 // This is useful after config changes to update deletion dates without a full sync
 func (e *SyncEngine) ReapplyRetentionRules() {
 	log.Info().Msg("Reapplying retention rules after config change")
-	e.applyRetentionRules()
+	e.applyRetentionRules(context.Background())
 	log.Info().Msg("Retention rules reapplied successfully")
 }
 
@@ -1016,11 +1024,21 @@ func (e *SyncEngine) CalculateDeletionInfo() (int, []map[string]interface{}) {
 }
 
 // ExecuteDeletions performs actual deletion of overdue media items.
-// Before each deletion, a pre-deletion safety check refreshes the watch state from
-// Jellystat to catch any watch activity that occurred after the last evaluation.
+// Before each whole-item deletion, a pre-deletion safety check refreshes the watch state
+// from Jellystat to catch any watch activity that occurred after the last evaluation.
 // If the item was watched since evaluation, deletion is skipped (fail-safe).
-func (e *SyncEngine) ExecuteDeletions(ctx context.Context, candidates []map[string]interface{}) (int, []map[string]interface{}) {
+// Episode-level deletions skip the safety check — count/age-based cleanup is not
+// affected by recent show-level watch activity.
+//
+// Returns (deletedCount, episodeItemsProcessed, episodeFilesDeleted, deletedItems).
+// - deletedCount: whole-item deletions completed successfully
+// - episodeItemsProcessed: candidates handled via episode-level deletion (not whole-item)
+// - episodeFilesDeleted: individual episode files removed
+// failed = len(candidates) - deletedCount - episodeItemsProcessed
+func (e *SyncEngine) ExecuteDeletions(ctx context.Context, candidates []map[string]interface{}) (int, int, int, []map[string]interface{}) {
 	deletedCount := 0
+	episodeItemsProcessed := 0 // candidates handled via episode-level deletion (not whole-item)
+	episodeFilesDeleted := 0
 	deletedItems := make([]map[string]interface{}, 0)
 
 	log.Info().
@@ -1036,7 +1054,7 @@ func (e *SyncEngine) ExecuteDeletions(ctx context.Context, candidates []map[stri
 			log.Warn().
 				Err(err).
 				Msg("Pre-deletion safety check failed — skipping all deletions for safety")
-			return 0, deletedItems
+			return 0, 0, 0, deletedItems
 		}
 	}
 
@@ -1047,15 +1065,44 @@ func (e *SyncEngine) ExecuteDeletions(ctx context.Context, candidates []map[stri
 			continue
 		}
 
-		// Pre-deletion safety check: refresh watch state from Jellystat to catch
-		// any watch activity that occurred between evaluation and deletion.
-		// Skip the check for episode-level deletions (count/age-based, not watch-based).
 		media, found := e.GetMediaByID(mediaID)
 		if !found {
 			log.Warn().Str("media_id", mediaID).Msg("Media not found in library, skipping deletion")
 			continue
 		}
 
+		// Re-evaluate to get the current verdict (including episode file IDs).
+		verdict := e.rules.Evaluate(ctx, &media)
+
+		if verdict.HasEpisodeDeletions() {
+			// Episode-level deletion — skip watch-state safety check.
+			// Recent show-level watch activity should not protect old episodes
+			// from rolling-window or age-based cleanup.
+			for _, episodeFileID := range verdict.EpisodeFileIDs {
+				if e.sonarrClient == nil {
+					log.Warn().Msg("Sonarr client not available for episode file deletion")
+					break
+				}
+				if err := e.sonarrClient.DeleteEpisodeFile(ctx, episodeFileID); err != nil {
+					log.Error().Err(err).
+						Int("episode_file_id", episodeFileID).
+						Str("show", media.Title).
+						Msg("Failed to delete episode file")
+					continue
+				}
+				episodeFilesDeleted++
+				log.Info().
+					Int("episode_file_id", episodeFileID).
+					Str("show", media.Title).
+					Msg("Episode file deleted")
+			}
+			episodeItemsProcessed++ // count the candidate as processed (not failed)
+			continue
+		}
+
+		// Standard whole-item deletion with watch-state safety check.
+		// Pre-deletion safety check: refresh watch state from Jellystat to catch
+		// any watch activity that occurred between evaluation and deletion.
 		if watchStateMap != nil && media.JellyfinID != "" {
 			latestWatched := watchStateMap[media.JellyfinID]
 
@@ -1067,8 +1114,8 @@ func (e *SyncEngine) ExecuteDeletions(ctx context.Context, candidates []map[stri
 					updatedMedia.WatchCount = 1
 				}
 
-				verdict := e.rules.Evaluate(&updatedMedia)
-				if verdict.IsProtected || verdict.DeleteAfter.After(time.Now()) {
+				freshVerdict := e.rules.Evaluate(ctx, &updatedMedia)
+				if freshVerdict.IsProtected || freshVerdict.DeleteAfter.After(time.Now()) {
 					log.Info().
 						Str("media_id", mediaID).
 						Str("title", media.Title).
@@ -1079,7 +1126,7 @@ func (e *SyncEngine) ExecuteDeletions(ctx context.Context, candidates []map[stri
 			}
 		}
 
-		// Attempt deletion
+		// Attempt whole-item deletion
 		if err := e.DeleteMedia(ctx, mediaID, false); err != nil {
 			log.Error().
 				Err(err).
@@ -1101,10 +1148,11 @@ func (e *SyncEngine) ExecuteDeletions(ctx context.Context, candidates []map[stri
 
 	log.Info().
 		Int("deleted", deletedCount).
-		Int("failed", len(candidates)-deletedCount).
+		Int("episode_files_deleted", episodeFilesDeleted).
+		Int("failed", len(candidates)-deletedCount-episodeItemsProcessed).
 		Msg("Deletion execution completed")
 
-	return deletedCount, deletedItems
+	return deletedCount, episodeItemsProcessed, episodeFilesDeleted, deletedItems
 }
 
 // buildWatchStateMap fetches the full watch history from Jellystat once and returns
