@@ -13,6 +13,7 @@ import ScheduledDeletionsPage from '@/pages/ScheduledDeletionsPage';
 import JobHistoryPage from '@/pages/JobHistoryPage';
 import ConfigurationPage from '@/pages/ConfigurationPage';
 import RulesPage from '@/pages/RulesPage';
+import LogsPage from '@/pages/LogsPage';
 import ProtectedRoute from '@/components/ProtectedRoute';
 
 const queryClient = new QueryClient({
@@ -120,6 +121,14 @@ function App() {
             element={
               <ProtectedRoute>
                 <RulesPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/logs"
+            element={
+              <ProtectedRoute>
+                <LogsPage />
               </ProtectedRoute>
             }
           />

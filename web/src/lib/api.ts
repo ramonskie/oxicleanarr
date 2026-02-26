@@ -11,7 +11,8 @@ import type {
   UpdateConfigRequest,
   RulesListResponse,
   AdvancedRule,
-  DiskStatus
+  DiskStatus,
+  LogsResponse,
 } from './types';
 import type { ServiceStatusResponse } from './types-services';
 
@@ -271,6 +272,21 @@ class ApiClient {
 
   async getDiskStatus(): Promise<DiskStatus> {
     return this.request<DiskStatus>('/system/disk');
+  }
+
+  // Logs
+  async getLogs(file: 'backend' | 'web' = 'backend', lines: number = 200): Promise<LogsResponse> {
+    return this.request<LogsResponse>(`/logs?file=${file}&lines=${lines}`);
+  }
+
+  /**
+   * Opens an SSE connection that streams live log lines.
+   * Returns the EventSource so the caller can close it.
+   */
+  streamLogs(file: 'backend' | 'web' = 'backend', lines: number = 200): EventSource {
+    const token = this.getToken();
+    const url = `${API_BASE}/logs?file=${file}&lines=${lines}&stream=true&token=${token ?? ''}`;
+    return new EventSource(url);
   }
 }
 

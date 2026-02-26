@@ -232,3 +232,19 @@ export interface UpdateConfigRequest {
 export interface RulesListResponse {
   rules: AdvancedRule[];
 }
+
+export type LogLevel = 'debug' | 'info' | 'warn' | 'error' | 'unknown';
+
+export interface LogLine {
+  raw: string;
+  level?: LogLevel;
+  time?: string;
+  message?: string;
+  component?: string;
+}
+
+export interface LogsResponse {
+  file: string;
+  lines: LogLine[];
+  total: number;
+}

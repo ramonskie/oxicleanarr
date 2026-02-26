@@ -28,8 +28,15 @@ func Auth(next http.Handler) http.Handler {
 			return
 		}
 
-		// Get token from Authorization header
+		// Get token from Authorization header or ?token= query param (SSE fallback)
 		authHeader := r.Header.Get("Authorization")
+		if authHeader == "" {
+			// Allow token via query param for SSE/EventSource connections that
+			// cannot set custom headers
+			if qToken := r.URL.Query().Get("token"); qToken != "" {
+				authHeader = "Bearer " + qToken
+			}
+		}
 		if authHeader == "" {
 			http.Error(w, `{"error": "Missing authorization header"}`, http.StatusUnauthorized)
 			return

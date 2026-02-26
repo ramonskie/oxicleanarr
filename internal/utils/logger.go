@@ -111,6 +111,11 @@ func createLogWriter(filename string) io.Writer {
 	}
 }
 
+// GetLogDir returns the directory where log files are written
+func GetLogDir() string {
+	return logDir
+}
+
 // GetWebLogger returns a logger for web/API requests that writes to web.log
 func GetWebLogger() zerolog.Logger {
 	if webWriter == nil {
