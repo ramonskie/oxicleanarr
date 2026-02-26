@@ -3,6 +3,7 @@ package handlers
 import (
 	"encoding/json"
 	"net/http"
+	"net/url"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/ramonskie/oxicleanarr/internal/config"
@@ -139,7 +140,7 @@ func (h *RulesHandler) CreateRule(w http.ResponseWriter, r *http.Request) {
 
 // UpdateRule handles PUT /api/rules/{name}
 func (h *RulesHandler) UpdateRule(w http.ResponseWriter, r *http.Request) {
-	ruleName := chi.URLParam(r, "name")
+	ruleName, _ := url.PathUnescape(chi.URLParam(r, "name"))
 	if ruleName == "" {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusBadRequest)
@@ -243,7 +244,7 @@ func (h *RulesHandler) UpdateRule(w http.ResponseWriter, r *http.Request) {
 
 // DeleteRule handles DELETE /api/rules/{name}
 func (h *RulesHandler) DeleteRule(w http.ResponseWriter, r *http.Request) {
-	ruleName := chi.URLParam(r, "name")
+	ruleName, _ := url.PathUnescape(chi.URLParam(r, "name"))
 	if ruleName == "" {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusBadRequest)
@@ -312,7 +313,7 @@ type ToggleRuleRequest struct {
 
 // ToggleRule handles PATCH /api/rules/{name}/toggle
 func (h *RulesHandler) ToggleRule(w http.ResponseWriter, r *http.Request) {
-	ruleName := chi.URLParam(r, "name")
+	ruleName, _ := url.PathUnescape(chi.URLParam(r, "name"))
 	if ruleName == "" {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusBadRequest)
