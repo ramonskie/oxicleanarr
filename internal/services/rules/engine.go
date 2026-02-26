@@ -121,11 +121,6 @@ func (e *RulesEngine) evaluateWithContext(ctx EvalContext) RuleVerdict {
 			continue
 		}
 		if status := rule.Protect(ctx); status != nil {
-			log.Debug().
-				Str("media_id", ctx.Media.ID).
-				Str("rule", rule.Name()).
-				Int("protection_status", int(*status)).
-				Msg("Media protected from deletion")
 			v := RuleVerdict{
 				IsProtected:      true,
 				ProtectionReason: *status,
@@ -154,11 +149,6 @@ func (e *RulesEngine) evaluateWithContext(ctx EvalContext) RuleVerdict {
 			deleteAfter, source := rule.Schedule(ctx)
 			episodeFileIDs := ctx.Media.EpisodeFileIDs // capture what this rule produced
 			if !deleteAfter.IsZero() || len(episodeFileIDs) > 0 {
-				log.Debug().
-					Str("media_id", ctx.Media.ID).
-					Str("rule", rule.Name()).
-					Int("episode_file_count", len(episodeFileIDs)).
-					Msg("Episode rule fired")
 				return RuleVerdict{
 					IsProtected:    false,
 					DeleteAfter:    deleteAfter,
@@ -182,11 +172,6 @@ func (e *RulesEngine) evaluateWithContext(ctx EvalContext) RuleVerdict {
 		}
 		deleteAfter, source := rule.Schedule(ctx)
 		if !deleteAfter.IsZero() {
-			log.Debug().
-				Str("media_id", ctx.Media.ID).
-				Str("rule", rule.Name()).
-				Time("delete_after", deleteAfter).
-				Msg("Media scheduled for deletion")
 			verdict := RuleVerdict{
 				IsProtected:    false,
 				DeleteAfter:    deleteAfter,

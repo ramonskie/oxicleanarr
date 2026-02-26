@@ -224,7 +224,7 @@ func (c *JellyfinClient) CreateVirtualFolder(ctx context.Context, name, collecti
 
 	req.Header.Set("Content-Type", "application/json")
 
-	log.Info().
+	log.Debug().
 		Str("library_name", name).
 		Str("collection_type", collectionType).
 		Strs("paths", paths).
@@ -265,7 +265,7 @@ func (c *JellyfinClient) DeleteVirtualFolder(ctx context.Context, name string, d
 		return fmt.Errorf("creating request: %w", err)
 	}
 
-	log.Info().
+	log.Debug().
 		Str("library_name", name).
 		Msg("Deleting virtual folder from Jellyfin")
 
@@ -316,7 +316,7 @@ func (c *JellyfinClient) AddPathToVirtualFolder(ctx context.Context, name, path 
 
 	req.Header.Set("Content-Type", "application/json")
 
-	log.Info().
+	log.Debug().
 		Str("library_name", name).
 		Str("path", path).
 		Msg("Adding path to virtual folder in Jellyfin")
@@ -334,7 +334,7 @@ func (c *JellyfinClient) AddPathToVirtualFolder(ctx context.Context, name, path 
 		return fmt.Errorf("unexpected status code: %d", resp.StatusCode)
 	}
 
-	log.Info().
+	log.Debug().
 		Str("library_name", name).
 		Str("path", path).
 		Msg("Added path to virtual folder in Jellyfin")
@@ -358,7 +358,7 @@ func (c *JellyfinClient) RefreshLibrary(ctx context.Context, dryRun bool) error 
 		return fmt.Errorf("creating request: %w", err)
 	}
 
-	log.Info().Msg("Triggering library refresh in Jellyfin")
+	log.Debug().Msg("Triggering library refresh in Jellyfin")
 
 	resp, err := c.client.Do(req)
 	if err != nil {
@@ -370,7 +370,7 @@ func (c *JellyfinClient) RefreshLibrary(ctx context.Context, dryRun bool) error 
 		return fmt.Errorf("unexpected status code: %d", resp.StatusCode)
 	}
 
-	log.Info().Msg("Library refresh triggered successfully in Jellyfin")
+	log.Debug().Msg("Library refresh triggered successfully in Jellyfin")
 
 	return nil
 }
@@ -392,7 +392,7 @@ func (c *JellyfinClient) RefreshLibraryByID(ctx context.Context, libraryID strin
 		return fmt.Errorf("creating request: %w", err)
 	}
 
-	log.Info().
+	log.Debug().
 		Str("library_id", libraryID).
 		Msg("Triggering library-specific refresh in Jellyfin")
 
@@ -406,7 +406,7 @@ func (c *JellyfinClient) RefreshLibraryByID(ctx context.Context, libraryID strin
 		return fmt.Errorf("unexpected status code: %d", resp.StatusCode)
 	}
 
-	log.Info().
+	log.Debug().
 		Str("library_id", libraryID).
 		Msg("Library-specific refresh triggered successfully in Jellyfin")
 
@@ -443,7 +443,7 @@ func (c *JellyfinClient) CheckPluginStatus(ctx context.Context) (*PluginStatusRe
 		return nil, fmt.Errorf("decoding response: %w", err)
 	}
 
-	log.Info().
+	log.Debug().
 		Str("version", statusResp.Version).
 		Msg("OxiCleanarr Bridge Plugin is available")
 
@@ -487,7 +487,7 @@ func (c *JellyfinClient) AddSymlinks(ctx context.Context, items []PluginSymlinkI
 
 	req.Header.Set("Content-Type", "application/json")
 
-	log.Info().
+	log.Debug().
 		Int("count", len(items)).
 		Msg("Creating symlinks via OxiCleanarr Bridge Plugin")
 
@@ -511,10 +511,6 @@ func (c *JellyfinClient) AddSymlinks(ctx context.Context, items []PluginSymlinkI
 
 	// Check HTTP status code
 	if resp.StatusCode != http.StatusOK {
-		log.Error().
-			Int("status_code", resp.StatusCode).
-			Str("response_body", string(bodyBytes)).
-			Msg("Plugin returned non-200 status code")
 		return nil, fmt.Errorf("plugin returned status %d: %s", resp.StatusCode, string(bodyBytes))
 	}
 
@@ -581,7 +577,7 @@ func (c *JellyfinClient) RemoveSymlinks(ctx context.Context, paths []string, dry
 		Str("request_body", string(bodyBytes)).
 		Msg("RemoveSymlinks request body")
 
-	log.Info().
+	log.Debug().
 		Int("count", len(paths)).
 		Msg("Removing symlinks via OxiCleanarr Bridge Plugin")
 
@@ -605,10 +601,6 @@ func (c *JellyfinClient) RemoveSymlinks(ctx context.Context, paths []string, dry
 
 	// Check HTTP status code
 	if resp.StatusCode != http.StatusOK {
-		log.Error().
-			Int("status_code", resp.StatusCode).
-			Str("response_body", string(respBody)).
-			Msg("Plugin returned non-200 status code")
 		return nil, fmt.Errorf("plugin returned status %d: %s", resp.StatusCode, string(respBody))
 	}
 
@@ -673,10 +665,6 @@ func (c *JellyfinClient) ListSymlinks(ctx context.Context, directory string) (*P
 
 	// Check HTTP status code
 	if resp.StatusCode != http.StatusOK {
-		log.Error().
-			Int("status_code", resp.StatusCode).
-			Str("response_body", string(respBody)).
-			Msg("Plugin returned non-200 status code")
 		return nil, fmt.Errorf("plugin returned status %d: %s", resp.StatusCode, string(respBody))
 	}
 
@@ -716,7 +704,6 @@ func (c *JellyfinClient) CreateDirectory(ctx context.Context, path string, dryRu
 
 	reqBytes, err := json.Marshal(reqBody)
 	if err != nil {
-		log.Error().Err(err).Msg("Failed to marshal create directory request")
 		return nil, fmt.Errorf("marshal request: %w", err)
 	}
 
@@ -726,7 +713,6 @@ func (c *JellyfinClient) CreateDirectory(ctx context.Context, path string, dryRu
 	// Create request
 	req, err := http.NewRequestWithContext(ctx, "POST", pluginURL, bytes.NewReader(reqBytes))
 	if err != nil {
-		log.Error().Err(err).Msg("Failed to create directory request")
 		return nil, fmt.Errorf("create request: %w", err)
 	}
 
@@ -738,7 +724,6 @@ func (c *JellyfinClient) CreateDirectory(ctx context.Context, path string, dryRu
 	// Execute request
 	resp, err := c.client.Do(req)
 	if err != nil {
-		log.Error().Err(err).Msg("Failed to create directory via plugin")
 		return nil, fmt.Errorf("execute request: %w", err)
 	}
 	defer resp.Body.Close()
@@ -746,23 +731,17 @@ func (c *JellyfinClient) CreateDirectory(ctx context.Context, path string, dryRu
 	// Read response
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		log.Error().Err(err).Msg("Failed to read create directory response")
 		return nil, fmt.Errorf("read response: %w", err)
 	}
 
 	// Check status code
 	if resp.StatusCode != http.StatusOK {
-		log.Error().
-			Int("status_code", resp.StatusCode).
-			Str("response", string(body)).
-			Msg("Plugin returned error status for directory creation")
 		return nil, fmt.Errorf("plugin returned status %d: %s", resp.StatusCode, string(body))
 	}
 
 	// Parse response
 	var createResp PluginCreateDirectoryResponse
 	if err := json.Unmarshal(body, &createResp); err != nil {
-		log.Error().Err(err).Str("body", string(body)).Msg("Failed to parse create directory response")
 		return nil, fmt.Errorf("unmarshal response: %w", err)
 	}
 
@@ -799,7 +778,6 @@ func (c *JellyfinClient) DeleteDirectory(ctx context.Context, path string, force
 
 	reqBytes, err := json.Marshal(reqBody)
 	if err != nil {
-		log.Error().Err(err).Msg("Failed to marshal delete directory request")
 		return nil, fmt.Errorf("marshal request: %w", err)
 	}
 
@@ -809,7 +787,6 @@ func (c *JellyfinClient) DeleteDirectory(ctx context.Context, path string, force
 	// Create request
 	req, err := http.NewRequestWithContext(ctx, "DELETE", pluginURL, bytes.NewReader(reqBytes))
 	if err != nil {
-		log.Error().Err(err).Msg("Failed to create delete directory request")
 		return nil, fmt.Errorf("create request: %w", err)
 	}
 
@@ -821,7 +798,6 @@ func (c *JellyfinClient) DeleteDirectory(ctx context.Context, path string, force
 	// Execute request
 	resp, err := c.client.Do(req)
 	if err != nil {
-		log.Error().Err(err).Msg("Failed to delete directory via plugin")
 		return nil, fmt.Errorf("execute request: %w", err)
 	}
 	defer resp.Body.Close()
@@ -829,23 +805,17 @@ func (c *JellyfinClient) DeleteDirectory(ctx context.Context, path string, force
 	// Read response
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		log.Error().Err(err).Msg("Failed to read delete directory response")
 		return nil, fmt.Errorf("read response: %w", err)
 	}
 
 	// Check status code
 	if resp.StatusCode != http.StatusOK {
-		log.Error().
-			Int("status_code", resp.StatusCode).
-			Str("response", string(body)).
-			Msg("Plugin returned error status for directory deletion")
 		return nil, fmt.Errorf("plugin returned status %d: %s", resp.StatusCode, string(body))
 	}
 
 	// Parse response
 	var deleteResp PluginDeleteDirectoryResponse
 	if err := json.Unmarshal(body, &deleteResp); err != nil {
-		log.Error().Err(err).Str("body", string(body)).Msg("Failed to parse delete directory response")
 		return nil, fmt.Errorf("unmarshal response: %w", err)
 	}
 

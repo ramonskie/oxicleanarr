@@ -82,6 +82,7 @@ func (m *SymlinkLibraryManager) SyncLibraries(ctx context.Context, mediaLibrary 
 		Str("base_path", symlinkCfg.BasePath).
 		Str("movies_library", moviesLibraryName).
 		Str("tv_library", tvLibraryName).
+		Int("leaving_soon_days", cfg.App.LeavingSoonDays).
 		Msg("Starting symlink library sync")
 
 	// Separate media into movies and TV shows that are scheduled for deletion
@@ -110,6 +111,8 @@ func (m *SymlinkLibraryManager) SyncLibraries(ctx context.Context, mediaLibrary 
 
 	log.Info().
 		Int("leaving_soon_count", leavingSoonCount).
+		Int("movies", len(movies)).
+		Int("tv_shows", len(tvShows)).
 		Msg("Symlink library sync completed")
 	return leavingSoonCount, nil
 }
@@ -200,7 +203,7 @@ func (m *SymlinkLibraryManager) syncLibrary(ctx context.Context, libraryName, co
 	}
 	dryRun := cfg.App.DryRun
 
-	log.Info().
+	log.Debug().
 		Str("library", libraryName).
 		Str("path", symlinkDir).
 		Int("item_count", len(items)).
@@ -225,7 +228,7 @@ func (m *SymlinkLibraryManager) syncLibrary(ctx context.Context, libraryName, co
 			Msg("Library is empty and hide_when_empty is true, removing library from Jellyfin")
 
 		// Step 1: Clean up any existing symlinks first
-		log.Info().
+		log.Debug().
 			Str("library", libraryName).
 			Str("path", symlinkDir).
 			Msg("Cleaning up symlinks before removing empty library")
@@ -240,7 +243,6 @@ func (m *SymlinkLibraryManager) syncLibrary(ctx context.Context, libraryName, co
 		}
 
 		// Step 2: Check if virtual folder exists before attempting deletion
-		log.Info().Str("library", libraryName).Msg("Fetching virtual folders from Jellyfin")
 		folders, err := m.jellyfinClient.GetVirtualFolders(ctx)
 		if err != nil {
 			log.Warn().
@@ -248,20 +250,6 @@ func (m *SymlinkLibraryManager) syncLibrary(ctx context.Context, libraryName, co
 				Str("library", libraryName).
 				Msg("Failed to check for existing virtual folder, skipping deletion")
 			return nil // Don't fail entire sync
-		}
-
-		log.Info().
-			Str("library", libraryName).
-			Int("folder_count", len(folders)).
-			Msg("Retrieved virtual folders from Jellyfin")
-
-		// Log all folder names for debugging
-		for _, f := range folders {
-			log.Info().
-				Str("folder_name", f.Name).
-				Str("searching_for", libraryName).
-				Bool("matches", f.Name == libraryName).
-				Msg("Checking virtual folder")
 		}
 
 		// Step 3: Delete the virtual folder if it exists
@@ -337,7 +325,7 @@ func (m *SymlinkLibraryManager) syncLibrary(ctx context.Context, libraryName, co
 	}
 
 	// Normal sync path: items exist or hide_when_empty is false
-	log.Info().
+	log.Debug().
 		Str("library", libraryName).
 		Int("item_count", len(items)).
 		Bool("hide_when_empty", cfg.Integrations.Jellyfin.SymlinkLibrary.HideWhenEmpty).
@@ -429,7 +417,7 @@ func (m *SymlinkLibraryManager) ensureVirtualFolder(ctx context.Context, name, c
 				Msg("Failed to create directory via plugin, continuing anyway")
 			// Continue - directory might already exist or plugin might not be available
 		} else {
-			log.Info().
+			log.Debug().
 				Str("path", path).
 				Bool("created", dirResp.Created).
 				Str("message", dirResp.Message).
@@ -499,7 +487,7 @@ func (m *SymlinkLibraryManager) createSymlinks(symlinkDir string, items []models
 	ctx := context.Background()
 	currentSymlinks := make(map[string]bool)
 
-	log.Info().
+	log.Debug().
 		Str("directory", symlinkDir).
 		Int("items_to_process", len(items)).
 		Bool("dry_run", dryRun).
@@ -514,7 +502,7 @@ func (m *SymlinkLibraryManager) createSymlinks(symlinkDir string, items []models
 			Msg("Failed to list existing symlinks, will create all")
 		listResp = &clients.PluginListSymlinksResponse{Symlinks: []clients.PluginSymlinkInfo{}}
 	} else {
-		log.Info().
+		log.Debug().
 			Int("existing_count", len(listResp.Symlinks)).
 			Str("directory", symlinkDir).
 			Msg("Found existing symlinks")
@@ -567,7 +555,7 @@ func (m *SymlinkLibraryManager) createSymlinks(symlinkDir string, items []models
 		}
 
 		// Add to creation list
-		log.Info().
+		log.Debug().
 			Str("symlink", symlinkName).
 			Str("target", media.FilePath).
 			Bool("dry_run", dryRun).
@@ -584,7 +572,7 @@ func (m *SymlinkLibraryManager) createSymlinks(symlinkDir string, items []models
 	}
 
 	// Log summary of what we're about to do
-	log.Info().
+	log.Debug().
 		Int("symlinks_to_create", len(symlinkItems)).
 		Int("stale_to_remove", len(staleSymlinks)).
 		Int("already_correct", len(currentSymlinks)).
@@ -674,13 +662,13 @@ func (m *SymlinkLibraryManager) createSymlinks(symlinkDir string, items []models
 			}
 		}
 	} else {
-		log.Info().
+		log.Debug().
 			Str("directory", symlinkDir).
 			Int("items_processed", len(items)).
 			Msg("No symlinks need to be created (all already exist or no items with file paths)")
 	}
 
-	log.Info().
+	log.Debug().
 		Str("directory", symlinkDir).
 		Int("final_count", len(currentSymlinks)).
 		Msg("Symlink creation completed")

@@ -514,10 +514,14 @@ func (e *SyncEngine) syncRadarr(ctx context.Context) ([]models.Media, error) {
 		mediaItems = append(mediaItems, media)
 	}
 
+	log.Info().
+		Int("imported", len(mediaItems)).
+		Int("total_from_radarr", len(radarrMovies)).
+		Int("skipped_no_file", len(radarrMovies)-len(mediaItems)).
+		Msg("Radarr sync completed")
+
 	return mediaItems, nil
 }
-
-// syncSonarr syncs TV shows from Sonarr
 func (e *SyncEngine) syncSonarr(ctx context.Context) ([]models.Media, error) {
 	sonarrSeries, err := e.sonarrClient.GetSeries(ctx)
 	if err != nil {
@@ -574,10 +578,14 @@ func (e *SyncEngine) syncSonarr(ctx context.Context) ([]models.Media, error) {
 		mediaItems = append(mediaItems, media)
 	}
 
+	log.Info().
+		Int("imported", len(mediaItems)).
+		Int("total_from_sonarr", len(sonarrSeries)).
+		Int("skipped_no_episodes", len(sonarrSeries)-len(mediaItems)).
+		Msg("Sonarr sync completed")
+
 	return mediaItems, nil
 }
-
-// syncJellyfin syncs watch data from Jellyfin
 func (e *SyncEngine) syncJellyfin(ctx context.Context) error {
 	// Get movies
 	jellyfinMovies, err := e.jellyfinClient.GetMovies(ctx)
@@ -797,9 +805,7 @@ func (e *SyncEngine) syncJellyseerr(ctx context.Context) error {
 					Str("media_title", media.Title).
 					Str("display_name", req.RequestedBy.DisplayName).
 					Str("jellyfin_username", req.RequestedBy.JellyfinUsername).
-					Str("username", req.RequestedBy.Username).
 					Str("resolved_username", username).
-					Str("email", req.RequestedBy.Email).
 					Msg("Matched Jellyseerr request to media")
 
 				e.mediaLibrary[id] = media

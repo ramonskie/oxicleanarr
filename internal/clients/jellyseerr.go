@@ -48,7 +48,6 @@ func (c *JellyseerrClient) GetRequests(ctx context.Context) ([]JellyseerrRequest
 
 		req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 		if err != nil {
-			log.Error().Err(err).Msg("Failed to create Jellyseerr request")
 			return nil, fmt.Errorf("creating request: %w", err)
 		}
 
@@ -57,20 +56,17 @@ func (c *JellyseerrClient) GetRequests(ctx context.Context) ([]JellyseerrRequest
 
 		resp, err := c.client.Do(req)
 		if err != nil {
-			log.Error().Err(err).Str("url", c.baseURL).Msg("Failed to connect to Jellyseerr")
-			return nil, fmt.Errorf("making request: %w", err)
+			return nil, fmt.Errorf("making request to %s: %w", c.baseURL, err)
 		}
 
 		if resp.StatusCode != http.StatusOK {
 			resp.Body.Close()
-			log.Error().Int("status_code", resp.StatusCode).Msg("Jellyseerr returned unexpected status code")
 			return nil, fmt.Errorf("unexpected status code: %d", resp.StatusCode)
 		}
 
 		var result JellyseerrResponse
 		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
 			resp.Body.Close()
-			log.Error().Err(err).Msg("Failed to decode Jellyseerr response")
 			return nil, fmt.Errorf("decoding response: %w", err)
 		}
 		resp.Body.Close()
@@ -106,7 +102,6 @@ func (c *JellyseerrClient) Ping(ctx context.Context) error {
 
 	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {
-		log.Error().Err(err).Msg("Failed to create Jellyseerr ping request")
 		return fmt.Errorf("creating request: %w", err)
 	}
 
@@ -114,13 +109,11 @@ func (c *JellyseerrClient) Ping(ctx context.Context) error {
 
 	resp, err := c.client.Do(req)
 	if err != nil {
-		log.Error().Err(err).Str("url", c.baseURL).Msg("Failed to ping Jellyseerr")
-		return fmt.Errorf("making request: %w", err)
+		return fmt.Errorf("making request to %s: %w", c.baseURL, err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		log.Error().Int("status_code", resp.StatusCode).Msg("Jellyseerr ping returned unexpected status code")
 		return fmt.Errorf("unexpected status code: %d", resp.StatusCode)
 	}
 
