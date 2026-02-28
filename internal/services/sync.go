@@ -20,12 +20,13 @@ import (
 
 // SyncEngine handles media synchronization and cleanup operations
 type SyncEngine struct {
-	config      *config.Config
-	cache       *cache.Cache
-	jobs        *storage.JobsFile
-	exclusions  *storage.ExclusionsFile
-	rules       *rules.RulesEngine
-	diskMonitor *DiskMonitor
+	config            *config.Config
+	cache             *cache.Cache
+	jobs              *storage.JobsFile
+	exclusions        *storage.ExclusionsFile
+	manualLeavingSoon *storage.ManualLeavingSoonFile
+	rules             *rules.RulesEngine
+	diskMonitor       *DiskMonitor
 
 	jellyfinClient        *clients.JellyfinClient
 	radarrClient          *clients.RadarrClient
@@ -50,16 +51,18 @@ func NewSyncEngine(
 	cacheInstance *cache.Cache,
 	jobs *storage.JobsFile,
 	exclusions *storage.ExclusionsFile,
+	manualLeavingSoon *storage.ManualLeavingSoonFile,
 	rulesEngine *rules.RulesEngine,
 ) *SyncEngine {
 	engine := &SyncEngine{
-		config:       cfg,
-		cache:        cacheInstance,
-		jobs:         jobs,
-		exclusions:   exclusions,
-		rules:        rulesEngine,
-		mediaLibrary: make(map[string]models.Media),
-		stopChan:     make(chan struct{}),
+		config:            cfg,
+		cache:             cacheInstance,
+		jobs:              jobs,
+		exclusions:        exclusions,
+		manualLeavingSoon: manualLeavingSoon,
+		rules:             rulesEngine,
+		mediaLibrary:      make(map[string]models.Media),
+		stopChan:          make(chan struct{}),
 	}
 
 	// Initialize clients based on config
@@ -336,6 +339,9 @@ func (e *SyncEngine) FullSync(ctx context.Context) error {
 
 	// Apply retention rules to all media
 	e.applyRetentionRules(ctx)
+
+	// Apply manual leaving soon overrides (fixed DeleteAfter, set at flag time)
+	e.applyManualLeavingSoon()
 
 	// Sync symlink libraries for "Leaving Soon" items
 	leavingSoonCount := 0
@@ -984,6 +990,143 @@ func (e *SyncEngine) applyExclusions() {
 		Int("media_count", len(e.mediaLibrary)).
 		Int("excluded_count", excludedCount).
 		Msg("Applied exclusions to media")
+}
+
+// applyManualLeavingSoon applies manual leaving soon flags to all media items.
+// Runs after applyRetentionRules — overrides DeleteAfter with the stored fixed date.
+// Excluded items are never marked as manual leaving soon (exclusion wins).
+func (e *SyncEngine) applyManualLeavingSoon() {
+	if e.manualLeavingSoon == nil {
+		return
+	}
+
+	e.mediaLibraryLock.Lock()
+	defer e.mediaLibraryLock.Unlock()
+
+	flaggedCount := 0
+	for id, media := range e.mediaLibrary {
+		// Exclusion takes priority — never apply manual flag to excluded items
+		if media.IsExcluded {
+			if media.IsManualLeavingSoon {
+				media.IsManualLeavingSoon = false
+				e.mediaLibrary[id] = media
+			}
+			continue
+		}
+
+		isFlagged := e.manualLeavingSoon.IsFlagged(id)
+		if isFlagged {
+			item, _ := e.manualLeavingSoon.Get(id)
+			media.IsManualLeavingSoon = true
+			media.DeleteAfter = item.DeleteAfter
+			media.DaysUntilDue = int(time.Until(item.DeleteAfter).Hours() / 24)
+			media.DeletionReason = "Manual leaving soon"
+			e.mediaLibrary[id] = media
+			flaggedCount++
+		} else if media.IsManualLeavingSoon {
+			// Flag was removed — clear it
+			media.IsManualLeavingSoon = false
+			e.mediaLibrary[id] = media
+		}
+	}
+
+	log.Debug().
+		Int("media_count", len(e.mediaLibrary)).
+		Int("flagged_count", flaggedCount).
+		Msg("Applied manual leaving soon flags to media")
+}
+
+// AddManualLeavingSoon flags a media item for leaving soon with a fixed DeleteAfter date.
+// Returns 409-style error if the item is currently excluded.
+func (e *SyncEngine) AddManualLeavingSoon(ctx context.Context, mediaID string) error {
+	media, found := e.GetMediaByID(mediaID)
+	if !found {
+		return fmt.Errorf("media not found: %s", mediaID)
+	}
+
+	if media.IsExcluded {
+		return fmt.Errorf("conflict: item is protected. Remove protection first")
+	}
+
+	leavingSoonDays := e.config.App.LeavingSoonDays
+	if leavingSoonDays <= 0 {
+		leavingSoonDays = 14
+	}
+	deleteAfter := time.Now().AddDate(0, 0, leavingSoonDays)
+
+	item := storage.ManualLeavingSoonItem{
+		ExternalID:   mediaID,
+		ExternalType: "unknown",
+		MediaType:    string(media.Type),
+		Title:        media.Title,
+		DeleteAfter:  deleteAfter,
+		FlaggedAt:    time.Now(),
+		FlaggedBy:    "api",
+	}
+
+	if media.RadarrID > 0 {
+		item.ExternalID = fmt.Sprintf("radarr-%d", media.RadarrID)
+		item.ExternalType = "radarr"
+	} else if media.SonarrID > 0 {
+		item.ExternalID = fmt.Sprintf("sonarr-%d", media.SonarrID)
+		item.ExternalType = "sonarr"
+	}
+
+	if err := e.manualLeavingSoon.Add(item); err != nil {
+		return fmt.Errorf("adding manual leaving soon flag: %w", err)
+	}
+
+	// Update media library immediately
+	e.mediaLibraryLock.Lock()
+	media.IsManualLeavingSoon = true
+	media.DeleteAfter = deleteAfter
+	media.DaysUntilDue = int(time.Until(deleteAfter).Hours() / 24)
+	media.DeletionReason = "Manual leaving soon"
+	e.mediaLibrary[mediaID] = media
+	e.mediaLibraryLock.Unlock()
+
+	log.Info().
+		Str("media_id", mediaID).
+		Str("title", media.Title).
+		Time("delete_after", deleteAfter).
+		Msg("Media manually flagged as leaving soon")
+
+	return nil
+}
+
+// RemoveManualLeavingSoon removes the manual leaving soon flag from a media item.
+func (e *SyncEngine) RemoveManualLeavingSoon(ctx context.Context, mediaID string) error {
+	media, found := e.GetMediaByID(mediaID)
+	if !found {
+		return fmt.Errorf("media not found: %s", mediaID)
+	}
+
+	externalID := mediaID
+	if media.RadarrID > 0 {
+		externalID = fmt.Sprintf("radarr-%d", media.RadarrID)
+	} else if media.SonarrID > 0 {
+		externalID = fmt.Sprintf("sonarr-%d", media.SonarrID)
+	}
+
+	if err := e.manualLeavingSoon.Remove(externalID); err != nil {
+		return fmt.Errorf("removing manual leaving soon flag: %w", err)
+	}
+
+	// Update media library immediately - clear all manual leaving soon fields
+	e.mediaLibraryLock.Lock()
+	media.IsManualLeavingSoon = false
+	media.DeleteAfter = time.Time{}
+	media.DaysUntilDue = 0
+	media.DeletionReason = ""
+	e.mediaLibrary[mediaID] = media
+	e.mediaLibraryLock.Unlock()
+
+	log.Info().
+		Str("media_id", mediaID).
+		Str("title", media.Title).
+		Msg("Manual leaving soon flag removed from media")
+
+	return nil
 }
 
 // CalculateDeletionInfo calculates scheduled deletions and returns dry-run preview

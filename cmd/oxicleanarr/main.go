@@ -62,6 +62,12 @@ func main() {
 	}
 	log.Info().Int("exclusions", len(exclusionsFile.GetAll())).Msg("Exclusions loaded")
 
+	manualLeavingSoonFile, err := storage.NewManualLeavingSoonFile(dataPath)
+	if err != nil {
+		log.Fatal().Err(err).Msg("Failed to initialize manual leaving soon storage")
+	}
+	log.Info().Int("manual_leaving_soon", len(manualLeavingSoonFile.GetAll())).Msg("Manual leaving soon flags loaded")
+
 	jobsFile, err := storage.NewJobsFile(dataPath, 100)
 	if err != nil {
 		log.Fatal().Err(err).Msg("Failed to initialize jobs storage")
@@ -81,7 +87,7 @@ func main() {
 	log.Info().Msg("Rules engine initialized")
 
 	// Initialize sync engine
-	syncEngine := services.NewSyncEngine(cfg, appCache, jobsFile, exclusionsFile, rulesEngine)
+	syncEngine := services.NewSyncEngine(cfg, appCache, jobsFile, exclusionsFile, manualLeavingSoonFile, rulesEngine)
 	log.Info().Msg("Sync engine initialized")
 
 	// Start sync engine scheduler

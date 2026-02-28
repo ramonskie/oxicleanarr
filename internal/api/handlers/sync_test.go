@@ -45,8 +45,11 @@ func newTestSyncEngineForAPI(t *testing.T) *services.SyncEngine {
 	exclusions, err := storage.NewExclusionsFile(tmpDir)
 	require.NoError(t, err)
 
+	manualLS, err := storage.NewManualLeavingSoonFile(tmpDir)
+	require.NoError(t, err)
+
 	rulesEngine := rules.NewRulesEngine(exclusions, nil)
-	engine := services.NewSyncEngine(cfg, cacheInstance, jobs, exclusions, rulesEngine)
+	engine := services.NewSyncEngine(cfg, cacheInstance, jobs, exclusions, manualLS, rulesEngine)
 
 	return engine
 }

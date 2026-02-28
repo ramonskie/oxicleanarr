@@ -42,9 +42,12 @@ func newTestSyncEngine(t *testing.T) (*SyncEngine, *storage.JobsFile, *storage.E
 	exclusions, err := storage.NewExclusionsFile(tmpDir)
 	require.NoError(t, err)
 
+	manualLeavingSoon, err := storage.NewManualLeavingSoonFile(tmpDir)
+	require.NoError(t, err)
+
 	rulesEngine := rules.NewRulesEngine(exclusions, nil)
 
-	engine := NewSyncEngine(cfg, cacheInstance, jobs, exclusions, rulesEngine)
+	engine := NewSyncEngine(cfg, cacheInstance, jobs, exclusions, manualLeavingSoon, rulesEngine)
 
 	return engine, jobs, exclusions
 }
@@ -101,9 +104,12 @@ func TestNewSyncEngine(t *testing.T) {
 		exclusions, err := storage.NewExclusionsFile(tmpDir)
 		require.NoError(t, err)
 
+		manualLS, err := storage.NewManualLeavingSoonFile(tmpDir)
+		require.NoError(t, err)
+
 		rulesEngine := rules.NewRulesEngine(exclusions, nil)
 
-		engine := NewSyncEngine(cfg, cacheInstance, jobs, exclusions, rulesEngine)
+		engine := NewSyncEngine(cfg, cacheInstance, jobs, exclusions, manualLS, rulesEngine)
 
 		assert.NotNil(t, engine.radarrClient)
 		assert.NotNil(t, engine.sonarrClient)
@@ -151,8 +157,11 @@ func TestSyncEngine_StartStop(t *testing.T) {
 		exclusions, err := storage.NewExclusionsFile(tmpDir)
 		require.NoError(t, err)
 
+		manualLS2, err := storage.NewManualLeavingSoonFile(tmpDir)
+		require.NoError(t, err)
+
 		rulesEngine := rules.NewRulesEngine(exclusions, nil)
-		engine := NewSyncEngine(cfg, cacheInstance, jobs, exclusions, rulesEngine)
+		engine := NewSyncEngine(cfg, cacheInstance, jobs, exclusions, manualLS2, rulesEngine)
 
 		err = engine.Start()
 		require.NoError(t, err)
@@ -807,8 +816,11 @@ func TestSyncEngine_ExecuteDeletions(t *testing.T) {
 		exclusions, err := storage.NewExclusionsFile(tmpDir)
 		require.NoError(t, err)
 
+		manualLS3, err := storage.NewManualLeavingSoonFile(tmpDir)
+		require.NoError(t, err)
+
 		rulesEngine := rules.NewRulesEngine(exclusions, nil)
-		engine := NewSyncEngine(cfg, cacheInstance, jobs, exclusions, rulesEngine)
+		engine := NewSyncEngine(cfg, cacheInstance, jobs, exclusions, manualLS3, rulesEngine)
 
 		// Add movie to library
 		engine.mediaLibrary["movie-1"] = models.Media{
@@ -863,8 +875,11 @@ func TestSyncEngine_FullSync_EnableDeletion(t *testing.T) {
 		exclusions, err := storage.NewExclusionsFile(tmpDir)
 		require.NoError(t, err)
 
+		manualLS4, err := storage.NewManualLeavingSoonFile(tmpDir)
+		require.NoError(t, err)
+
 		rulesEngine := rules.NewRulesEngine(exclusions, nil)
-		engine := NewSyncEngine(cfg, cacheInstance, jobs, exclusions, rulesEngine)
+		engine := NewSyncEngine(cfg, cacheInstance, jobs, exclusions, manualLS4, rulesEngine)
 
 		// Add overdue movie
 		engine.mediaLibrary["movie-1"] = models.Media{
@@ -913,8 +928,11 @@ func TestSyncEngine_FullSync_EnableDeletion(t *testing.T) {
 		exclusions, err := storage.NewExclusionsFile(tmpDir)
 		require.NoError(t, err)
 
+		manualLS5, err := storage.NewManualLeavingSoonFile(tmpDir)
+		require.NoError(t, err)
+
 		rulesEngine := rules.NewRulesEngine(exclusions, nil)
-		engine := NewSyncEngine(cfg, cacheInstance, jobs, exclusions, rulesEngine)
+		engine := NewSyncEngine(cfg, cacheInstance, jobs, exclusions, manualLS5, rulesEngine)
 
 		ctx := context.Background()
 		err = engine.FullSync(ctx)

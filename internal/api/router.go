@@ -80,6 +80,8 @@ func NewRouter(deps *RouterDependencies) *chi.Mux {
 				r.Get("/{id}/poster", mediaHandler.ProxyPoster)
 				r.Post("/{id}/exclude", mediaHandler.AddExclusion)
 				r.Delete("/{id}/exclude", mediaHandler.RemoveExclusion)
+				r.Post("/{id}/manual-leaving-soon", mediaHandler.AddManualLeavingSoon)
+				r.Delete("/{id}/manual-leaving-soon", mediaHandler.RemoveManualLeavingSoon)
 				r.Delete("/{id}", mediaHandler.DeleteMedia)
 			})
 

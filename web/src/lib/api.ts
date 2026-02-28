@@ -162,6 +162,18 @@ class ApiClient {
     });
   }
 
+  async addManualLeavingSoon(id: string): Promise<void> {
+    await this.request(`/media/${id}/manual-leaving-soon`, {
+      method: 'POST',
+    });
+  }
+
+  async removeManualLeavingSoon(id: string): Promise<void> {
+    await this.request(`/media/${id}/manual-leaving-soon`, {
+      method: 'DELETE',
+    });
+  }
+
   async deleteMedia(id: string): Promise<void> {
     await this.request(`/media/${id}`, {
       method: 'DELETE',

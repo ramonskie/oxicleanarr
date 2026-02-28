@@ -19,11 +19,11 @@ integrations:
     jellyseerr:
         api_key: your-jellyfin-api-key-here
         enabled: false
-        url: http://127.0.0.1:44007
+        url: http://127.0.0.1:41811
     jellystat:
         api_key: your-jellyfin-api-key-here
         enabled: false
-        url: http://host.docker.internal:45787
+        url: http://host.docker.internal:37741
     radarr:
         api_key: your-radarr-api-key-here
         enabled: true

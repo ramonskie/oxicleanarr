@@ -319,6 +319,63 @@ func (h *MediaHandler) ProxyPoster(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// AddManualLeavingSoon handles POST /api/media/{id}/manual-leaving-soon
+func (h *MediaHandler) AddManualLeavingSoon(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	path := strings.TrimPrefix(r.URL.Path, "/api/media/")
+	parts := strings.Split(path, "/")
+	if len(parts) < 2 || parts[0] == "" {
+		http.Error(w, "Media ID required", http.StatusBadRequest)
+		return
+	}
+	id := parts[0]
+
+	if err := h.syncEngine.AddManualLeavingSoon(ctx, id); err != nil {
+		log.Error().Err(err).Str("media_id", id).Msg("Failed to add manual leaving soon flag")
+		// Return 409 Conflict when item is protected
+		if strings.HasPrefix(err.Error(), "conflict:") {
+			http.Error(w, err.Error(), http.StatusConflict)
+			return
+		}
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"success": true,
+		"message": "Manual leaving soon flag added",
+	})
+}
+
+// RemoveManualLeavingSoon handles DELETE /api/media/{id}/manual-leaving-soon
+func (h *MediaHandler) RemoveManualLeavingSoon(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	path := strings.TrimPrefix(r.URL.Path, "/api/media/")
+	parts := strings.Split(path, "/")
+	if len(parts) < 2 || parts[0] == "" {
+		http.Error(w, "Media ID required", http.StatusBadRequest)
+		return
+	}
+	id := parts[0]
+
+	if err := h.syncEngine.RemoveManualLeavingSoon(ctx, id); err != nil {
+		log.Error().Err(err).Str("media_id", id).Msg("Failed to remove manual leaving soon flag")
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"success": true,
+		"message": "Manual leaving soon flag removed",
+	})
+}
+
 func sortMedia(media []models.Media, sortBy, order string) []models.Media {
 	if len(media) == 0 {
 		return media

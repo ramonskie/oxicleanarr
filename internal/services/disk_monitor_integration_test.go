@@ -103,10 +103,12 @@ func newDiskThresholdSyncEngine(
 	require.NoError(t, err)
 	exclusions, err := storage.NewExclusionsFile(tmpDir)
 	require.NoError(t, err)
+	manualLS, err := storage.NewManualLeavingSoonFile(tmpDir)
+	require.NoError(t, err)
 
 	// Pass nil diskMonitor — NewSyncEngine will create it and inject it into the engine.
 	engine := rules.NewRulesEngine(exclusions, nil)
-	return NewSyncEngine(cfg, cache.New(), jobs, exclusions, engine)
+	return NewSyncEngine(cfg, cache.New(), jobs, exclusions, manualLS, engine)
 }
 
 // diskThresholdCfg returns a config with disk threshold enabled at the given
@@ -395,7 +397,9 @@ func TestDiskThreshold_SyncEngine_FeatureDisabled_StandardRetentionApplies(t *te
 
 	// No disk monitor — feature disabled
 	engine := rules.NewRulesEngine(exclusions, nil)
-	syncEngine := NewSyncEngine(cfg, cache.New(), jobs, exclusions, engine)
+	manualLS2, err := storage.NewManualLeavingSoonFile(tmpDir)
+	require.NoError(t, err)
+	syncEngine := NewSyncEngine(cfg, cache.New(), jobs, exclusions, manualLS2, engine)
 
 	syncEngine.mediaLibrary["movie-1"] = models.Media{
 		ID:      "movie-1",

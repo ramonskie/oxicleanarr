@@ -116,7 +116,18 @@ func TestIntegrationSuite(t *testing.T) {
 		testExclusionLifecycle(t)
 	})
 
-	// Run advanced rules user-based tests fourth (uses existing environment)
+	// Run manual leaving soon lifecycle tests fourth (uses existing environment)
+	t.Run("ManualLeavingSoonLifecycle", func(t *testing.T) {
+		// If infrastructure wasn't set up (due to -run filter), set it up now
+		if !infrastructureReady {
+			t.Log("⚠️  Infrastructure not ready (filtered by -run), setting up now...")
+			testInfrastructureSetup(t)
+			infrastructureReady = true
+		}
+		testManualLeavingSoonLifecycle(t)
+	})
+
+	// Run advanced rules user-based tests fifth (uses existing environment)
 	t.Run("AdvancedRulesUser", func(t *testing.T) {
 		// If infrastructure wasn't set up (due to -run filter), set it up now
 		if !infrastructureReady {

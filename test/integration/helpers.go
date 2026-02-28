@@ -1995,6 +1995,63 @@ func resetConfigAPIKeysToPlaceholders(configPath string) {
 	fmt.Println("✅ Config API keys reset to placeholder values")
 }
 
+// AddManualLeavingSoon flags a media item as manually leaving soon
+func (tc *TestClient) AddManualLeavingSoon(mediaID string) error {
+	tc.t.Helper()
+	tc.t.Logf("Adding manual leaving soon flag for media ID: %s", mediaID)
+
+	resp, err := tc.Post(fmt.Sprintf("/api/media/%s/manual-leaving-soon", mediaID), nil)
+	if err != nil {
+		return fmt.Errorf("failed to add manual leaving soon flag: %w", err)
+	}
+	defer resp.Body.Close()
+
+	bodyBytes, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("unexpected status code %d: %s", resp.StatusCode, string(bodyBytes))
+	}
+
+	tc.t.Logf("Successfully added manual leaving soon flag for media ID: %s", mediaID)
+	return nil
+}
+
+// AddManualLeavingSoonRaw flags a media item as manually leaving soon and returns the raw response
+// (used when the caller needs to inspect non-200 status codes such as 409 Conflict)
+func (tc *TestClient) AddManualLeavingSoonRaw(mediaID string) (*http.Response, error) {
+	tc.t.Helper()
+	tc.t.Logf("Adding manual leaving soon flag (raw) for media ID: %s", mediaID)
+	return tc.Post(fmt.Sprintf("/api/media/%s/manual-leaving-soon", mediaID), nil)
+}
+
+// RemoveManualLeavingSoon removes the manual leaving soon flag from a media item
+func (tc *TestClient) RemoveManualLeavingSoon(mediaID string) error {
+	tc.t.Helper()
+	tc.t.Logf("Removing manual leaving soon flag for media ID: %s", mediaID)
+
+	req, err := http.NewRequest(http.MethodDelete, tc.baseURL+fmt.Sprintf("/api/media/%s/manual-leaving-soon", mediaID), nil)
+	if err != nil {
+		return fmt.Errorf("failed to create request: %w", err)
+	}
+
+	if tc.token != "" {
+		req.Header.Set("Authorization", "Bearer "+tc.token)
+	}
+
+	resp, err := tc.client.Do(req)
+	if err != nil {
+		return fmt.Errorf("failed to remove manual leaving soon flag: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		bodyBytes, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("unexpected status code %d: %s", resp.StatusCode, string(bodyBytes))
+	}
+
+	tc.t.Logf("Successfully removed manual leaving soon flag for media ID: %s", mediaID)
+	return nil
+}
+
 // GetDiskStatus queries the OxiCleanarr /api/system/disk endpoint and returns the response body.
 func (tc *TestClient) GetDiskStatus() (map[string]interface{}, error) {
 	tc.t.Helper()

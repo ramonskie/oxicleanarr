@@ -1,9 +1,10 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiClient } from '@/lib/api';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Clock, Shield, ShieldOff, Calendar } from 'lucide-react';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Clock, Shield, ShieldOff, Calendar, Timer, TimerOff } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import type { MediaItem } from '@/lib/types';
 import AppLayout from '@/components/AppLayout';
@@ -18,6 +19,9 @@ interface GroupedMedia {
 export default function TimelinePage() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
+
+  const [manualLeavingSoonConfirm, setManualLeavingSoonConfirm] = useState<{ id: string; title: string } | null>(null);
+  const [removeManualLeavingSoonConfirm, setRemoveManualLeavingSoonConfirm] = useState<{ id: string; title: string } | null>(null);
 
   const { data: leavingSoon, isLoading } = useQuery({
     queryKey: ['leaving-soon-all'],
@@ -85,6 +89,56 @@ export default function TimelinePage() {
       });
     },
   });
+
+  const addManualLeavingSoonMutation = useMutation({
+    mutationFn: (id: string) => apiClient.addManualLeavingSoon(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['leaving-soon-all'] });
+      setManualLeavingSoonConfirm(null);
+      toast({
+        title: 'Leaving Soon',
+        description: 'Item has been manually flagged as leaving soon',
+      });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: 'Error',
+        description: error.message,
+        variant: 'destructive',
+      });
+    },
+  });
+
+  const removeManualLeavingSoonMutation = useMutation({
+    mutationFn: (id: string) => apiClient.removeManualLeavingSoon(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['leaving-soon-all'] });
+      setRemoveManualLeavingSoonConfirm(null);
+      toast({
+        title: 'Flag Removed',
+        description: 'Manual leaving soon flag has been removed',
+      });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: 'Error',
+        description: error.message,
+        variant: 'destructive',
+      });
+    },
+  });
+
+  const confirmManualLeavingSoon = () => {
+    if (manualLeavingSoonConfirm) {
+      addManualLeavingSoonMutation.mutate(manualLeavingSoonConfirm.id);
+    }
+  };
+
+  const confirmRemoveManualLeavingSoon = () => {
+    if (removeManualLeavingSoonConfirm) {
+      removeManualLeavingSoonMutation.mutate(removeManualLeavingSoonConfirm.id);
+    }
+  };
 
   const formatDate = (dateString: string) => {
     const date = new Date(dateString);
@@ -242,6 +296,9 @@ export default function TimelinePage() {
                                     {item.deletion_reason}
                                   </p>
                                 )}
+                                {item.manual_leaving_soon && (
+                                  <Badge variant="outline" className="text-[10px] px-1.5 h-4 bg-orange-900/20 text-orange-400 border-orange-900/50 mt-1">Manual</Badge>
+                                )}
                                 {item.is_requested && item.requested_by_username && (
                                   <p className="text-xs text-gray-500 mt-1">
                                     Requested by: {item.requested_by_username}
@@ -250,7 +307,7 @@ export default function TimelinePage() {
                                 )}
                               </div>
                             </div>
-                            <div className="flex items-center gap-3 flex-shrink-0">
+                            <div className="flex items-center gap-2 flex-shrink-0">
                               <Badge variant="outline" className="bg-[#262626] text-gray-300 border-[#444]">
                                 {item.type === 'movie' ? 'Movie' : 'TV Show'}
                               </Badge>
@@ -277,6 +334,29 @@ export default function TimelinePage() {
                                   Exclude
                                 </Button>
                               )}
+                              {/* Manual Leaving Soon — disabled for excluded items */}
+                              {item.manual_leaving_soon ? (
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  className="h-8 w-8 p-0 text-orange-400 hover:text-orange-300"
+                                  onClick={() => setRemoveManualLeavingSoonConfirm({ id: item.id, title: item.title })}
+                                  title="Remove leaving soon flag"
+                                >
+                                  <TimerOff className="h-4 w-4" />
+                                </Button>
+                              ) : (
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  className="h-8 w-8 p-0 text-gray-400 hover:text-orange-400"
+                                  onClick={() => setManualLeavingSoonConfirm({ id: item.id, title: item.title })}
+                                  title={item.excluded ? 'Remove protection first' : 'Flag as leaving soon'}
+                                  disabled={item.excluded}
+                                >
+                                  <Timer className="h-4 w-4" />
+                                </Button>
+                              )}
                             </div>
                           </div>
                         </div>
@@ -289,6 +369,54 @@ export default function TimelinePage() {
           </div>
         )}
       </div>
+
+      {/* Manual Leaving Soon Confirmation Dialog */}
+      <Dialog open={!!manualLeavingSoonConfirm} onOpenChange={() => setManualLeavingSoonConfirm(null)}>
+        <DialogContent className="bg-[#1a1a1a] border-[#333]">
+          <DialogHeader>
+            <DialogTitle className="text-white">Flag as Leaving Soon?</DialogTitle>
+            <DialogDescription className="text-gray-400">
+              Are you sure you want to manually flag "{manualLeavingSoonConfirm?.title}" as leaving soon? It will appear in the leaving soon list and be scheduled for deletion.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setManualLeavingSoonConfirm(null)} className="bg-[#262626] border-[#444] text-gray-300 hover:bg-[#333]">
+              Cancel
+            </Button>
+            <Button
+              onClick={confirmManualLeavingSoon}
+              disabled={addManualLeavingSoonMutation.isPending}
+              className="bg-orange-600 hover:bg-orange-700 text-white"
+            >
+              {addManualLeavingSoonMutation.isPending ? 'Flagging...' : 'Flag as Leaving Soon'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Remove Manual Leaving Soon Confirmation Dialog */}
+      <Dialog open={!!removeManualLeavingSoonConfirm} onOpenChange={() => setRemoveManualLeavingSoonConfirm(null)}>
+        <DialogContent className="bg-[#1a1a1a] border-[#333]">
+          <DialogHeader>
+            <DialogTitle className="text-white">Remove Leaving Soon Flag?</DialogTitle>
+            <DialogDescription className="text-gray-400">
+              Are you sure you want to remove the leaving soon flag from "{removeManualLeavingSoonConfirm?.title}"? It will return to normal rule evaluation.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setRemoveManualLeavingSoonConfirm(null)} className="bg-[#262626] border-[#444] text-gray-300 hover:bg-[#333]">
+              Cancel
+            </Button>
+            <Button
+              onClick={confirmRemoveManualLeavingSoon}
+              disabled={removeManualLeavingSoonMutation.isPending}
+              variant="destructive"
+            >
+              {removeManualLeavingSoonMutation.isPending ? 'Removing...' : 'Remove Flag'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </AppLayout>
   );
 }

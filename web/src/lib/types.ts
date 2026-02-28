@@ -21,6 +21,7 @@ export interface MediaItem {
   deletion_date?: string;
   deletion_reason?: string;
   excluded: boolean;
+  manual_leaving_soon?: boolean;
   file_size?: number;
   file_path?: string;
   is_requested?: boolean;
