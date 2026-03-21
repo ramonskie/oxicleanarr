@@ -14,7 +14,7 @@
 - **Automated Media Cleanup**: Intelligently removes unwatched media based on configurable retention rules
 - **Advanced Rules Engine**: Tag-based, user-based, and watched-based cleanup rules for fine-grained control
 - **"Leaving Soon" Library**: Creates symlink libraries in Jellyfin to preview content scheduled for deletion
-- **Multi-Service Integration**: Supports Jellyfin, Radarr, Sonarr, Jellyseerr, and Jellystat
+- **Multi-Service Integration**: Supports Jellyfin, Radarr, Sonarr, Jellyseerr, Jellystat, and Streamystats
 - **Safe Operations**: Dry-run mode enabled by default, manual exclusions, and job history tracking
 - **Hot Configuration Reload**: Update settings without restarting the application
 - **RESTful API**: Complete HTTP API with JWT authentication
@@ -292,6 +292,13 @@ integrations:
     enabled: false
     url: http://jellystat:3000
     api_key: ""
+  
+  # Streamystats is mutually exclusive with Jellystat — enable only one.
+  streamystats:
+    enabled: false
+    url: http://streamystats:3000
+    api_key: ""        # Your Jellyfin API key (Streamystats validates it against Jellyfin)
+    server_id: ""      # Streamystats server UUID (find it in Streamystats → Servers)
 ```
 
 ### Environment Variables
@@ -353,7 +360,7 @@ advanced_rules:
 
 ### Watched-Based Rules
 
-Automatically clean up content based on watch history. Requires Jellystat integration.
+Automatically clean up content based on watch history. Requires Jellystat or Streamystats integration (mutually exclusive — enable only one).
 
 ```yaml
 advanced_rules:
@@ -367,7 +374,7 @@ advanced_rules:
 
 **How it works**: When `require_watched: true`, media must have at least one watch event. The retention period starts from the **last watch date**. Unwatched content is never deleted by this rule.
 
-**Integration Requirements**: Watched-based rules require Jellystat integration enabled to track watch history.
+**Integration Requirements**: Watched-based rules require either **Jellystat** or **Streamystats** enabled to track watch history — but not both at the same time (they are mutually exclusive).
 
 ### Rule Priority Order
 
