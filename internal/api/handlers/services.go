@@ -47,7 +47,7 @@ func (h *ServiceStatusHandler) CheckStatus(w http.ResponseWriter, r *http.Reques
 
 	var wg sync.WaitGroup
 	results := make([]ServiceStatus, 0)
-	resultsChan := make(chan ServiceStatus, 5)
+	resultsChan := make(chan ServiceStatus, 6)
 
 	// Helper to check service
 	checkService := func(name string, enabled bool, pinger func(context.Context) error) {
@@ -106,6 +106,13 @@ func (h *ServiceStatusHandler) CheckStatus(w http.ResponseWriter, r *http.Reques
 	go func() {
 		client := clients.NewJellystatClient(cfg.Integrations.Jellystat)
 		checkService("Jellystat", cfg.Integrations.Jellystat.Enabled, client.Ping)
+	}()
+
+	// Streamystats
+	wg.Add(1)
+	go func() {
+		client := clients.NewStreamystatsClient(cfg.Integrations.Streamystats)
+		checkService("Streamystats", cfg.Integrations.Streamystats.Enabled, client.Ping)
 	}()
 
 	// Wait for all checks to complete

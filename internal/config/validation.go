@@ -56,12 +56,21 @@ func Validate(cfg *Config) error {
 		cfg.Integrations.Radarr.Enabled ||
 		cfg.Integrations.Sonarr.Enabled ||
 		cfg.Integrations.Jellyseerr.Enabled ||
-		cfg.Integrations.Jellystat.Enabled
+		cfg.Integrations.Jellystat.Enabled ||
+		cfg.Integrations.Streamystats.Enabled
 
 	if !hasIntegration {
 		errors = append(errors, ValidationError{
 			Field:   "integrations",
 			Message: "at least one integration must be enabled",
+		})
+	}
+
+	// Enforce mutual exclusivity: only one stats provider may be enabled at a time
+	if cfg.Integrations.Jellystat.Enabled && cfg.Integrations.Streamystats.Enabled {
+		errors = append(errors, ValidationError{
+			Field:   "integrations",
+			Message: "jellystat and streamystats are mutually exclusive — only one may be enabled at a time",
 		})
 	}
 
@@ -99,6 +108,17 @@ func Validate(cfg *Config) error {
 	// Validate Jellystat
 	if cfg.Integrations.Jellystat.Enabled {
 		errors = validateIntegration(errors, "integrations.jellystat", cfg.Integrations.Jellystat.URL, cfg.Integrations.Jellystat.APIKey)
+	}
+
+	// Validate Streamystats
+	if cfg.Integrations.Streamystats.Enabled {
+		errors = validateIntegration(errors, "integrations.streamystats", cfg.Integrations.Streamystats.URL, cfg.Integrations.Streamystats.APIKey)
+		if cfg.Integrations.Streamystats.ServerID == "" {
+			errors = append(errors, ValidationError{
+				Field:   "integrations.streamystats.server_id",
+				Message: "required when enabled=true",
+			})
+		}
 	}
 
 	// Validate retention_base
@@ -238,10 +258,11 @@ func Validate(cfg *Config) error {
 				}
 
 				// Validate require_watched setting
-				if rule.RequireWatched && !cfg.Integrations.Jellystat.Enabled {
+				hasStatsProvider := cfg.Integrations.Jellystat.Enabled || cfg.Integrations.Streamystats.Enabled
+				if rule.RequireWatched && !hasStatsProvider {
 					errors = append(errors, ValidationError{
 						Field:   fmt.Sprintf("%s.require_watched", prefix),
-						Message: "require_watched=true requires Jellystat integration to be enabled",
+						Message: "require_watched=true requires a stats provider (jellystat or streamystats) to be enabled",
 					})
 				}
 			}

@@ -43,11 +43,12 @@ type SanitizedAdminConfig struct {
 
 // SanitizedIntegrationsConfig holds sanitized integration configs
 type SanitizedIntegrationsConfig struct {
-	Jellyfin   SanitizedJellyfinConfig        `json:"jellyfin"`
-	Radarr     SanitizedBaseIntegrationConfig `json:"radarr"`
-	Sonarr     SanitizedBaseIntegrationConfig `json:"sonarr"`
-	Jellyseerr SanitizedBaseIntegrationConfig `json:"jellyseerr"`
-	Jellystat  SanitizedBaseIntegrationConfig `json:"jellystat"`
+	Jellyfin     SanitizedJellyfinConfig        `json:"jellyfin"`
+	Radarr       SanitizedBaseIntegrationConfig `json:"radarr"`
+	Sonarr       SanitizedBaseIntegrationConfig `json:"sonarr"`
+	Jellyseerr   SanitizedBaseIntegrationConfig `json:"jellyseerr"`
+	Jellystat    SanitizedBaseIntegrationConfig `json:"jellystat"`
+	Streamystats SanitizedStreamystatsConfig    `json:"streamystats"`
 }
 
 // SanitizedBaseIntegrationConfig holds sanitized base integration config
@@ -56,6 +57,16 @@ type SanitizedBaseIntegrationConfig struct {
 	URL       string `json:"url"`
 	HasAPIKey bool   `json:"has_api_key"`
 	Timeout   string `json:"timeout"`
+}
+
+// SanitizedStreamystatsConfig holds sanitized Streamystats config (base + server_id)
+type SanitizedStreamystatsConfig struct {
+	Enabled     bool   `json:"enabled"`
+	URL         string `json:"url"`
+	HasAPIKey   bool   `json:"has_api_key"`
+	Timeout     string `json:"timeout"`
+	HasServerID bool   `json:"has_server_id"`
+	ServerID    string `json:"server_id"`
 }
 
 // SanitizedJellyfinConfig holds sanitized Jellyfin config
@@ -121,6 +132,14 @@ func (h *ConfigHandler) GetConfig(w http.ResponseWriter, r *http.Request) {
 				HasAPIKey: cfg.Integrations.Jellystat.APIKey != "",
 				Timeout:   cfg.Integrations.Jellystat.Timeout,
 			},
+			Streamystats: SanitizedStreamystatsConfig{
+				Enabled:     cfg.Integrations.Streamystats.Enabled,
+				URL:         cfg.Integrations.Streamystats.URL,
+				HasAPIKey:   cfg.Integrations.Streamystats.APIKey != "",
+				Timeout:     cfg.Integrations.Streamystats.Timeout,
+				HasServerID: cfg.Integrations.Streamystats.ServerID != "",
+				ServerID:    cfg.Integrations.Streamystats.ServerID,
+			},
 		},
 	}
 
@@ -149,11 +168,12 @@ type UpdateAdminConfig struct {
 
 // UpdateIntegrationsConfig holds updatable integration configs
 type UpdateIntegrationsConfig struct {
-	Jellyfin   *UpdateJellyfinConfig        `json:"jellyfin,omitempty"`
-	Radarr     *UpdateBaseIntegrationConfig `json:"radarr,omitempty"`
-	Sonarr     *UpdateBaseIntegrationConfig `json:"sonarr,omitempty"`
-	Jellyseerr *UpdateBaseIntegrationConfig `json:"jellyseerr,omitempty"`
-	Jellystat  *UpdateBaseIntegrationConfig `json:"jellystat,omitempty"`
+	Jellyfin     *UpdateJellyfinConfig        `json:"jellyfin,omitempty"`
+	Radarr       *UpdateBaseIntegrationConfig `json:"radarr,omitempty"`
+	Sonarr       *UpdateBaseIntegrationConfig `json:"sonarr,omitempty"`
+	Jellyseerr   *UpdateBaseIntegrationConfig `json:"jellyseerr,omitempty"`
+	Jellystat    *UpdateBaseIntegrationConfig `json:"jellystat,omitempty"`
+	Streamystats *UpdateStreamystatsConfig    `json:"streamystats,omitempty"`
 }
 
 // UpdateBaseIntegrationConfig holds updatable base integration config
@@ -162,6 +182,15 @@ type UpdateBaseIntegrationConfig struct {
 	URL     *string `json:"url,omitempty"`
 	APIKey  *string `json:"api_key,omitempty"`
 	Timeout *string `json:"timeout,omitempty"`
+}
+
+// UpdateStreamystatsConfig holds updatable Streamystats config (base + server_id)
+type UpdateStreamystatsConfig struct {
+	Enabled  *bool   `json:"enabled,omitempty"`
+	URL      *string `json:"url,omitempty"`
+	APIKey   *string `json:"api_key,omitempty"`
+	Timeout  *string `json:"timeout,omitempty"`
+	ServerID *string `json:"server_id,omitempty"`
 }
 
 // UpdateJellyfinConfig holds updatable Jellyfin config
@@ -313,6 +342,24 @@ func (h *ConfigHandler) UpdateConfig(w http.ResponseWriter, r *http.Request) {
 			}
 			if req.Integrations.Jellystat.Timeout != nil {
 				newCfg.Integrations.Jellystat.Timeout = *req.Integrations.Jellystat.Timeout
+			}
+		}
+
+		if req.Integrations.Streamystats != nil {
+			if req.Integrations.Streamystats.Enabled != nil {
+				newCfg.Integrations.Streamystats.Enabled = *req.Integrations.Streamystats.Enabled
+			}
+			if req.Integrations.Streamystats.URL != nil {
+				newCfg.Integrations.Streamystats.URL = *req.Integrations.Streamystats.URL
+			}
+			if req.Integrations.Streamystats.APIKey != nil {
+				newCfg.Integrations.Streamystats.APIKey = *req.Integrations.Streamystats.APIKey
+			}
+			if req.Integrations.Streamystats.Timeout != nil {
+				newCfg.Integrations.Streamystats.Timeout = *req.Integrations.Streamystats.Timeout
+			}
+			if req.Integrations.Streamystats.ServerID != nil {
+				newCfg.Integrations.Streamystats.ServerID = *req.Integrations.Streamystats.ServerID
 			}
 		}
 	}

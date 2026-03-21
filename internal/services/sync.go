@@ -32,7 +32,7 @@ type SyncEngine struct {
 	radarrClient          *clients.RadarrClient
 	sonarrClient          *clients.SonarrClient
 	jellyseerrClient      *clients.JellyseerrClient
-	jellystatClient       *clients.JellystatClient
+	statsClient           clients.StatsProvider
 	symlinkLibraryManager *SymlinkLibraryManager
 
 	mediaLibrary     map[string]models.Media
@@ -81,7 +81,10 @@ func NewSyncEngine(
 		engine.jellyseerrClient = clients.NewJellyseerrClient(cfg.Integrations.Jellyseerr)
 	}
 	if cfg.Integrations.Jellystat.Enabled {
-		engine.jellystatClient = clients.NewJellystatClient(cfg.Integrations.Jellystat)
+		engine.statsClient = clients.NewJellystatClient(cfg.Integrations.Jellystat)
+	}
+	if cfg.Integrations.Streamystats.Enabled {
+		engine.statsClient = clients.NewStreamystatsClient(cfg.Integrations.Streamystats)
 	}
 
 	// Initialize disk monitor if disk threshold feature is enabled.
@@ -297,11 +300,11 @@ func (e *SyncEngine) FullSync(ctx context.Context) error {
 		}
 	}
 
-	// Sync detailed watch history from Jellystat
-	if e.jellystatClient != nil {
-		if err := e.syncJellystat(ctx); err != nil {
+	// Sync detailed watch history from the active stats provider (Jellystat or Streamystats)
+	if e.statsClient != nil {
+		if err := e.syncStats(ctx); err != nil {
 			lastErr = err
-			log.Error().Err(err).Msg("Failed to sync Jellystat")
+			log.Error().Err(err).Msg("Failed to sync stats provider")
 		}
 	}
 
@@ -827,9 +830,20 @@ func (e *SyncEngine) syncJellyseerr(ctx context.Context) error {
 	return nil
 }
 
-// syncJellystat syncs detailed watch history from Jellystat
-func (e *SyncEngine) syncJellystat(ctx context.Context) error {
-	history, err := e.jellystatClient.GetHistory(ctx)
+// syncStats syncs detailed watch history from the active stats provider (Jellystat or Streamystats).
+func (e *SyncEngine) syncStats(ctx context.Context) error {
+	// Collect Jellyfin IDs of all known media items so that item-scoped providers
+	// (e.g. Streamystats) can query only the relevant items.
+	e.mediaLibraryLock.RLock()
+	jellyfinIDs := make([]string, 0, len(e.mediaLibrary))
+	for _, media := range e.mediaLibrary {
+		if media.JellyfinID != "" {
+			jellyfinIDs = append(jellyfinIDs, media.JellyfinID)
+		}
+	}
+	e.mediaLibraryLock.RUnlock()
+
+	history, err := e.statsClient.GetHistory(ctx, jellyfinIDs)
 	if err != nil {
 		return err
 	}
@@ -837,26 +851,18 @@ func (e *SyncEngine) syncJellystat(ctx context.Context) error {
 	e.mediaLibraryLock.Lock()
 	defer e.mediaLibraryLock.Unlock()
 
-	// Create a map of Jellyfin ID to most recent watch date and watch count
-	// This gives us the most accurate "last watched" timestamp per item
-	// Jellystat is the authoritative source for watch history
+	// Build per-item maps: most recent watch timestamp and total watch count.
 	lastWatchedMap := make(map[string]time.Time)
 	watchCountMap := make(map[string]int)
 
 	for _, item := range history {
-		jellyfinID := item.NowPlayingItemID
-
-		// Track the most recent watch for each Jellyfin item
-		if existing, found := lastWatchedMap[jellyfinID]; !found || item.ActivityDateInserted.After(existing) {
-			lastWatchedMap[jellyfinID] = item.ActivityDateInserted
+		if existing, found := lastWatchedMap[item.JellyfinItemID]; !found || item.WatchedAt.After(existing) {
+			lastWatchedMap[item.JellyfinItemID] = item.WatchedAt
 		}
-
-		// Count how many times this item appears in history
-		watchCountMap[jellyfinID]++
+		watchCountMap[item.JellyfinItemID]++
 	}
 
-	// Update media library with accurate watch data from Jellystat
-	// Jellystat overrides Jellyfin's watch count as the authoritative source
+	// Update media library with accurate watch data from the stats provider.
 	updatedCount := 0
 	for id, media := range e.mediaLibrary {
 		if media.JellyfinID == "" {
@@ -864,8 +870,6 @@ func (e *SyncEngine) syncJellystat(ctx context.Context) error {
 		}
 
 		if lastWatched, found := lastWatchedMap[media.JellyfinID]; found {
-			// Update both LastWatched and WatchCount from Jellystat
-			// This makes Jellystat the single source of truth for watch history
 			updated := false
 
 			if media.LastWatched.IsZero() || lastWatched.After(media.LastWatched) {
@@ -873,7 +877,6 @@ func (e *SyncEngine) syncJellystat(ctx context.Context) error {
 				updated = true
 			}
 
-			// Always set WatchCount from Jellystat to override Jellyfin's potentially incorrect value
 			if watchCount := watchCountMap[media.JellyfinID]; watchCount > 0 {
 				media.WatchCount = watchCount
 				updated = true
@@ -889,7 +892,7 @@ func (e *SyncEngine) syncJellystat(ctx context.Context) error {
 	log.Info().
 		Int("total_history_items", len(history)).
 		Int("updated_media", updatedCount).
-		Msg("Jellystat sync completed")
+		Msg("Stats provider sync completed")
 
 	return nil
 }
@@ -1196,9 +1199,17 @@ func (e *SyncEngine) ExecuteDeletions(ctx context.Context, candidates []map[stri
 
 	// Pre-fetch watch history once for all candidates to avoid O(candidates × pages) HTTP calls.
 	var watchStateMap map[string]time.Time
-	if e.jellystatClient != nil {
+	if e.statsClient != nil {
+		// Collect Jellyfin IDs from candidates so Streamystats can query per-item.
+		// Jellystat ignores this list and fetches all history in bulk.
+		var jellyfinIDs []string
+		for _, candidate := range candidates {
+			if id, ok := candidate["jellyfin_id"].(string); ok && id != "" {
+				jellyfinIDs = append(jellyfinIDs, id)
+			}
+		}
 		var err error
-		watchStateMap, err = e.buildWatchStateMap(ctx)
+		watchStateMap, err = e.buildWatchStateMap(ctx, jellyfinIDs)
 		if err != nil {
 			log.Warn().
 				Err(err).
@@ -1304,19 +1315,20 @@ func (e *SyncEngine) ExecuteDeletions(ctx context.Context, candidates []map[stri
 	return deletedCount, episodeItemsProcessed, episodeFilesDeleted, deletedItems
 }
 
-// buildWatchStateMap fetches the full watch history from Jellystat once and returns
+// buildWatchStateMap fetches watch history from the configured stats provider once and returns
 // a map of jellyfinID → latest watch timestamp. This avoids repeated full-history
 // fetches when checking multiple deletion candidates.
-func (e *SyncEngine) buildWatchStateMap(ctx context.Context) (map[string]time.Time, error) {
-	history, err := e.jellystatClient.GetHistory(ctx)
+// jellyfinIDs is passed to support per-item providers (e.g. Streamystats); bulk providers (e.g. Jellystat) ignore it.
+func (e *SyncEngine) buildWatchStateMap(ctx context.Context, jellyfinIDs []string) (map[string]time.Time, error) {
+	history, err := e.statsClient.GetHistory(ctx, jellyfinIDs)
 	if err != nil {
-		return nil, fmt.Errorf("fetching watch history from Jellystat: %w", err)
+		return nil, fmt.Errorf("fetching watch history from stats provider: %w", err)
 	}
 
 	watchMap := make(map[string]time.Time, len(history))
 	for _, item := range history {
-		if item.ActivityDateInserted.After(watchMap[item.NowPlayingItemID]) {
-			watchMap[item.NowPlayingItemID] = item.ActivityDateInserted
+		if item.WatchedAt.After(watchMap[item.JellyfinItemID]) {
+			watchMap[item.JellyfinItemID] = item.WatchedAt
 		}
 	}
 

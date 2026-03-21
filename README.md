@@ -8,7 +8,6 @@
 
 **OxiCleanarr** removes media clutter from your Jellyfin server with the power and effectiveness you'd expect from a product endorsed by Billy Mays himself! Just like OxiClean tackles tough stains, OxiCleanarr tackles your unwatched media backlog.
 
-> **Built with AI:** This project was created ~90% with AI assistance using [OpenCode](https://opencode.ai/) and Claude 4.5 Sonnet.
 
 ## Features
 

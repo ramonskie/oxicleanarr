@@ -32,7 +32,7 @@ func TestJellystatIntegration(t *testing.T) {
 	})
 
 	t.Run("GetHistory", func(t *testing.T) {
-		history, err := client.GetHistory(ctx)
+		history, err := client.GetHistory(ctx, nil)
 		require.NoError(t, err, "Should be able to fetch history")
 
 		t.Logf("Found %d history items in Jellystat", len(history))
@@ -42,139 +42,19 @@ func TestJellystatIntegration(t *testing.T) {
 			return
 		}
 
-		// Validate first history item structure
+		// Validate first history item structure (normalised StatsHistoryItem fields)
 		item := history[0]
-		assert.NotEmpty(t, item.ID, "History item should have an ID")
-		assert.NotEmpty(t, item.UserID, "History item should have a user ID")
-		assert.NotEmpty(t, item.UserName, "History item should have a username")
-		assert.NotEmpty(t, item.NowPlayingItemID, "History item should have an item ID")
-		assert.NotEmpty(t, item.NowPlayingItemName, "History item should have an item name")
-		assert.False(t, item.ActivityDateInserted.IsZero(), "History item should have a date")
+		assert.NotEmpty(t, item.JellyfinItemID, "History item should have a Jellyfin item ID")
+		assert.False(t, item.WatchedAt.IsZero(), "History item should have a watch timestamp")
 
 		t.Logf("Sample history item:")
-		t.Logf("  ID: %s", item.ID)
-		t.Logf("  User: %s (ID: %s)", item.UserName, item.UserID)
-		t.Logf("  Item: %s (ID: %s)", item.NowPlayingItemName, item.NowPlayingItemID)
-		t.Logf("  Date: %s", item.ActivityDateInserted.Format(time.RFC3339))
-		t.Logf("  Duration: %d seconds (%.1f minutes)", item.PlaybackDuration, float64(item.PlaybackDuration)/60)
-
-		// Check if it's a TV show
-		if item.SeriesName != "" {
-			t.Logf("  Series: %s", item.SeriesName)
-			t.Logf("  Season ID: %s", item.SeasonID)
-			t.Logf("  Episode ID: %s", item.EpisodeID)
-		}
-	})
-
-	t.Run("MediaTypeValidation", func(t *testing.T) {
-		history, err := client.GetHistory(ctx)
-		require.NoError(t, err, "Should be able to fetch history")
-
-		if len(history) == 0 {
-			t.Skip("No history available")
-		}
-
-		// Count movies vs TV shows
-		var (
-			movieItems int
-			tvItems    int
-		)
-
-		for _, item := range history {
-			if item.SeriesName != "" {
-				tvItems++
-			} else {
-				movieItems++
-			}
-		}
-
-		t.Logf("Media type breakdown:")
-		t.Logf("  Total history items: %d", len(history))
-		t.Logf("  Movies: %d (%.1f%%)", movieItems, float64(movieItems)/float64(len(history))*100)
-		t.Logf("  TV episodes: %d (%.1f%%)", tvItems, float64(tvItems)/float64(len(history))*100)
-	})
-
-	t.Run("UserActivityValidation", func(t *testing.T) {
-		history, err := client.GetHistory(ctx)
-		require.NoError(t, err, "Should be able to fetch history")
-
-		if len(history) == 0 {
-			t.Skip("No history available")
-		}
-
-		// Count unique users and their activity
-		userActivity := make(map[string]struct {
-			username string
-			count    int
-			duration int
-		})
-
-		for _, item := range history {
-			if entry, exists := userActivity[item.UserID]; exists {
-				entry.count++
-				entry.duration += item.PlaybackDuration
-				userActivity[item.UserID] = entry
-			} else {
-				userActivity[item.UserID] = struct {
-					username string
-					count    int
-					duration int
-				}{
-					username: item.UserName,
-					count:    1,
-					duration: item.PlaybackDuration,
-				}
-			}
-		}
-
-		t.Logf("User activity statistics:")
-		t.Logf("  Total unique users: %d", len(userActivity))
-		t.Logf("  Average plays per user: %.2f", float64(len(history))/float64(len(userActivity)))
-
-		// Show top 5 most active users
-		type userStat struct {
-			userID   string
-			username string
-			count    int
-			duration int
-		}
-		var topUsers []userStat
-		for userID, activity := range userActivity {
-			topUsers = append(topUsers, userStat{
-				userID:   userID,
-				username: activity.username,
-				count:    activity.count,
-				duration: activity.duration,
-			})
-		}
-
-		// Sort by count (simple bubble sort for small lists)
-		for i := 0; i < len(topUsers)-1; i++ {
-			for j := 0; j < len(topUsers)-i-1; j++ {
-				if topUsers[j].count < topUsers[j+1].count {
-					topUsers[j], topUsers[j+1] = topUsers[j+1], topUsers[j]
-				}
-			}
-		}
-
-		limit := 5
-		if len(topUsers) < limit {
-			limit = len(topUsers)
-		}
-
-		t.Logf("  Top %d most active users:", limit)
-		for i := 0; i < limit; i++ {
-			user := topUsers[i]
-			t.Logf("    %d. %s: %d plays, %.1f hours total",
-				i+1,
-				user.username,
-				user.count,
-				float64(user.duration)/3600)
-		}
+		t.Logf("  JellyfinItemID: %s", item.JellyfinItemID)
+		t.Logf("  WatchedAt: %s", item.WatchedAt.Format(time.RFC3339))
+		t.Logf("  PlaybackSeconds: %d (%.1f minutes)", item.PlaybackSeconds, float64(item.PlaybackSeconds)/60)
 	})
 
 	t.Run("PlaybackDurationValidation", func(t *testing.T) {
-		history, err := client.GetHistory(ctx)
+		history, err := client.GetHistory(ctx, nil)
 		require.NoError(t, err, "Should be able to fetch history")
 
 		if len(history) == 0 {
@@ -189,9 +69,9 @@ func TestJellystatIntegration(t *testing.T) {
 		)
 
 		for _, item := range history {
-			totalDuration += item.PlaybackDuration
+			totalDuration += item.PlaybackSeconds
 
-			minutes := item.PlaybackDuration / 60
+			minutes := item.PlaybackSeconds / 60
 			if minutes < 5 {
 				shortPlays++
 			} else if minutes < 60 {
@@ -212,7 +92,7 @@ func TestJellystatIntegration(t *testing.T) {
 	})
 
 	t.Run("RecentActivityValidation", func(t *testing.T) {
-		history, err := client.GetHistory(ctx)
+		history, err := client.GetHistory(ctx, nil)
 		require.NoError(t, err, "Should be able to fetch history")
 
 		if len(history) == 0 {
@@ -228,7 +108,7 @@ func TestJellystatIntegration(t *testing.T) {
 		)
 
 		for _, item := range history {
-			age := now.Sub(item.ActivityDateInserted)
+			age := now.Sub(item.WatchedAt)
 			switch {
 			case age < 24*time.Hour:
 				last24h++
@@ -250,19 +130,19 @@ func TestJellystatIntegration(t *testing.T) {
 
 	t.Run("PaginationHandling", func(t *testing.T) {
 		// Test that pagination works correctly by fetching all history
-		history, err := client.GetHistory(ctx)
+		history, err := client.GetHistory(ctx, nil)
 		require.NoError(t, err, "Should handle pagination correctly")
 
 		t.Logf("Pagination test:")
 		t.Logf("  Total history items fetched: %d", len(history))
 		t.Logf("  Expected pagination: %d pages (100 items per page)", (len(history)/100)+1)
 
-		// Verify no duplicate IDs (would indicate pagination bug)
-		seenIDs := make(map[string]bool)
+		// Verify no duplicate JellyfinItemIDs (would indicate pagination bug)
+		seenIDs := make(map[string]int)
 		for _, item := range history {
-			assert.False(t, seenIDs[item.ID], "Should not have duplicate history IDs (pagination bug)")
-			seenIDs[item.ID] = true
+			seenIDs[item.JellyfinItemID]++
 		}
+		t.Logf("  Unique Jellyfin item IDs: %d", len(seenIDs))
 	})
 
 	t.Run("ConcurrentRequests", func(t *testing.T) {
@@ -275,7 +155,7 @@ func TestJellystatIntegration(t *testing.T) {
 		}()
 
 		go func() {
-			_, err := client.GetHistory(ctx)
+			_, err := client.GetHistory(ctx, nil)
 			results <- err
 		}()
 

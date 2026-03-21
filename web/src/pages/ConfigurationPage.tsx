@@ -41,6 +41,7 @@ export default function ConfigurationPage() {
     sonarr: false,
     jellyseerr: false,
     jellystat: false,
+    streamystats: false,
   });
 
   // Track API keys being updated (not sent from backend for security)
@@ -50,6 +51,7 @@ export default function ConfigurationPage() {
     sonarr: '',
     jellyseerr: '',
     jellystat: '',
+    streamystats: '',
   });
 
   // Track password change
@@ -84,6 +86,7 @@ export default function ConfigurationPage() {
         sonarr: '',
         jellyseerr: '',
         jellystat: '',
+        streamystats: '',
       });
       setNewPassword('');
       setConfirmPassword('');
@@ -172,6 +175,10 @@ export default function ConfigurationPage() {
         jellystat: {
           ...formData.integrations?.jellystat,
           ...(apiKeys.jellystat ? { api_key: apiKeys.jellystat } : {}),
+        },
+        streamystats: {
+          ...formData.integrations?.streamystats,
+          ...(apiKeys.streamystats ? { api_key: apiKeys.streamystats } : {}),
         },
       },
     };
@@ -690,6 +697,97 @@ export default function ConfigurationPage() {
           {renderIntegrationSection('Sonarr', 'sonarr', formData.integrations?.sonarr)}
           {renderIntegrationSection('Jellyseerr', 'jellyseerr', formData.integrations?.jellyseerr)}
           {renderIntegrationSection('Jellystat', 'jellystat', formData.integrations?.jellystat)}
+
+          {/* Mutual exclusivity warning */}
+          {formData.integrations?.jellystat?.enabled && formData.integrations?.streamystats?.enabled && (
+            <div className="rounded-md border border-yellow-400 bg-yellow-50 dark:bg-yellow-950 p-4 text-sm text-yellow-800 dark:text-yellow-200">
+              <strong>Warning:</strong> Both Jellystat and Streamystats are enabled. Only one stats provider can be active at a time. Disable one before saving.
+            </div>
+          )}
+
+          {/* Streamystats Integration */}
+          <Card>
+            <CardHeader>
+              <CardTitle>Streamystats</CardTitle>
+              <CardDescription>Configure Streamystats integration settings</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <label className="text-sm font-medium">Enabled</label>
+                  <p className="text-sm text-gray-500">Enable Streamystats integration</p>
+                </div>
+                <input
+                  type="checkbox"
+                  checked={formData.integrations?.streamystats?.enabled || false}
+                  onChange={(e) => handleIntegrationChange('streamystats', 'enabled', e.target.checked)}
+                  className="h-4 w-4"
+                />
+              </div>
+
+              <div>
+                <label className="text-sm font-medium">URL</label>
+                <p className="text-sm text-gray-500 mb-2">Base URL for Streamystats API</p>
+                <Input
+                  type="text"
+                  value={formData.integrations?.streamystats?.url || ''}
+                  onChange={(e) => handleIntegrationChange('streamystats', 'url', e.target.value)}
+                  placeholder="https://streamystats.example.com"
+                />
+              </div>
+
+              <div>
+                <label className="text-sm font-medium">API Key (Jellyfin API Key)</label>
+                <p className="text-sm text-gray-500 mb-2">
+                  {formData.integrations?.streamystats?.has_api_key
+                    ? 'API key is configured (leave blank to keep current)'
+                    : 'No API key configured'}
+                </p>
+                <div className="flex gap-2">
+                  <Input
+                    type={showApiKeys.streamystats ? 'text' : 'password'}
+                    value={apiKeys.streamystats}
+                    onChange={(e) => setApiKeys(prev => ({ ...prev, streamystats: e.target.value }))}
+                    placeholder={formData.integrations?.streamystats?.has_api_key ? '••••••••••••••••' : 'Enter Jellyfin API key'}
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="icon"
+                    onClick={() => toggleApiKeyVisibility('streamystats')}
+                  >
+                    {showApiKeys.streamystats ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                  </Button>
+                </div>
+              </div>
+
+              <div>
+                <label className="text-sm font-medium">Server ID</label>
+                <p className="text-sm text-gray-500 mb-2">
+                  {formData.integrations?.streamystats?.has_server_id
+                    ? 'Server ID is configured'
+                    : 'Streamystats server UUID (find it in Streamystats → Servers)'}
+                </p>
+                <Input
+                  type="text"
+                  value={formData.integrations?.streamystats?.server_id || ''}
+                  onChange={(e) => handleIntegrationChange('streamystats', 'server_id', e.target.value)}
+                  placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+                />
+              </div>
+
+              <div>
+                <label className="text-sm font-medium">Timeout</label>
+                <p className="text-sm text-gray-500 mb-2">Request timeout (e.g., "30s", "1m")</p>
+                <Input
+                  type="text"
+                  value={formData.integrations?.streamystats?.timeout || '30s'}
+                  onChange={(e) => handleIntegrationChange('streamystats', 'timeout', e.target.value)}
+                  placeholder="30s"
+                />
+              </div>
+            </CardContent>
+          </Card>
           </div>
         )}
 

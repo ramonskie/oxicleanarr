@@ -171,6 +171,7 @@ export interface IntegrationsConfig {
   sonarr: BaseIntegration;
   jellyseerr: BaseIntegration;
   jellystat: BaseIntegration;
+  streamystats: StreamystatsIntegration;
 }
 
 export interface BaseIntegration {
@@ -182,6 +183,11 @@ export interface BaseIntegration {
 
 export interface JellyfinIntegration extends BaseIntegration {
   symlink_library: SymlinkLibraryConfig;
+}
+
+export interface StreamystatsIntegration extends BaseIntegration {
+  has_server_id: boolean;
+  server_id: string;
 }
 
 export interface SymlinkLibraryConfig {
@@ -226,6 +232,7 @@ export interface UpdateConfigRequest {
     sonarr?: Partial<BaseIntegration & { api_key?: string }>;
     jellyseerr?: Partial<BaseIntegration & { api_key?: string }>;
     jellystat?: Partial<BaseIntegration & { api_key?: string }>;
+    streamystats?: Partial<StreamystatsIntegration & { api_key?: string }>;
   }>;
   advanced_rules?: AdvancedRule[];
 }

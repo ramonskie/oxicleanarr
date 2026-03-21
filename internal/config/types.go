@@ -57,11 +57,12 @@ type ServerConfig struct {
 
 // IntegrationsConfig holds all integration settings
 type IntegrationsConfig struct {
-	Jellyfin   JellyfinConfig   `mapstructure:"jellyfin" yaml:"jellyfin" json:"jellyfin"`
-	Radarr     RadarrConfig     `mapstructure:"radarr" yaml:"radarr" json:"radarr"`
-	Sonarr     SonarrConfig     `mapstructure:"sonarr" yaml:"sonarr" json:"sonarr"`
-	Jellyseerr JellyseerrConfig `mapstructure:"jellyseerr" yaml:"jellyseerr" json:"jellyseerr"`
-	Jellystat  JellystatConfig  `mapstructure:"jellystat" yaml:"jellystat" json:"jellystat"`
+	Jellyfin     JellyfinConfig     `mapstructure:"jellyfin" yaml:"jellyfin" json:"jellyfin"`
+	Radarr       RadarrConfig       `mapstructure:"radarr" yaml:"radarr" json:"radarr"`
+	Sonarr       SonarrConfig       `mapstructure:"sonarr" yaml:"sonarr" json:"sonarr"`
+	Jellyseerr   JellyseerrConfig   `mapstructure:"jellyseerr" yaml:"jellyseerr" json:"jellyseerr"`
+	Jellystat    JellystatConfig    `mapstructure:"jellystat" yaml:"jellystat" json:"jellystat"`
+	Streamystats StreamystatsConfig `mapstructure:"streamystats" yaml:"streamystats" json:"streamystats"`
 }
 
 // BaseIntegrationConfig holds common integration settings
@@ -105,6 +106,15 @@ type JellyseerrConfig struct {
 // JellystatConfig holds Jellystat integration settings
 type JellystatConfig struct {
 	BaseIntegrationConfig `mapstructure:",squash" yaml:",inline" json:",inline"`
+}
+
+// StreamystatsConfig holds Streamystats integration settings.
+// ServerID is the Streamystats server UUID (required when enabled).
+// APIKey should be set to the Jellyfin API key — Streamystats validates it
+// live against the Jellyfin /System/Info endpoint.
+type StreamystatsConfig struct {
+	BaseIntegrationConfig `mapstructure:",squash" yaml:",inline" json:",inline"`
+	ServerID              string `mapstructure:"server_id" yaml:"server_id" json:"server_id"`
 }
 
 // AdvancedRule represents tag-based, episode, or user-based rules

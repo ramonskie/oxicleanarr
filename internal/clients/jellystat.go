@@ -36,9 +36,11 @@ func NewJellystatClient(cfg config.JellystatConfig) *JellystatClient {
 	}
 }
 
-// GetHistory fetches watch history from Jellystat (handles pagination)
-func (c *JellystatClient) GetHistory(ctx context.Context) ([]JellystatHistoryItem, error) {
-	var allHistory []JellystatHistoryItem
+// GetHistory fetches the complete watch history from Jellystat (handles pagination).
+// itemIDs is accepted for interface compatibility but is ignored — Jellystat returns
+// bulk history for all items and filtering happens in the sync layer.
+func (c *JellystatClient) GetHistory(ctx context.Context, _ []string) ([]StatsHistoryItem, error) {
+	var rawHistory []JellystatHistoryItem
 	page := 1
 	pageSize := 100
 
@@ -78,7 +80,7 @@ func (c *JellystatClient) GetHistory(ctx context.Context) ([]JellystatHistoryIte
 			Int("results_on_page", len(result.Results)).
 			Msg("Fetched Jellystat history page")
 
-		allHistory = append(allHistory, result.Results...)
+		rawHistory = append(rawHistory, result.Results...)
 
 		// Check if we've fetched all pages
 		if page >= result.Pages || len(result.Results) == 0 {
@@ -88,11 +90,21 @@ func (c *JellystatClient) GetHistory(ctx context.Context) ([]JellystatHistoryIte
 		page++
 	}
 
+	// Normalise to the shared StatsHistoryItem type
+	items := make([]StatsHistoryItem, 0, len(rawHistory))
+	for _, h := range rawHistory {
+		items = append(items, StatsHistoryItem{
+			JellyfinItemID:  h.NowPlayingItemID,
+			WatchedAt:       h.ActivityDateInserted,
+			PlaybackSeconds: h.PlaybackDuration,
+		})
+	}
+
 	log.Debug().
-		Int("total_history_items", len(allHistory)).
+		Int("total_history_items", len(items)).
 		Msg("Fetched all watch history from Jellystat")
 
-	return allHistory, nil
+	return items, nil
 }
 
 // Ping checks if Jellystat is reachable
