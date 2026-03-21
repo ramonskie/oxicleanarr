@@ -68,3 +68,9 @@ AGENTS.md.DO-NOT-USE
 
 devbox*
 docs/todo's
+.tmp/external-context/streamystats/api-reference.md
+.tmp/external-context/streamystats/auth.md
+.tmp/external-context/streamystats/maintainerr-integration-note.md
+.tmp/external-context/streamystats/sessions-schema.md
+.tmp/external-context/streamystats/watch-history-endpoints.md
+.tmp/sessions/2026-03-21-streamystats-provider/context.md
