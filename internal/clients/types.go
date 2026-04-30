@@ -287,8 +287,7 @@ type PluginListSymlinksResponse struct {
 
 // PluginStatusResponse represents the health check response from the plugin
 type PluginStatusResponse struct {
-	Success bool   `json:"success"`
-	Version string `json:"version,omitempty"`
+	Status  string `json:"status"`
 	Message string `json:"message,omitempty"`
 }
 

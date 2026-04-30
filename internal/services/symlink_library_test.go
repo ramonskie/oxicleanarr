@@ -96,8 +96,7 @@ func (m *mockJellyfinClientForSymlink) GetTVShows(ctx context.Context) ([]client
 // Plugin methods for symlink management
 func (m *mockJellyfinClientForSymlink) CheckPluginStatus(ctx context.Context) (*clients.PluginStatusResponse, error) {
 	return &clients.PluginStatusResponse{
-		Success: true,
-		Version: "1.0.0",
+		Status: "ok",
 	}, nil
 }
 

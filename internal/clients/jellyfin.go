@@ -52,14 +52,15 @@ func (c *JellyfinClient) GetTVShows(ctx context.Context) ([]JellyfinItem, error)
 
 // getItems fetches items of a specific type
 func (c *JellyfinClient) getItems(ctx context.Context, itemType string) ([]JellyfinItem, error) {
-	url := fmt.Sprintf("%s/Items?IncludeItemTypes=%s&Recursive=true&Fields=Path,DateCreated,ProviderIds&api_key=%s",
-		c.baseURL, itemType, c.apiKey)
+	url := fmt.Sprintf("%s/Items?IncludeItemTypes=%s&Recursive=true&Fields=Path,DateCreated,ProviderIds",
+		c.baseURL, itemType)
 
 	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {
 		return nil, fmt.Errorf("creating request: %w", err)
 	}
 
+	req.Header.Set("X-Emby-Token", c.apiKey)
 	req.Header.Set("Accept", "application/json")
 
 	resp, err := c.client.Do(req)
@@ -87,14 +88,15 @@ func (c *JellyfinClient) getItems(ctx context.Context, itemType string) ([]Jelly
 
 // GetUserData fetches user-specific data for an item
 func (c *JellyfinClient) GetUserData(ctx context.Context, userID, itemID string) (*JellyfinUserData, error) {
-	url := fmt.Sprintf("%s/Users/%s/Items/%s?api_key=%s",
-		c.baseURL, userID, itemID, c.apiKey)
+	url := fmt.Sprintf("%s/Users/%s/Items/%s",
+		c.baseURL, userID, itemID)
 
 	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {
 		return nil, fmt.Errorf("creating request: %w", err)
 	}
 
+	req.Header.Set("X-Emby-Token", c.apiKey)
 	req.Header.Set("Accept", "application/json")
 
 	resp, err := c.client.Do(req)
@@ -117,12 +119,14 @@ func (c *JellyfinClient) GetUserData(ctx context.Context, userID, itemID string)
 
 // DeleteItem deletes an item from Jellyfin
 func (c *JellyfinClient) DeleteItem(ctx context.Context, itemID string) error {
-	url := fmt.Sprintf("%s/Items/%s?api_key=%s", c.baseURL, itemID, c.apiKey)
+	url := fmt.Sprintf("%s/Items/%s", c.baseURL, itemID)
 
 	req, err := http.NewRequestWithContext(ctx, "DELETE", url, nil)
 	if err != nil {
 		return fmt.Errorf("creating request: %w", err)
 	}
+
+	req.Header.Set("X-Emby-Token", c.apiKey)
 
 	resp, err := c.client.Do(req)
 	if err != nil {
@@ -140,12 +144,14 @@ func (c *JellyfinClient) DeleteItem(ctx context.Context, itemID string) error {
 
 // Ping checks if Jellyfin is reachable
 func (c *JellyfinClient) Ping(ctx context.Context) error {
-	url := fmt.Sprintf("%s/System/Info?api_key=%s", c.baseURL, c.apiKey)
+	url := fmt.Sprintf("%s/System/Info", c.baseURL)
 
 	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {
 		return fmt.Errorf("creating request: %w", err)
 	}
+
+	req.Header.Set("X-Emby-Token", c.apiKey)
 
 	resp, err := c.client.Do(req)
 	if err != nil {
@@ -162,13 +168,14 @@ func (c *JellyfinClient) Ping(ctx context.Context) error {
 
 // GetVirtualFolders lists all virtual folders (libraries) in Jellyfin
 func (c *JellyfinClient) GetVirtualFolders(ctx context.Context) ([]JellyfinVirtualFolder, error) {
-	reqURL := fmt.Sprintf("%s/Library/VirtualFolders?api_key=%s", c.baseURL, c.apiKey)
+	reqURL := fmt.Sprintf("%s/Library/VirtualFolders", c.baseURL)
 
 	req, err := http.NewRequestWithContext(ctx, "GET", reqURL, nil)
 	if err != nil {
 		return nil, fmt.Errorf("creating request: %w", err)
 	}
 
+	req.Header.Set("X-Emby-Token", c.apiKey)
 	req.Header.Set("Accept", "application/json")
 
 	resp, err := c.client.Do(req)
@@ -215,13 +222,14 @@ func (c *JellyfinClient) CreateVirtualFolder(ctx context.Context, name, collecti
 		params.Add("paths", path)
 	}
 
-	reqURL := fmt.Sprintf("%s/Library/VirtualFolders?%s&api_key=%s", c.baseURL, params.Encode(), c.apiKey)
+	reqURL := fmt.Sprintf("%s/Library/VirtualFolders?%s", c.baseURL, params.Encode())
 
 	req, err := http.NewRequestWithContext(ctx, "POST", reqURL, nil)
 	if err != nil {
 		return fmt.Errorf("creating request: %w", err)
 	}
 
+	req.Header.Set("X-Emby-Token", c.apiKey)
 	req.Header.Set("Content-Type", "application/json")
 
 	log.Debug().
@@ -257,13 +265,15 @@ func (c *JellyfinClient) DeleteVirtualFolder(ctx context.Context, name string, d
 		return nil
 	}
 
-	reqURL := fmt.Sprintf("%s/Library/VirtualFolders?name=%s&api_key=%s",
-		c.baseURL, url.QueryEscape(name), c.apiKey)
+	reqURL := fmt.Sprintf("%s/Library/VirtualFolders?name=%s",
+		c.baseURL, url.QueryEscape(name))
 
 	req, err := http.NewRequestWithContext(ctx, "DELETE", reqURL, nil)
 	if err != nil {
 		return fmt.Errorf("creating request: %w", err)
 	}
+
+	req.Header.Set("X-Emby-Token", c.apiKey)
 
 	log.Debug().
 		Str("library_name", name).
@@ -306,14 +316,15 @@ func (c *JellyfinClient) AddPathToVirtualFolder(ctx context.Context, name, path 
 		return fmt.Errorf("marshaling request: %w", err)
 	}
 
-	reqURL := fmt.Sprintf("%s/Library/VirtualFolders/Paths?name=%s&api_key=%s",
-		c.baseURL, url.QueryEscape(name), c.apiKey)
+	reqURL := fmt.Sprintf("%s/Library/VirtualFolders/Paths?name=%s",
+		c.baseURL, url.QueryEscape(name))
 
 	req, err := http.NewRequestWithContext(ctx, "POST", reqURL, nil)
 	if err != nil {
 		return fmt.Errorf("creating request: %w", err)
 	}
 
+	req.Header.Set("X-Emby-Token", c.apiKey)
 	req.Header.Set("Content-Type", "application/json")
 
 	log.Debug().
@@ -351,12 +362,14 @@ func (c *JellyfinClient) RefreshLibrary(ctx context.Context, dryRun bool) error 
 		return nil
 	}
 
-	reqURL := fmt.Sprintf("%s/Library/Refresh?api_key=%s", c.baseURL, c.apiKey)
+	reqURL := fmt.Sprintf("%s/Library/Refresh", c.baseURL)
 
 	req, err := http.NewRequestWithContext(ctx, "POST", reqURL, nil)
 	if err != nil {
 		return fmt.Errorf("creating request: %w", err)
 	}
+
+	req.Header.Set("X-Emby-Token", c.apiKey)
 
 	log.Debug().Msg("Triggering library refresh in Jellyfin")
 
@@ -385,12 +398,14 @@ func (c *JellyfinClient) RefreshLibraryByID(ctx context.Context, libraryID strin
 		return nil
 	}
 
-	reqURL := fmt.Sprintf("%s/Items/%s/Refresh?Recursive=true&api_key=%s", c.baseURL, libraryID, c.apiKey)
+	reqURL := fmt.Sprintf("%s/Items/%s/Refresh?Recursive=true", c.baseURL, libraryID)
 
 	req, err := http.NewRequestWithContext(ctx, "POST", reqURL, nil)
 	if err != nil {
 		return fmt.Errorf("creating request: %w", err)
 	}
+
+	req.Header.Set("X-Emby-Token", c.apiKey)
 
 	log.Debug().
 		Str("library_id", libraryID).
@@ -419,7 +434,7 @@ func (c *JellyfinClient) RefreshLibraryByID(ctx context.Context, libraryID strin
 
 // CheckPluginStatus checks if the OxiCleanarr Bridge Plugin is installed and responsive
 func (c *JellyfinClient) CheckPluginStatus(ctx context.Context) (*PluginStatusResponse, error) {
-	reqURL := fmt.Sprintf("%s/api/oxicleanarr/status?api_key=%s", c.baseURL, c.apiKey)
+	reqURL := fmt.Sprintf("%s/api/oxicleanarr/status", c.baseURL)
 
 	req, err := http.NewRequestWithContext(ctx, "GET", reqURL, nil)
 	if err != nil {
@@ -444,7 +459,7 @@ func (c *JellyfinClient) CheckPluginStatus(ctx context.Context) (*PluginStatusRe
 	}
 
 	log.Debug().
-		Str("version", statusResp.Version).
+		Str("status", statusResp.Status).
 		Msg("OxiCleanarr Bridge Plugin is available")
 
 	return &statusResp, nil
@@ -478,13 +493,14 @@ func (c *JellyfinClient) AddSymlinks(ctx context.Context, items []PluginSymlinkI
 		return nil, fmt.Errorf("marshaling request: %w", err)
 	}
 
-	reqURL := fmt.Sprintf("%s/api/oxicleanarr/symlinks/add?api_key=%s", c.baseURL, c.apiKey)
+	reqURL := fmt.Sprintf("%s/api/oxicleanarr/symlinks/add", c.baseURL)
 
 	req, err := http.NewRequestWithContext(ctx, "POST", reqURL, bytes.NewReader(bodyBytes))
 	if err != nil {
 		return nil, fmt.Errorf("creating request: %w", err)
 	}
 
+	req.Header.Set("X-Emby-Token", c.apiKey)
 	req.Header.Set("Content-Type", "application/json")
 
 	log.Debug().
@@ -564,13 +580,14 @@ func (c *JellyfinClient) RemoveSymlinks(ctx context.Context, paths []string, dry
 		return nil, fmt.Errorf("marshaling request: %w", err)
 	}
 
-	reqURL := fmt.Sprintf("%s/api/oxicleanarr/symlinks/remove?api_key=%s", c.baseURL, c.apiKey)
+	reqURL := fmt.Sprintf("%s/api/oxicleanarr/symlinks/remove", c.baseURL)
 
 	req, err := http.NewRequestWithContext(ctx, "POST", reqURL, bytes.NewReader(bodyBytes))
 	if err != nil {
 		return nil, fmt.Errorf("creating request: %w", err)
 	}
 
+	req.Header.Set("X-Emby-Token", c.apiKey)
 	req.Header.Set("Content-Type", "application/json")
 
 	log.Debug().
@@ -633,13 +650,15 @@ func (c *JellyfinClient) RemoveSymlinks(ctx context.Context, paths []string, dry
 
 // ListSymlinks lists symlinks in a directory via the OxiCleanarr Bridge Plugin
 func (c *JellyfinClient) ListSymlinks(ctx context.Context, directory string) (*PluginListSymlinksResponse, error) {
-	reqURL := fmt.Sprintf("%s/api/oxicleanarr/symlinks/list?directory=%s&api_key=%s",
-		c.baseURL, url.QueryEscape(directory), c.apiKey)
+	reqURL := fmt.Sprintf("%s/api/oxicleanarr/symlinks/list?directory=%s",
+		c.baseURL, url.QueryEscape(directory))
 
 	req, err := http.NewRequestWithContext(ctx, "GET", reqURL, nil)
 	if err != nil {
 		return nil, fmt.Errorf("creating request: %w", err)
 	}
+
+	req.Header.Set("X-Emby-Token", c.apiKey)
 
 	log.Debug().
 		Str("directory", directory).
@@ -836,19 +855,25 @@ func (c *JellyfinClient) DeleteDirectory(ctx context.Context, path string, force
 // The caller is responsible for closing the returned ReadCloser.
 // maxWidth and quality are optional sizing hints (pass 0 to omit).
 func (c *JellyfinClient) ProxyImage(ctx context.Context, itemID, imageType string, maxWidth, quality int) (io.ReadCloser, string, error) {
-	imgURL := fmt.Sprintf("%s/Items/%s/Images/%s?api_key=%s", c.baseURL, itemID, imageType, c.apiKey)
+	imgURL := fmt.Sprintf("%s/Items/%s/Images/%s", c.baseURL, itemID, imageType)
 
 	if maxWidth > 0 {
-		imgURL += fmt.Sprintf("&maxWidth=%d", maxWidth)
+		imgURL += fmt.Sprintf("?maxWidth=%d", maxWidth)
 	}
 	if quality > 0 {
-		imgURL += fmt.Sprintf("&quality=%d", quality)
+		if maxWidth > 0 {
+			imgURL += fmt.Sprintf("&quality=%d", quality)
+		} else {
+			imgURL += fmt.Sprintf("?quality=%d", quality)
+		}
 	}
 
 	req, err := http.NewRequestWithContext(ctx, "GET", imgURL, nil)
 	if err != nil {
 		return nil, "", fmt.Errorf("creating image request: %w", err)
 	}
+
+	req.Header.Set("X-Emby-Token", c.apiKey)
 
 	resp, err := c.client.Do(req)
 	if err != nil {
