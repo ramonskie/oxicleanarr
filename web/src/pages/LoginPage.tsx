@@ -16,8 +16,8 @@ export default function LoginPage() {
 
   const loginMutation = useMutation({
     mutationFn: () => apiClient.login({ username, password }),
-    onSuccess: (data) => {
-      login(data.token, username);
+    onSuccess: () => {
+      login(username);
       navigate('/');
     },
     onError: (error: Error) => {

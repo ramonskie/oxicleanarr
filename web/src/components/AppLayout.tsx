@@ -23,8 +23,8 @@ export default function AppLayout({ children }: AppLayoutProps) {
     refetchInterval: 5000,
   });
 
-  const handleLogout = () => {
-    logout();
+  const handleLogout = async () => {
+    await logout();
     navigate('/login');
   };
 

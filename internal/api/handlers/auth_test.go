@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ramonskie/oxicleanarr/internal/api/middleware"
 	"github.com/ramonskie/oxicleanarr/internal/config"
 	"github.com/ramonskie/oxicleanarr/internal/services"
 	"github.com/ramonskie/oxicleanarr/internal/utils"
@@ -17,7 +18,9 @@ func setupAuthHandler(t *testing.T) (*AuthHandler, *config.Config) {
 	t.Helper()
 
 	// Initialize JWT for testing
-	utils.InitJWT("test-secret-key-for-testing-min-32-chars", 24*time.Hour)
+	if err := utils.InitJWT("test-secret-key-for-testing-min-32-chars", 24*time.Hour); err != nil {
+		t.Fatalf("Failed to initialize JWT: %v", err)
+	}
 
 	// Create test config with plain text password
 	cfg := &config.Config{
@@ -215,6 +218,190 @@ func TestAuthHandler_Login_TokenValidation(t *testing.T) {
 
 	if claims.Username != "admin" {
 		t.Errorf("Expected username 'admin' in token claims, got %s", claims.Username)
+	}
+}
+
+func TestAuthHandler_Login_SetsCookie(t *testing.T) {
+	handler, _ := setupAuthHandler(t)
+
+	loginReq := LoginRequest{Username: "admin", Password: "testpassword"}
+	body, _ := json.Marshal(loginReq)
+	req := httptest.NewRequest(http.MethodPost, "/api/auth/login", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+
+	handler.Login(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("Expected status 200, got %d", w.Code)
+	}
+
+	cookies := w.Result().Cookies()
+	var found bool
+	for _, c := range cookies {
+		if c.Name == middleware.AuthCookieName {
+			found = true
+			if c.Value == "" {
+				t.Error("Auth cookie should have a token value")
+			}
+			if !c.HttpOnly {
+				t.Error("Auth cookie must be HttpOnly")
+			}
+		}
+	}
+	if !found {
+		t.Error("Expected auth cookie in login response")
+	}
+}
+
+func TestAuthHandler_Login_SetsCookie_Bcrypt(t *testing.T) {
+	hash, err := utils.HashPassword("testpassword")
+	if err != nil {
+		t.Fatalf("HashPassword failed: %v", err)
+	}
+	cfg := &config.Config{
+		Admin: config.AdminConfig{Username: "admin", Password: hash},
+	}
+	authService := services.NewAuthService(cfg)
+	handler := NewAuthHandler(authService)
+
+	loginReq := LoginRequest{Username: "admin", Password: "testpassword"}
+	body, _ := json.Marshal(loginReq)
+	req := httptest.NewRequest(http.MethodPost, "/api/auth/login", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+
+	handler.Login(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("Expected status 200 for bcrypt-stored password, got %d", w.Code)
+	}
+}
+
+func TestAuthHandler_Login_RejectsOversizedBody(t *testing.T) {
+	handler, _ := setupAuthHandler(t)
+
+	// Body larger than maxLoginBodyBytes (1 MiB)
+	big := bytes.Repeat([]byte("a"), maxLoginBodyBytes+1024)
+	req := httptest.NewRequest(http.MethodPost, "/api/auth/login", bytes.NewReader(big))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+
+	handler.Login(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("Expected 400 for oversized body, got %d", w.Code)
+	}
+}
+
+func TestAuthHandler_Me(t *testing.T) {
+	handler, _ := setupAuthHandler(t)
+
+	token, err := handler.authService.Login("admin", "testpassword")
+	if err != nil {
+		t.Fatalf("Login failed: %v", err)
+	}
+
+	t.Run("valid cookie returns username", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/api/auth/me", nil)
+		req.AddCookie(&http.Cookie{Name: middleware.AuthCookieName, Value: token})
+		w := httptest.NewRecorder()
+
+		handler.Me(w, req)
+
+		if w.Code != http.StatusOK {
+			t.Fatalf("Expected 200, got %d", w.Code)
+		}
+		var resp LoginResponse
+		json.NewDecoder(w.Body).Decode(&resp)
+		if resp.Username != "admin" {
+			t.Errorf("Expected username admin, got %q", resp.Username)
+		}
+	})
+
+	t.Run("valid bearer header returns username", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/api/auth/me", nil)
+		req.Header.Set("Authorization", "Bearer "+token)
+		w := httptest.NewRecorder()
+
+		handler.Me(w, req)
+
+		if w.Code != http.StatusOK {
+			t.Fatalf("Expected 200, got %d", w.Code)
+		}
+	})
+
+	t.Run("no token returns 401", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/api/auth/me", nil)
+		w := httptest.NewRecorder()
+
+		handler.Me(w, req)
+
+		if w.Code != http.StatusUnauthorized {
+			t.Errorf("Expected 401, got %d", w.Code)
+		}
+	})
+
+	t.Run("invalid token returns 401", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/api/auth/me", nil)
+		req.Header.Set("Authorization", "Bearer bogus-token")
+		w := httptest.NewRecorder()
+
+		handler.Me(w, req)
+
+		if w.Code != http.StatusUnauthorized {
+			t.Errorf("Expected 401, got %d", w.Code)
+		}
+	})
+}
+
+func TestAuthHandler_Me_WhenAuthDisabled(t *testing.T) {
+	if err := utils.InitJWT("test-secret-key-for-testing-min-32-chars", 24*time.Hour); err != nil {
+		t.Fatalf("InitJWT failed: %v", err)
+	}
+	cfg := &config.Config{
+		Admin: config.AdminConfig{Username: "admin", DisableAuth: true},
+	}
+	config.SetTestConfig(cfg)
+	defer config.SetTestConfig(nil)
+
+	authService := services.NewAuthService(cfg)
+	handler := NewAuthHandler(authService)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/auth/me", nil)
+	w := httptest.NewRecorder()
+
+	handler.Me(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("Expected 200 when auth disabled, got %d", w.Code)
+	}
+	var resp LoginResponse
+	json.NewDecoder(w.Body).Decode(&resp)
+	if resp.Username != "admin" {
+		t.Errorf("Expected username admin, got %q", resp.Username)
+	}
+}
+
+func TestAuthHandler_Logout_ClearsCookie(t *testing.T) {
+	handler, _ := setupAuthHandler(t)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/auth/logout", nil)
+	w := httptest.NewRecorder()
+
+	handler.Logout(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("Expected 200, got %d", w.Code)
+	}
+
+	cookies := w.Result().Cookies()
+	for _, c := range cookies {
+		if c.Name == middleware.AuthCookieName {
+			if c.MaxAge >= 0 {
+				t.Error("Logout cookie should have negative MaxAge to expire it")
+			}
+		}
 	}
 }
 

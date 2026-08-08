@@ -52,7 +52,19 @@ func main() {
 	// Initialize JWT
 	jwtSecret := getEnv("JWT_SECRET", "")
 	jwtExpiry, _ := time.ParseDuration(getEnv("JWT_EXPIRATION", "24h"))
-	utils.InitJWT(jwtSecret, jwtExpiry)
+	if cfg.Admin.DisableAuth {
+		// Auth disabled - generate an ephemeral secret so token operations
+		// still work (they are unused when auth is bypassed)
+		randSecret, err := utils.GenerateRandomSecret(32)
+		if err != nil {
+			log.Fatal().Err(err).Msg("Failed to generate JWT secret")
+		}
+		if err := utils.InitJWT(randSecret, jwtExpiry); err != nil {
+			log.Fatal().Err(err).Msg("Failed to initialize JWT")
+		}
+	} else if err := utils.InitJWT(jwtSecret, jwtExpiry); err != nil {
+		log.Fatal().Err(err).Msg("JWT secret is required: set JWT_SECRET env var")
+	}
 
 	// Initialize storage
 	dataPath := getEnv("DATA_PATH", "./data")

@@ -34,15 +34,23 @@ func NewRouter(deps *RouterDependencies) *chi.Mux {
 	r.Use(middleware.Recoverer)
 	r.Use(middleware.Timeout(60 * time.Second))
 
-	// CORS middleware
-	r.Use(cors.Handler(cors.Options{
-		AllowedOrigins:   []string{"https://*", "http://*"},
-		AllowedMethods:   []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
-		AllowedHeaders:   []string{"Accept", "Authorization", "Content-Type", "X-CSRF-Token"},
-		ExposedHeaders:   []string{"Link"},
-		AllowCredentials: true,
-		MaxAge:           300,
-	}))
+	// CORS middleware - restricted to explicitly configured origins.
+	// Empty list = same-origin only (no CORS headers sent). Wildcard origins
+	// are intentionally not used since we send an auth cookie.
+	allowedOrigins := []string{}
+	if cfg := config.Get(); cfg != nil {
+		allowedOrigins = cfg.Server.CorsOrigins
+	}
+	if len(allowedOrigins) > 0 {
+		r.Use(cors.Handler(cors.Options{
+			AllowedOrigins:   allowedOrigins,
+			AllowedMethods:   []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
+			AllowedHeaders:   []string{"Accept", "Authorization", "Content-Type", "X-CSRF-Token"},
+			ExposedHeaders:   []string{"Link"},
+			AllowCredentials: true,
+			MaxAge:           300,
+		}))
+	}
 
 	// Initialize handlers
 	healthHandler := handlers.NewHealthHandler()
@@ -63,6 +71,8 @@ func NewRouter(deps *RouterDependencies) *chi.Mux {
 	r.Route("/api", func(r chi.Router) {
 		// Public API routes
 		r.Post("/auth/login", authHandler.Login)
+		r.Post("/auth/logout", authHandler.Logout)
+		r.Get("/auth/me", authHandler.Me)
 
 		// Protected API routes
 		r.Group(func(r chi.Router) {

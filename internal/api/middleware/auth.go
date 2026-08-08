@@ -16,6 +16,31 @@ const (
 	userContextKey contextKey = "user"
 )
 
+// AuthCookieName is the name of the httpOnly cookie used to carry the JWT
+// for the web UI. The cookie cannot be read by JavaScript, which removes the
+// need to persist the token in localStorage.
+const AuthCookieName = "oxicleanarr_token"
+
+// GetTokenFromRequest extracts a JWT from the Authorization header or the
+// auth cookie. The cookie is preferred for web UI / SSE connections.
+func GetTokenFromRequest(r *http.Request) string {
+	// Cookie (httpOnly, used by the web UI and EventSource)
+	if c, err := r.Cookie(AuthCookieName); err == nil && c.Value != "" {
+		return c.Value
+	}
+
+	// Authorization header (API consumers)
+	authHeader := r.Header.Get("Authorization")
+	if authHeader == "" {
+		return ""
+	}
+	parts := strings.Split(authHeader, " ")
+	if len(parts) != 2 || parts[0] != "Bearer" {
+		return ""
+	}
+	return parts[1]
+}
+
 // Auth is a middleware that validates JWT tokens
 // If admin.disable_auth is true in config, authentication is bypassed
 func Auth(next http.Handler) http.Handler {
@@ -28,28 +53,11 @@ func Auth(next http.Handler) http.Handler {
 			return
 		}
 
-		// Get token from Authorization header or ?token= query param (SSE fallback)
-		authHeader := r.Header.Get("Authorization")
-		if authHeader == "" {
-			// Allow token via query param for SSE/EventSource connections that
-			// cannot set custom headers
-			if qToken := r.URL.Query().Get("token"); qToken != "" {
-				authHeader = "Bearer " + qToken
-			}
-		}
-		if authHeader == "" {
-			http.Error(w, `{"error": "Missing authorization header"}`, http.StatusUnauthorized)
+		token := GetTokenFromRequest(r)
+		if token == "" {
+			http.Error(w, `{"error": "Missing authorization header or cookie"}`, http.StatusUnauthorized)
 			return
 		}
-
-		// Extract token from "Bearer <token>"
-		parts := strings.Split(authHeader, " ")
-		if len(parts) != 2 || parts[0] != "Bearer" {
-			http.Error(w, `{"error": "Invalid authorization header format"}`, http.StatusUnauthorized)
-			return
-		}
-
-		token := parts[1]
 
 		// Validate token
 		claims, err := utils.ValidateToken(token)

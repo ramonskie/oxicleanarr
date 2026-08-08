@@ -88,7 +88,8 @@ Paste this content (replace API keys):
 ```yaml
 admin:
   username: admin
-  password: changeme  # ⚠️ CHANGE THIS! Stored in plain text
+  password: changeme  # ⚠️ CHANGE THIS! Bcrypt hashes supported
+  disable_auth: false  # Set true to skip login (NOT recommended for production)
 
 app:
   dry_run: true                   # KEEP THIS TRUE FOR TESTING
@@ -139,10 +140,10 @@ symlink_library:
 Save and exit (Ctrl+X, Y, Enter)
 
 **⚠️ Security Warning:**
-- The admin password is stored in **plain text** in this file
 - Change "changeme" to a strong password
 - Protect the file: `sudo chmod 600 /volume3/docker/oxicleanarr/config/config.yaml`
 - Only the NAS admin user should be able to read this file
+- With authentication enabled (`disable_auth: false`), set the `JWT_SECRET` environment variable (min 32 chars) in the container, or OxiCleanarr will refuse to start
 
 ### Step 3: Pull OxiCleanarr Docker Image
 
@@ -203,6 +204,11 @@ services:
       - PGID=65536
       - TZ=Europe/Amsterdam
       - UMASK=022
+      # REQUIRED unless admin.disable_auth is true in config.yaml
+      # Generate with: openssl rand -base64 48
+      - JWT_SECRET=change-me-to-a-long-random-string
+      # Optional: token lifetime (default: 24h)
+      - JWT_EXPIRATION=24h
     volumes:
       # NOTE: Use :z flag on SELinux systems (Fedora, RHEL, CentOS)
       # Synology/QNAP typically don't need :z flag
@@ -283,7 +289,7 @@ docker logs -f oxicleanarr
 ### Step 8: Access Web UI & Test
 
 1. Open browser: `http://your-nas-ip:8080`
-2. Login with: `admin` / `changeme`
+2. Login with: `admin` / `changeme` (if `disable_auth: true`, you'll land on the dashboard directly — no login prompt)
 3. Check Dashboard for:
    - Integration health (all green)
    - Media count (should show your library)

@@ -1,9 +1,18 @@
 # OxiCleanarr Configuration
 # Minimal viable config - credentials and integrations
 
+# Authentication
+# Requires the JWT_SECRET environment variable (min 32 chars) unless disable_auth is true.
+# Generate one with: openssl rand -base64 48
+#   JWT_SECRET=...        # REQUIRED when disable_auth: false (app refuses to start without it)
+#   JWT_EXPIRATION=24h    # Optional token lifetime (default: 24h)
+#
+# When disable_auth: true, a random secret is generated at startup and the login
+# page is bypassed entirely (a "Sign in" prompt should NOT appear).
 admin:
   username: admin
-  password: changeme  # ⚠️ SECURITY WARNING: Stored in plain text - use strong passwords and protect this file!
+  password: changeme  # ⚠️ SECURITY WARNING: change this! Plain text is accepted and bcrypt hashes are supported
+  disable_auth: false  # Set to true to skip authentication (NOT recommended for production)
 
 integrations:
   jellyfin:
@@ -101,6 +110,11 @@ integrations:
 # server:
 #   host: 0.0.0.0
 #   port: 9709
+#   cors_origins: []      # Allowed browser origins for cross-origin API access
+#                         # Empty = same-origin only (recommended). Example:
+#                         # cors_origins: ["https://media.example.com"]
+#                         # NOTE: With auth enabled, the login token is sent as an
+#                         # httpOnly cookie, so cross-origin frontends MUST be listed here.
 
 # Advanced Rules (optional) - Tag-based, watched-based, or user-based cleanup
 # advanced_rules:

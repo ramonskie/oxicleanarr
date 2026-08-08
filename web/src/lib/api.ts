@@ -19,36 +19,13 @@ import type { ServiceStatusResponse } from './types-services';
 const API_BASE = '/api';
 
 class ApiClient {
-  private token: string | null = null;
-
-  setToken(token: string | null) {
-    this.token = token;
-    if (token) {
-      localStorage.setItem('auth_token', token);
-    } else {
-      localStorage.removeItem('auth_token');
-    }
-  }
-
-  getToken() {
-    if (!this.token) {
-      this.token = localStorage.getItem('auth_token');
-    }
-    return this.token;
-  }
-
   private async request<T>(
     endpoint: string,
     options: RequestInit = {}
   ): Promise<T> {
-    const token = this.getToken();
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
     };
-
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
-    }
 
     // Merge with provided headers
     if (options.headers) {
@@ -58,6 +35,8 @@ class ApiClient {
     const response = await fetch(`${API_BASE}${endpoint}`, {
       ...options,
       headers,
+      // Same-origin requests send the httpOnly auth cookie automatically.
+      credentials: 'same-origin',
     });
 
     if (!response.ok) {
@@ -76,6 +55,16 @@ class ApiClient {
     return this.request<AuthResponse>('/auth/login', {
       method: 'POST',
       body: JSON.stringify(credentials),
+    });
+  }
+
+  async me(): Promise<AuthResponse> {
+    return this.request<AuthResponse>('/auth/me');
+  }
+
+  async logout(): Promise<{ message: string }> {
+    return this.request<{ message: string }>('/auth/logout', {
+      method: 'POST',
     });
   }
 
@@ -294,10 +283,11 @@ class ApiClient {
   /**
    * Opens an SSE connection that streams live log lines.
    * Returns the EventSource so the caller can close it.
+   * Auth is carried by the httpOnly cookie (EventSource sends cookies
+   * automatically for same-origin connections), so no token is put in the URL.
    */
   streamLogs(file: 'backend' | 'web' = 'backend', lines: number = 200): EventSource {
-    const token = this.getToken();
-    const url = `${API_BASE}/logs?file=${file}&lines=${lines}&stream=true&token=${token ?? ''}`;
+    const url = `${API_BASE}/logs?file=${file}&lines=${lines}&stream=true`;
     return new EventSource(url);
   }
 }

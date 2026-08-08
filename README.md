@@ -165,7 +165,8 @@ cp config/config.yaml.example config/config.yaml
 ```yaml
 admin:
   username: admin
-  password: changeme  # ⚠️ Change this! Stored in plain text
+  password: changeme          # ⚠️ Change this! Bcrypt hashes are supported
+  disable_auth: false         # Set true to skip login (NOT recommended for production)
 
 integrations:
   jellyfin:
@@ -197,7 +198,7 @@ app:
   leaving_soon_days: 14     # Show items in "leaving soon" 14 days before deletion
 ```
 
-**⚠️ Security Note:** Passwords are stored in plain text in the configuration file. Ensure the file has restricted permissions (`chmod 600 config/config.yaml`) and use a strong password.
+**⚠️ Security Note:** Set a strong admin password and protect the file (`chmod 600 config/config.yaml`). With authentication enabled (`disable_auth: false`), you must provide a `JWT_SECRET` environment variable (see below); the app will refuse to start otherwise.
 
 6. Run OxiCleanarr:
 ```bash
@@ -218,6 +219,7 @@ OxiCleanarr uses a YAML configuration file located at `./config/config.yaml`. Th
 admin:
   username: admin
   password: changeme
+  disable_auth: false        # Set true to disable login (NOT recommended for production)
 
 integrations:
   jellyfin:
@@ -242,6 +244,7 @@ integrations:
 admin:
   username: admin
   password: changeme
+  disable_auth: false        # Set true to disable login (NOT recommended for production)
 
 app:
   dry_run: true              # Safe mode - no actual deletions
@@ -313,6 +316,17 @@ export OXICLEANARR_APP_DRY_RUN=false
 export OXICLEANARR_INTEGRATIONS_JELLYFIN_URL=http://jellyfin:8096
 export OXICLEANARR_INTEGRATIONS_JELLYFIN_API_KEY=your-key
 ```
+
+JWT authentication variables (required when `admin.disable_auth: false`):
+
+```bash
+# REQUIRED for auth-enabled setups: signs login tokens (use at least 32 random chars)
+export JWT_SECRET="$(openssl rand -base64 48)"
+# Optional: token lifetime (default: 24h)
+export JWT_EXPIRATION=24h
+```
+
+> **Note:** When `admin.disable_auth: true` (default in dev), the app generates a random JWT secret at startup and authentication is skipped — the web UI opens straight to the dashboard without a login page.
 
 ## Advanced Rules
 
@@ -425,7 +439,7 @@ advanced_rules:
 
 ### Authentication
 
-All API endpoints (except `/health` and `/api/auth/login`) require JWT authentication.
+All API endpoints (except `/health`, `/api/auth/login`, `/api/auth/me`, and `/api/auth/logout`) require authentication.
 
 #### Login
 
@@ -442,14 +456,31 @@ Request:
 Response:
 ```json
 {
-  "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+  "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+  "username": "admin"
 }
 ```
 
-Use the token in subsequent requests:
+On success the server also sets an **`oxicleanarr_token` httpOnly cookie** (Path=`/`, SameSite=Lax). Browsers send it automatically, so the web UI never reads or stores the token in JavaScript/localStorage.
+
+Authenticate subsequent requests with either the cookie or the `Authorization` header:
 ```bash
 curl -H "Authorization: Bearer YOUR_TOKEN" http://localhost:8080/api/endpoint
 ```
+
+#### Current User
+
+**GET** `/api/auth/me` — returns the authenticated username:
+```json
+{
+  "username": "admin"
+}
+```
+When `admin.disable_auth: true`, this returns 200 with the configured username.
+
+#### Logout
+
+**POST** `/api/auth/logout` — clears the auth cookie.
 
 ### Health Check
 
@@ -739,10 +770,12 @@ curl -H "Authorization: Bearer $TOKEN" http://localhost:8080/api/endpoint
 
 ## Security
 
-- JWT tokens for API authentication
-- Configurable token expiration (default: 24 hours)
-- CORS support for web UI integration
-- **⚠️ Important:** Passwords are stored in plain text in `config/config.yaml` - protect this file with appropriate permissions
+- JWT tokens for API authentication, delivered as httpOnly cookies (token never touches JavaScript/localStorage)
+- Configurable token expiration via `JWT_EXPIRATION` (default: 24 hours)
+- JWT signing requires the `JWT_SECRET` environment variable (min 32 chars) when authentication is enabled
+- Admin passwords support bcrypt hashes; plain-text values are accepted for backwards compatibility
+- CORS support for web UI integration — cross-origin origins must be listed in `server.cors_origins`
+- **⚠️ Important:** protect `config/config.yaml` with restricted permissions (`chmod 600`)
 
 ## License
 

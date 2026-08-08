@@ -9,6 +9,7 @@ import (
 
 var (
 	ErrInvalidCredentials = errors.New("invalid username or password")
+	ErrEmptyPassword      = errors.New("password must not be empty")
 )
 
 // AuthService handles authentication operations
@@ -30,8 +31,8 @@ func (s *AuthService) Login(username, password string) (string, error) {
 		return "", ErrInvalidCredentials
 	}
 
-	// Check password (plain text comparison)
-	if password != s.cfg.Admin.Password {
+	// Check password (bcrypt hash or legacy plaintext)
+	if !utils.CheckPassword(s.cfg.Admin.Password, password) {
 		return "", ErrInvalidCredentials
 	}
 
@@ -44,15 +45,24 @@ func (s *AuthService) Login(username, password string) (string, error) {
 	return token, nil
 }
 
-// ChangePassword changes the admin password
+// ChangePassword changes the admin password.
+// The new password is stored as a bcrypt hash in memory.
 func (s *AuthService) ChangePassword(currentPassword, newPassword string) error {
-	// Verify current password (plain text comparison)
-	if currentPassword != s.cfg.Admin.Password {
+	// Verify current password
+	if !utils.CheckPassword(s.cfg.Admin.Password, currentPassword) {
 		return ErrInvalidCredentials
 	}
 
-	// Update config (in memory) - plain text
-	s.cfg.Admin.Password = newPassword
+	if newPassword == "" {
+		return ErrEmptyPassword
+	}
+
+	// Hash the new password before storing (never store plaintext)
+	hash, err := utils.HashPassword(newPassword)
+	if err != nil {
+		return err
+	}
+	s.cfg.Admin.Password = hash
 
 	// Note: In a complete implementation, you'd want to persist this to the config file
 	// This would require access to the config file writer

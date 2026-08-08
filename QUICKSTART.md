@@ -76,7 +76,8 @@ Edit `config/config.yaml` and update the following:
 ```yaml
 admin:
   username: admin
-  password: changeme  # ⚠️ CHANGE THIS! Plain text password
+  password: changeme  # ⚠️ CHANGE THIS! Bcrypt hashes supported
+  disable_auth: false  # Set true to skip login (NOT recommended for production)
 
 integrations:
   jellyfin:
@@ -115,10 +116,10 @@ integrations:
 ```
 
 **⚠️ Security Warning:** 
-- Passwords are stored in **plain text** in the config file
 - Change the default password immediately!
 - Protect the config file: `chmod 600 config/config.yaml`
-- Use a strong password since it's not hashed
+- With authentication enabled (`disable_auth: false`), you MUST set a `JWT_SECRET` environment variable (min 32 chars) or the app won't start
+- Use a strong password (bcrypt hashes supported)
 
 ### Step 4: Optional Settings
 
@@ -209,7 +210,7 @@ You can override settings with environment variables:
 export LOG_LEVEL=debug          # Options: debug, info, warn, error
 export LOG_FORMAT=pretty        # Options: json, pretty
 
-# JWT
+# JWT (REQUIRED unless admin.disable_auth is true)
 export JWT_SECRET=your-secret-key-min-32-chars
 export JWT_EXPIRATION=24h
 
@@ -252,11 +253,12 @@ curl -X POST http://localhost:8080/api/auth/login \
 Expected response:
 ```json
 {
-  "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+  "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+  "username": "admin"
 }
 ```
 
-**Save this token** - you'll need it for authenticated requests.
+**Save this token** - you'll need it for authenticated requests. The server also sets an `oxicleanarr_token` httpOnly cookie, which the web UI uses automatically.
 
 ### 3. Get Sync Status
 

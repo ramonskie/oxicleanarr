@@ -51,8 +51,9 @@ type RulesConfig struct {
 
 // ServerConfig holds HTTP server settings
 type ServerConfig struct {
-	Host string `mapstructure:"host" yaml:"host" json:"host"`
-	Port int    `mapstructure:"port" yaml:"port" json:"port"`
+	Host        string   `mapstructure:"host" yaml:"host" json:"host"`
+	Port        int      `mapstructure:"port" yaml:"port" json:"port"`
+	CorsOrigins []string `mapstructure:"cors_origins" yaml:"cors_origins,omitempty" json:"cors_origins,omitempty"` // Allowed CORS origins (empty = same-origin only)
 }
 
 // IntegrationsConfig holds all integration settings

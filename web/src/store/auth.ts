@@ -1,43 +1,44 @@
 import { create } from 'zustand';
-import { persist } from 'zustand/middleware';
 import { apiClient } from '@/lib/api';
 
 interface AuthState {
-  token: string | null;
   username: string | null;
   isAuthenticated: boolean;
-  login: (token: string, username: string) => void;
-  logout: () => void;
-  initialize: () => void;
+  isInitialized: boolean;
+  login: (username: string) => void;
+  logout: () => Promise<void>;
+  initialize: () => Promise<void>;
 }
 
-export const useAuthStore = create<AuthState>()(
-  persist(
-    (set, get) => ({
-      token: null,
-      username: null,
-      isAuthenticated: false,
-      
-      login: (token: string, username: string) => {
-        apiClient.setToken(token);
-        set({ token, username, isAuthenticated: true });
-      },
-      
-      logout: () => {
-        apiClient.setToken(null);
-        set({ token: null, username: null, isAuthenticated: false });
-      },
-      
-      initialize: () => {
-        const state = get();
-        if (state.token) {
-          apiClient.setToken(state.token);
-          set({ isAuthenticated: true });
-        }
-      },
-    }),
-    {
-      name: 'prunarr-auth',
+export const useAuthStore = create<AuthState>((set) => ({
+  username: null,
+  isAuthenticated: false,
+  isInitialized: false,
+
+  login: (username: string) => {
+    // The token lives in an httpOnly cookie set by the server; nothing to store.
+    set({ username, isAuthenticated: true, isInitialized: true });
+  },
+
+  logout: async () => {
+    try {
+      await apiClient.logout();
+    } catch {
+      // Ignore network errors during logout - clear local state regardless
     }
-  )
-);
+    set({ username: null, isAuthenticated: false });
+  },
+
+  initialize: async () => {
+    try {
+      const me = await apiClient.me();
+      set({
+        username: me.username || null,
+        isAuthenticated: true,
+        isInitialized: true,
+      });
+    } catch {
+      set({ username: null, isAuthenticated: false, isInitialized: true });
+    }
+  },
+}));
