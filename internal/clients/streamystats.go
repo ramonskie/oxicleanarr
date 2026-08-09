@@ -91,8 +91,10 @@ func (c *StreamystatsClient) GetHistory(ctx context.Context, itemIDs []string) (
 	}()
 
 	var allItems []StatsHistoryItem
+	failed := 0
 	for r := range resultCh {
 		if r.err != nil {
+			failed++
 			// Log non-fatal per-item errors and continue — a single missing item
 			// should not abort the entire history fetch.
 			log.Warn().Err(r.err).Msg("Streamystats: failed to fetch item history, skipping")
@@ -101,8 +103,16 @@ func (c *StreamystatsClient) GetHistory(ctx context.Context, itemIDs []string) (
 		allItems = append(allItems, r.items...)
 	}
 
+	// If every item fetch failed, surface an error instead of returning an empty
+	// success. Otherwise watch history would be silently lost and callers could
+	// not distinguish "no history" from "provider unavailable".
+	if failed == len(itemIDs) {
+		return nil, fmt.Errorf("streamystats: all %d item history fetches failed", failed)
+	}
+
 	log.Debug().
 		Int("total_sessions", len(allItems)).
+		Int("failed_items", failed).
 		Msg("Fetched watch history from Streamystats")
 
 	return allItems, nil

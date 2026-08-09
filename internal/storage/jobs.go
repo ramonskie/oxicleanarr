@@ -72,7 +72,15 @@ func NewJobsFile(dataPath string, maxJobs int) (*JobsFile, error) {
 	// Try to load existing file
 	if _, err := os.Stat(filePath); err == nil {
 		if err := jf.load(); err != nil {
-			log.Warn().Err(err).Msg("Failed to load jobs file, starting fresh")
+			// Preserve the corrupt file for manual recovery instead of
+			// silently starting fresh and overwriting it on the next save.
+			if backup, backupErr := backupCorruptFile(filePath); backupErr != nil {
+				log.Error().Err(err).Err(backupErr).
+					Msg("Failed to load jobs file; corrupt backup also failed, starting fresh")
+			} else {
+				log.Error().Err(err).Str("backup", backup).
+					Msg("Failed to load jobs file; corrupt file preserved, starting fresh")
+			}
 		}
 	}
 
@@ -84,15 +92,20 @@ func (jf *JobsFile) Add(job Job) error {
 	jf.mu.Lock()
 	defer jf.mu.Unlock()
 
-	// Prepend new job
-	jf.Jobs = append([]Job{job}, jf.Jobs...)
-
-	// Keep only maxJobs
-	if len(jf.Jobs) > jf.maxJobs {
-		jf.Jobs = jf.Jobs[:jf.maxJobs]
+	// Prepend new job (most recent first), keeping only maxJobs
+	next := make([]Job, 0, len(jf.Jobs)+1)
+	next = append(next, job)
+	next = append(next, jf.Jobs...)
+	if len(next) > jf.maxJobs {
+		next = next[:jf.maxJobs]
 	}
 
-	return jf.save()
+	if err := jf.persist(next); err != nil {
+		return err
+	}
+
+	jf.Jobs = next
+	return nil
 }
 
 // Update updates an existing job
@@ -100,13 +113,27 @@ func (jf *JobsFile) Update(job Job) error {
 	jf.mu.Lock()
 	defer jf.mu.Unlock()
 
-	for i, j := range jf.Jobs {
-		if j.ID == job.ID {
-			jf.Jobs[i] = job
-			return jf.save()
+	next := make([]Job, len(jf.Jobs))
+	copy(next, jf.Jobs)
+
+	updated := false
+	for i := range next {
+		if next[i].ID == job.ID {
+			next[i] = job
+			updated = true
+			break
 		}
 	}
 
+	if !updated {
+		return nil
+	}
+
+	if err := jf.persist(next); err != nil {
+		return err
+	}
+
+	jf.Jobs = next
 	return nil
 }
 
@@ -182,14 +209,19 @@ func (jf *JobsFile) load() error {
 	return nil
 }
 
-// save writes the jobs file to disk
-func (jf *JobsFile) save() error {
+// persist atomically writes the given jobs to disk. Callers hold jf.mu.
+// A struct constructed without a file path (e.g. in tests) is in-memory only.
+func (jf *JobsFile) persist(jobs []Job) error {
+	if jf.filePath == "" {
+		return nil
+	}
+
 	data := struct {
 		Version string `json:"version"`
 		Jobs    []Job  `json:"jobs"`
 	}{
 		Version: jf.Version,
-		Jobs:    jf.Jobs,
+		Jobs:    jobs,
 	}
 
 	jsonData, err := json.MarshalIndent(data, "", "  ")
@@ -197,10 +229,10 @@ func (jf *JobsFile) save() error {
 		return err
 	}
 
-	if err := os.WriteFile(jf.filePath, jsonData, 0644); err != nil {
+	if err := writeFileAtomic(jf.filePath, jsonData, 0644); err != nil {
 		return err
 	}
 
-	log.Debug().Int("count", len(jf.Jobs)).Msg("Saved jobs to file")
+	log.Debug().Int("count", len(jobs)).Msg("Saved jobs to file")
 	return nil
 }

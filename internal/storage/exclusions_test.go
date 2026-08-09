@@ -66,7 +66,7 @@ func TestNewExclusionsFile(t *testing.T) {
 		assert.Equal(t, "Test Movie", ef.Items["movie-1"].Title)
 	})
 
-	t.Run("handles corrupted file gracefully", func(t *testing.T) {
+	t.Run("fails closed on corrupted file", func(t *testing.T) {
 		tmpDir := t.TempDir()
 		filePath := filepath.Join(tmpDir, "exclusions.json")
 
@@ -74,11 +74,38 @@ func TestNewExclusionsFile(t *testing.T) {
 		err := os.WriteFile(filePath, []byte("invalid json"), 0644)
 		require.NoError(t, err)
 
-		// Should still create file successfully, but with empty items
+		// Must fail closed: excluded items must not silently become deletable.
 		ef, err := NewExclusionsFile(tmpDir)
 
+		require.Error(t, err)
+		assert.Nil(t, ef)
+
+		// The corrupt file must be preserved for manual recovery.
+		backups, err := filepath.Glob(filePath + ".corrupt.*")
 		require.NoError(t, err)
-		assert.Empty(t, ef.Items)
+		assert.Len(t, backups, 1)
+	})
+
+	t.Run("fails closed when corrupt file cannot be backed up", func(t *testing.T) {
+		if os.Geteuid() == 0 {
+			t.Skip("read-only directory test not valid when running as root")
+		}
+
+		tmpDir := t.TempDir()
+		filePath := filepath.Join(tmpDir, "exclusions.json")
+
+		err := os.WriteFile(filePath, []byte("invalid json"), 0644)
+		require.NoError(t, err)
+
+		// Make the directory read-only so the rename (backup) fails.
+		err = os.Chmod(tmpDir, 0500)
+		require.NoError(t, err)
+		t.Cleanup(func() { os.Chmod(tmpDir, 0755) })
+
+		ef, err := NewExclusionsFile(tmpDir)
+
+		require.Error(t, err)
+		assert.Nil(t, ef)
 	})
 }
 

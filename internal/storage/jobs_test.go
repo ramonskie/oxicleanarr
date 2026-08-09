@@ -73,7 +73,7 @@ func TestNewJobsFile(t *testing.T) {
 		assert.True(t, jf.Jobs[0].CompletedAt.After(jf.Jobs[0].StartedAt))
 	})
 
-	t.Run("handles corrupted file gracefully", func(t *testing.T) {
+	t.Run("preserves corrupt file and starts fresh", func(t *testing.T) {
 		tmpDir := t.TempDir()
 		filePath := filepath.Join(tmpDir, "jobs.json")
 
@@ -86,6 +86,11 @@ func TestNewJobsFile(t *testing.T) {
 
 		require.NoError(t, err)
 		assert.Empty(t, jf.Jobs)
+
+		// The corrupt file must be preserved for manual recovery, not wiped.
+		backups, err := filepath.Glob(filePath + ".corrupt.*")
+		require.NoError(t, err)
+		assert.Len(t, backups, 1)
 	})
 }
 

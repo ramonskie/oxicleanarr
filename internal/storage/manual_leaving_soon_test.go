@@ -65,7 +65,7 @@ func TestNewManualLeavingSoonFile(t *testing.T) {
 		assert.Equal(t, "movie", f.Items["radarr-1"].MediaType)
 	})
 
-	t.Run("handles corrupted file gracefully", func(t *testing.T) {
+	t.Run("preserves corrupt file and starts fresh", func(t *testing.T) {
 		tmpDir := t.TempDir()
 		filePath := filepath.Join(tmpDir, "manual_leaving_soon.json")
 
@@ -76,6 +76,11 @@ func TestNewManualLeavingSoonFile(t *testing.T) {
 
 		require.NoError(t, err)
 		assert.Empty(t, f.Items)
+
+		// The corrupt file must be preserved for manual recovery, not wiped.
+		backups, err := filepath.Glob(filePath + ".corrupt.*")
+		require.NoError(t, err)
+		assert.Len(t, backups, 1)
 	})
 }
 
