@@ -319,7 +319,7 @@ func (c *JellyfinClient) AddPathToVirtualFolder(ctx context.Context, name, path 
 	reqURL := fmt.Sprintf("%s/Library/VirtualFolders/Paths?name=%s",
 		c.baseURL, url.QueryEscape(name))
 
-	req, err := http.NewRequestWithContext(ctx, "POST", reqURL, nil)
+	req, err := http.NewRequestWithContext(ctx, "POST", reqURL, bytes.NewReader(bodyBytes))
 	if err != nil {
 		return fmt.Errorf("creating request: %w", err)
 	}
@@ -337,9 +337,6 @@ func (c *JellyfinClient) AddPathToVirtualFolder(ctx context.Context, name, path 
 		return fmt.Errorf("making request: %w", err)
 	}
 	defer resp.Body.Close()
-
-	// Read response body for debugging
-	_ = bodyBytes // Use the variable
 
 	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusNoContent {
 		return fmt.Errorf("unexpected status code: %d", resp.StatusCode)
@@ -784,7 +781,6 @@ func (c *JellyfinClient) DeleteDirectory(ctx context.Context, path string, force
 		return &PluginDeleteDirectoryResponse{
 			Success:   true,
 			Directory: path,
-			Deleted:   false,
 			Message:   "dry-run mode",
 		}, nil
 	}
@@ -842,7 +838,7 @@ func (c *JellyfinClient) DeleteDirectory(ctx context.Context, path string, force
 
 	log.Info().
 		Str("path", path).
-		Bool("deleted", deleteResp.Deleted).
+		Bool("deleted", deleteResp.Success).
 		Str("message", deleteResp.Message).
 		Msg("Directory deleted successfully via plugin")
 

@@ -251,7 +251,6 @@ type PluginAddSymlinksResponse struct {
 	Success         bool     `json:"Success"`         // Plugin uses PascalCase
 	CreatedSymlinks []string `json:"CreatedSymlinks"` // Plugin returns array of created paths
 	Errors          []string `json:"Errors"`          // Plugin returns array of error messages
-	ErrorMessage    string   `json:"error_message,omitempty"`
 }
 
 // PluginRemoveSymlinksRequest represents the request to remove symlinks
@@ -269,26 +268,24 @@ type PluginRemoveSymlinksResponse struct {
 
 // PluginSymlinkInfo represents information about a symlink
 type PluginSymlinkInfo struct {
-	Path   string `json:"path"`
-	Target string `json:"target"`
-	Valid  bool   `json:"valid"`
-	Name   string `json:"name"` // Added in plugin API update
+	Path   string `json:"Path"`   // Plugin uses PascalCase
+	Target string `json:"Target"` // Plugin uses PascalCase
+	Name   string `json:"Name"`   // Filename of the symlink
 }
 
 // PluginListSymlinksResponse represents the response from listing symlinks
 type PluginListSymlinksResponse struct {
-	Success      bool                `json:"success"`
-	Symlinks     []PluginSymlinkInfo `json:"symlinks"`
-	Count        int                 `json:"count"`        // Total number of symlinks
-	SymlinkNames []string            `json:"symlinkNames"` // Array of just filenames
-	Message      string              `json:"message"`      // Human-readable status
-	ErrorMessage string              `json:"error_message,omitempty"`
+	Symlinks     []PluginSymlinkInfo `json:"Symlinks"`     // Plugin uses PascalCase
+	Count        int                 `json:"Count"`        // Total number of symlinks
+	SymlinkNames []string            `json:"SymlinkNames"` // Array of just filenames
+	Message      string              `json:"Message"`      // Human-readable status
+	ErrorMessage string              `json:"error,omitempty"`
 }
 
 // PluginStatusResponse represents the health check response from the plugin
 type PluginStatusResponse struct {
-	Status  string `json:"status"`
-	Message string `json:"message,omitempty"`
+	Status  string `json:"Status"` // Plugin uses PascalCase
+	Message string `json:"Message,omitempty"`
 }
 
 // PluginCreateDirectoryRequest represents the request to create a directory
@@ -298,10 +295,10 @@ type PluginCreateDirectoryRequest struct {
 
 // PluginCreateDirectoryResponse represents the response from directory creation
 type PluginCreateDirectoryResponse struct {
-	Success   bool   `json:"success"`
-	Directory string `json:"directory,omitempty"`
-	Created   bool   `json:"created,omitempty"`
-	Message   string `json:"message,omitempty"`
+	Success   bool   `json:"Success"` // Plugin uses PascalCase
+	Directory string `json:"Directory,omitempty"`
+	Created   bool   `json:"Created,omitempty"`
+	Message   string `json:"Message,omitempty"`
 }
 
 // PluginDeleteDirectoryRequest represents the request to delete a directory
@@ -312,8 +309,7 @@ type PluginDeleteDirectoryRequest struct {
 
 // PluginDeleteDirectoryResponse represents the response from directory deletion
 type PluginDeleteDirectoryResponse struct {
-	Success   bool   `json:"success"`
-	Directory string `json:"directory,omitempty"`
-	Deleted   bool   `json:"deleted,omitempty"`
-	Message   string `json:"message,omitempty"`
+	Success   bool   `json:"Success"` // Plugin uses PascalCase
+	Directory string `json:"Directory,omitempty"`
+	Message   string `json:"Message,omitempty"`
 }

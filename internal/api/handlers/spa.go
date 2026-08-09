@@ -1,7 +1,6 @@
 package handlers
 
 import (
-	"io/fs"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -12,7 +11,6 @@ import (
 
 // SPAHandler serves the Single Page Application frontend
 type SPAHandler struct {
-	staticFS   http.FileSystem
 	indexPath  string
 	staticPath string
 }
@@ -41,7 +39,6 @@ func NewSPAHandler(distPath string) (*SPAHandler, error) {
 		Msg("SPA handler initialized successfully")
 
 	return &SPAHandler{
-		staticFS:   http.Dir(distPath),
 		indexPath:  indexPath,
 		staticPath: distPath,
 	}, nil
@@ -49,7 +46,21 @@ func NewSPAHandler(distPath string) (*SPAHandler, error) {
 
 // ServeHTTP handles HTTP requests for the SPA
 func (h *SPAHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	// Clean the path to prevent directory traversal attacks
+	// Reject traversal attempts before cleaning: filepath.Clean silently
+	// clamps leading ".." segments at the root, so a post-clean guard can
+	// never observe them. r.URL.Path is already URL-decoded by net/http,
+	// so /%2e%2e/ arrives here as /../.
+	for _, seg := range strings.Split(r.URL.Path, "/") {
+		if seg == ".." {
+			log.Warn().
+				Str("path", r.URL.Path).
+				Msg("SPA: Path traversal attempt rejected")
+			http.Error(w, "Not Found", http.StatusNotFound)
+			return
+		}
+	}
+
+	// Clean the path to normalize duplicate slashes and trailing slashes
 	path := filepath.Clean(r.URL.Path)
 
 	// Remove leading slash for file system operations
@@ -139,21 +150,4 @@ func getContentType(path string) string {
 	default:
 		return ""
 	}
-}
-
-// NewSPAHandlerFromFS creates a new SPA handler from an embedded filesystem
-// This is useful for embedding the frontend in the binary
-func NewSPAHandlerFromFS(fsys fs.FS) (*SPAHandler, error) {
-	// Check if index.html exists
-	if _, err := fs.Stat(fsys, "index.html"); err != nil {
-		log.Warn().Msg("Frontend index.html not found in embedded FS, SPA handler disabled")
-		return nil, err
-	}
-
-	log.Info().Msg("SPA handler initialized from embedded filesystem")
-
-	return &SPAHandler{
-		staticFS: http.FS(fsys),
-		// For embedded FS, we'll handle index serving differently
-	}, nil
 }

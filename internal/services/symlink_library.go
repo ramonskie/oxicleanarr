@@ -744,7 +744,10 @@ func (m *SymlinkLibraryManager) generateSymlinkName(media models.Media) string {
 		ext := filepath.Ext(media.FilePath)
 		base := filepath.Base(media.FilePath)
 
-		// For files, use the original filename
+		// For files, use the original filename verbatim.
+		// The plugin names the on-disk symlink exactly Path.GetFileName(sourcePath),
+		// so the basename must match to keep sync name-equality. A basename with a
+		// non-empty extension can never be "." or "..", so no sanitization is needed.
 		if ext != "" {
 			return base
 		}
@@ -752,6 +755,9 @@ func (m *SymlinkLibraryManager) generateSymlinkName(media models.Media) string {
 
 	// Fallback: generate name from title and year
 	name := media.Title
+	if name == "" || name == "." || name == ".." {
+		name = "untitled"
+	}
 	if media.Year > 0 {
 		name = fmt.Sprintf("%s (%d)", name, media.Year)
 	}

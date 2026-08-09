@@ -204,7 +204,6 @@ func (m *mockJellyfinClientForSymlink) ListSymlinks(ctx context.Context, directo
 	// Check if directory exists
 	if _, err := os.Stat(directory); os.IsNotExist(err) {
 		return &clients.PluginListSymlinksResponse{
-			Success: true,
 			Message: "No symlinks found",
 		}, nil
 	}
@@ -248,7 +247,6 @@ func (m *mockJellyfinClientForSymlink) ListSymlinks(ctx context.Context, directo
 	}
 
 	return &clients.PluginListSymlinksResponse{
-		Success:      true,
 		Symlinks:     symlinks,
 		Count:        len(symlinks),
 		SymlinkNames: symlinkNames,
@@ -1041,4 +1039,66 @@ func TestSyncLibrary_HideWhenEmpty_NoExistingLibrary(t *testing.T) {
 
 	// Verify CreateVirtualFolder was NOT called (no items to show)
 	assert.Equal(t, 0, mockClient.createCalled, "CreateVirtualFolder should not be called for empty library")
+}
+
+func TestGenerateSymlinkName_TraversalSanitized(t *testing.T) {
+	manager := NewSymlinkLibraryManager(nil, &config.Config{})
+
+	tests := []struct {
+		name     string
+		media    models.Media
+		expected string
+	}{
+		{
+			name:     "dotdot title becomes untitled",
+			media:    models.Media{Title: ".."},
+			expected: "untitled",
+		},
+		{
+			name:     "dotdot with year",
+			media:    models.Media{Title: "..", Year: 2023},
+			expected: "untitled (2023)",
+		},
+		{
+			name:     "traversal embedded in title",
+			media:    models.Media{Title: "../../etc/passwd"},
+			expected: "..-..-etc-passwd",
+		},
+		{
+			name:     "single dot title becomes untitled",
+			media:    models.Media{Title: "."},
+			expected: "untitled",
+		},
+		{
+			name:     "empty title becomes untitled",
+			media:    models.Media{Title: ""},
+			expected: "untitled",
+		},
+		{
+			name:     "normal title unaffected",
+			media:    models.Media{Title: "Inception", Year: 2010},
+			expected: "Inception (2010)",
+		},
+		{
+			name:     "filepath basename kept verbatim",
+			media:    models.Media{FilePath: "/media/movies/Some..Movie.2020.mkv", Title: "Inception"},
+			expected: "Some..Movie.2020.mkv",
+		},
+		{
+			name:     "filepath with dotdot dirs uses basename",
+			media:    models.Media{FilePath: "/media/movies/../sub/Inception.mkv", Title: "Inception"},
+			expected: "Inception.mkv",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := manager.generateSymlinkName(tt.media)
+			assert.Equal(t, tt.expected, got)
+			// Name must never be a path-traversal or dot entry when joined
+			assert.NotEqual(t, "..", got)
+			assert.NotEqual(t, ".", got)
+			assert.False(t, filepath.IsAbs(got))
+		})
+	}
 }

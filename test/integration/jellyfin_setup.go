@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -491,6 +492,12 @@ func InstallOxiCleanarrPlugin(t *testing.T, pluginsDir string) error {
 		// Create destination file in temp directory
 		destPath := filepath.Join(tempPluginDir, file.Name)
 
+		// Guard against zip-slip: entry must not escape tempPluginDir
+		if !isWithinDir(tempPluginDir, destPath) {
+			rc.Close()
+			return fmt.Errorf("zip entry escapes extraction directory: %s", file.Name)
+		}
+
 		if file.FileInfo().IsDir() {
 			os.MkdirAll(destPath, file.Mode())
 			rc.Close()
@@ -644,6 +651,12 @@ func InstallOxiCleanarrPluginToContainer(t *testing.T, containerName string) err
 
 		// Create destination file in temp directory
 		destPath := filepath.Join(tempPluginDir, file.Name)
+
+		// Guard against zip-slip: entry must not escape tempPluginDir
+		if !isWithinDir(tempPluginDir, destPath) {
+			rc.Close()
+			return fmt.Errorf("zip entry escapes extraction directory: %s", file.Name)
+		}
 
 		if file.FileInfo().IsDir() {
 			os.MkdirAll(destPath, file.Mode())
@@ -905,4 +918,14 @@ func EnsureJellyfinLibrary(t *testing.T, jellyfinURL, apiKey, name, path, conten
 
 	// Create library if it doesn't exist
 	return setup.AddMediaLibrary(apiKey, name, path, contentType)
+}
+
+// isWithinDir reports whether path stays inside the given base directory.
+// Used to guard against zip-slip and path traversal during extraction.
+func isWithinDir(base, path string) bool {
+	rel, err := filepath.Rel(base, path)
+	if err != nil {
+		return false
+	}
+	return rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
 }
