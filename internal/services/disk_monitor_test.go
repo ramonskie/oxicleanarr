@@ -56,6 +56,57 @@ func TestDiskMonitor_GetStatus_FeatureDisabled_ReturnsNil(t *testing.T) {
 	}
 }
 
+func TestDiskMonitor_GetStatus_BeforeFirstUpdate_ProtectsEverything(t *testing.T) {
+	// Regression: before the first successful Update(), disk state is unknown.
+	// GetStatus returns a zero-value status with ThresholdBreached=false, which the
+	// disk threshold rule interprets as "not breached" → protects everything (fail-closed).
+	setDiskThresholdConfig(t, true, 500, "radarr")
+
+	m := NewDiskMonitor(nil, nil)
+	status := m.GetStatus()
+
+	if status == nil {
+		t.Fatal("expected non-nil status before first update (fail-closed gate)")
+	}
+	if !status.Enabled {
+		t.Error("expected Enabled=true before first update")
+	}
+	if status.ThresholdBreached {
+		t.Error("expected ThresholdBreached=false before first update (protect everything)")
+	}
+}
+
+func TestDiskMonitor_GetStatus_AfterFailedFirstUpdate_ProtectsEverything(t *testing.T) {
+	// A failed first Update leaves the monitor uninitialized — the gate stays fail-closed.
+	setDiskThresholdConfig(t, true, 500, "radarr")
+
+	// Server returns 404 → Update fails → monitor remains uninitialized.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.NotFound(w, r)
+	}))
+	defer srv.Close()
+
+	radarrClient := clients.NewRadarrClient(config.RadarrConfig{
+		BaseIntegrationConfig: config.BaseIntegrationConfig{URL: srv.URL, APIKey: "test"},
+	})
+	m := NewDiskMonitor(radarrClient, nil)
+
+	if err := m.Update(context.Background()); err == nil {
+		t.Fatal("expected update to fail against 404 server")
+	}
+
+	status := m.GetStatus()
+	if status == nil {
+		t.Fatal("expected non-nil status after failed first update (fail-closed gate)")
+	}
+	if !status.Enabled {
+		t.Error("expected Enabled=true after failed first update")
+	}
+	if status.ThresholdBreached {
+		t.Error("expected ThresholdBreached=false after failed first update (protect everything)")
+	}
+}
+
 func TestDiskMonitor_Update_FeatureDisabled_IsNoop(t *testing.T) {
 	setDiskThresholdConfig(t, false, 500, "radarr")
 

@@ -1153,6 +1153,7 @@ func (e *SyncEngine) CalculateDeletionInfo() (int, []map[string]interface{}) {
 			daysOverdue := int(now.Sub(media.DeleteAfter).Hours() / 24)
 			candidate := map[string]interface{}{
 				"id":           media.ID,
+				"jellyfin_id":  media.JellyfinID,
 				"title":        media.Title,
 				"year":         media.Year,
 				"type":         media.Type,

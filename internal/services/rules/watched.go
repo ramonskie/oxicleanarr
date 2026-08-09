@@ -20,8 +20,15 @@ func NewWatchedRule(rule config.AdvancedRule) *WatchedRule {
 func (r *WatchedRule) Name() string     { return r.rule.Name }
 func (r *WatchedRule) Scope() RuleScope { return ScopeAll }
 
-// Protect returns ProtectedByRule when require_watched is true and the item is unwatched.
+// Protect returns ProtectedByRule when require_watched is true and the item is
+// unwatched, or when the rule's retention is "never" (keep everything).
 func (r *WatchedRule) Protect(ctx EvalContext) *ProtectionStatus {
+	// retention: never — explicitly keep all media governed by this rule
+	if r.rule.Retention == "never" {
+		s := ProtectedByRule
+		return &s
+	}
+
 	if r.rule.RequireWatched && ctx.Media.WatchCount == 0 {
 		s := ProtectedByRule
 		return &s

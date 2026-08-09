@@ -30,19 +30,9 @@ func NewStandardRule() *StandardRule { return &StandardRule{} }
 func (r *StandardRule) Name() string     { return "standard_retention" }
 func (r *StandardRule) Scope() RuleScope { return ScopeAll }
 
-// Protect handles two cases:
-//  1. Requested items with no advanced rules configured — blanket protection
-//     (preserves legacy behavior: requested media is safe when no user rules exist)
-//  2. unwatched_behavior: never — protects unwatched items from deletion
+// Protect handles unwatched_behavior: never — protects unwatched items from deletion.
 func (r *StandardRule) Protect(ctx EvalContext) *ProtectionStatus {
 	cfg := ctx.Config
-
-	// Blanket protection for requested items when no advanced rules are configured.
-	// When user-based rules exist, they take priority and this protection is skipped.
-	if ctx.Media.IsRequested && len(cfg.AdvancedRules) == 0 {
-		s := ProtectedRequested
-		return &s
-	}
 
 	// unwatched_behavior: never — protect unwatched items from deletion
 	if cfg.Rules.RetentionBase == RetentionBaseLastWatched &&
@@ -90,9 +80,9 @@ func (r *StandardRule) Schedule(ctx EvalContext) (time.Time, ScheduleSource) {
 		return time.Time{}, 0
 	}
 
-	// getRetentionBaseTime returns zero only when unwatched_behavior is "never"
-	// and the item is unwatched — meaning it should never be deleted.
-	// In all other cases (including zero AddedAt), we proceed with the base time.
+	// getRetentionBaseTime returns zero only when no valid base time exists
+	// (unwatched_behavior "never", or zero AddedAt/LastWatched) — meaning the item
+	// should never be scheduled for deletion.
 	baseTime, neverDelete := getRetentionBaseTime(ctx.Media, cfg.Rules.RetentionBase, cfg.Rules.UnwatchedBehavior, cfg)
 	if neverDelete {
 		return time.Time{}, 0
@@ -118,9 +108,9 @@ func (r *StandardRule) EnrichVerdict(ctx EvalContext) (retentionValue, retention
 // the item should never be deleted.
 //
 // retentionBase and unwatchedBehavior default to global config values when empty.
-// Returns (time.Time{}, true) only when unwatched_behavior is "never" and the item
-// is unwatched — callers must treat this as "do not schedule deletion".
-// In all other cases (including zero AddedAt), returns the base time and false.
+// Returns (time.Time{}, true) when no valid base time exists — zero AddedAt, or
+// unwatched_behavior "never" with an unwatched item. Callers must treat this as
+// "do not schedule deletion" (fail-safe: never delete based on a fabricated past date).
 func getRetentionBaseTime(media *models.Media, retentionBase, unwatchedBehavior string, cfg *config.Config) (time.Time, bool) {
 	if retentionBase == "" {
 		retentionBase = cfg.Rules.RetentionBase
@@ -137,21 +127,31 @@ func getRetentionBaseTime(media *models.Media, retentionBase, unwatchedBehavior 
 
 	switch retentionBase {
 	case RetentionBaseAdded:
-		return clampToNow(media.AddedAt), false
+		return retentionBaseTime(media.AddedAt)
 
 	case RetentionBaseLastWatched:
 		if !media.LastWatched.IsZero() {
-			return clampToNow(media.LastWatched), false
+			return retentionBaseTime(media.LastWatched)
 		}
 		if unwatchedBehavior == UnwatchedBehaviorNever {
 			return time.Time{}, true // never delete
 		}
-		return clampToNow(media.AddedAt), false
+		return retentionBaseTime(media.AddedAt)
 
 	default: // RetentionBaseLastWatchedOrAdded
 		if !media.LastWatched.IsZero() {
-			return clampToNow(media.LastWatched), false
+			return retentionBaseTime(media.LastWatched)
 		}
-		return clampToNow(media.AddedAt), false
+		return retentionBaseTime(media.AddedAt)
 	}
+}
+
+// retentionBaseTime validates a base time. A zero time (missing AddedAt/LastWatched)
+// is not a valid retention base — returning (time.Time{}, true) defers deletion
+// rather than scheduling it from a fabricated year-1 timestamp.
+func retentionBaseTime(t time.Time) (time.Time, bool) {
+	if t.IsZero() {
+		return time.Time{}, true
+	}
+	return clampToNow(t), false
 }

@@ -1469,6 +1469,29 @@ if media.IsRequested && len(e.config.AdvancedRules) == 0 {
 - `5257927` - fix: apply standard retention when user-based rules don't match
 - `e02b979` - feat: populate requester user data from Jellyseerr API
 
+### 14.8 Requested-Item Special-Casing Removed (Aug 9, 2026)
+
+**Problem**:
+Requested media retained a vestigial "blanket requested protection" (`IsRequested && len(AdvancedRules) == 0`) from §14.7, and a later attempt to scope it to "no applicable rule" re-introduced the over-protection §14.7 was created to fix. Requested items are not special: every media item adheres to the default retention rules (`movie_retention`/`tv_retention`) unless an advanced rule overrides it.
+
+**Design (current)**:
+- Advanced rules are **retention overrides**, not protection rules. A matching rule replaces the default retention for that item; a non-matching rule is ignored.
+- Requested media receives **no special casing**. It follows default retention unless an advanced rule applies.
+- The **only** way to protect an item from deletion is the UI **Keep** button (manual exclusion).
+
+**Solution**:
+Removed `ProtectedRequested` and all requested-item branches from the engine:
+```go
+// Removed entirely:
+if media.IsRequested && len(e.config.AdvancedRules) == 0 { ... }
+if media.IsRequested && !hasApplicableAdvancedRule(...) { ... }
+```
+
+**Impact**:
+- ✅ Requested media follows default retention unless overridden — consistent with every other item
+- ✅ No rule-based "requested protection" path remains; the UI Keep button is the only protection mechanism
+- ✅ Spec §14.7 and README no longer contradict the code
+
 ---
 
 ## Summary

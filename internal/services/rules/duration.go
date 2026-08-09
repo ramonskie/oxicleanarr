@@ -2,6 +2,7 @@ package rules
 
 import (
 	"fmt"
+	"math"
 	"regexp"
 	"strconv"
 	"time"
@@ -25,9 +26,27 @@ func parseDuration(s string) (time.Duration, error) {
 		return 0, fmt.Errorf("invalid duration format: %s (expected format: 90d, 24h, 30m, or 'never')", s)
 	}
 
-	value, err := strconv.Atoi(matches[1])
+	value, err := strconv.ParseInt(matches[1], 10, 64)
 	if err != nil {
 		return 0, fmt.Errorf("invalid duration value: %w", err)
+	}
+
+	// Guard against multiplication overflow (e.g. "999999d" wraps int64 negative).
+	var maxValue int64
+	switch matches[2] {
+	case "d":
+		maxValue = math.MaxInt64 / int64(24*time.Hour)
+	case "h":
+		maxValue = math.MaxInt64 / int64(time.Hour)
+	case "m":
+		maxValue = math.MaxInt64 / int64(time.Minute)
+	case "s":
+		maxValue = math.MaxInt64 / int64(time.Second)
+	default:
+		return 0, fmt.Errorf("unknown duration unit: %s", matches[2])
+	}
+	if value > maxValue {
+		return 0, fmt.Errorf("duration too large: %s (max %d%s)", s, maxValue, matches[2])
 	}
 
 	switch matches[2] {

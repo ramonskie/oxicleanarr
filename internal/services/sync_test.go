@@ -798,6 +798,24 @@ func TestSyncEngine_CalculateDeletionInfo(t *testing.T) {
 		assert.Empty(t, candidates)
 	})
 
+	t.Run("includes jellyfin_id for watch-state safety check", func(t *testing.T) {
+		engine, _, _ := newTestSyncEngine(t)
+
+		deleteAfter := time.Now().Add(-5 * 24 * time.Hour)
+		engine.mediaLibrary["movie-1"] = models.Media{
+			ID:          "movie-1",
+			JellyfinID:  "jf-movie-1",
+			Type:        models.MediaTypeMovie,
+			Title:       "Overdue Movie",
+			DeleteAfter: deleteAfter,
+		}
+
+		scheduledCount, candidates := engine.CalculateDeletionInfo()
+		assert.Equal(t, 1, scheduledCount)
+		require.Len(t, candidates, 1)
+		assert.Equal(t, "jf-movie-1", candidates[0]["jellyfin_id"])
+	})
+
 	t.Run("includes multiple overdue items", func(t *testing.T) {
 		engine, _, _ := newTestSyncEngine(t)
 

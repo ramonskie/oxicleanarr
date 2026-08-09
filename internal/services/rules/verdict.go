@@ -10,7 +10,6 @@ const (
 	ProtectedExcluded  ProtectionStatus = iota // Manual exclusion list
 	ProtectedDiskOK                            // Disk threshold not breached
 	ProtectedUnwatched                         // unwatched_behavior: never
-	ProtectedRequested                         // Requested, no matching user rule
 	ProtectedByRule                            // Rule explicitly protects (e.g. require_watched not met, retention: never)
 	ProtectedNoRule                            // No rule matched, no deletion date
 )

@@ -262,8 +262,6 @@ export default function ScheduledDeletionsPage() {
       return { type: 'standard', label: 'Standard Rule', variant: 'outline' };
     } else if (reason === 'excluded') {
       return { type: 'excluded', label: 'Excluded', variant: 'outline' };
-    } else if (reason === 'requested') {
-      return { type: 'requested', label: 'Requested', variant: 'outline' };
     }
     
     return null;

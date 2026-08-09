@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ramonskie/oxicleanarr/internal/clients"
 	"github.com/ramonskie/oxicleanarr/internal/config"
 	"github.com/ramonskie/oxicleanarr/internal/models"
 	"github.com/ramonskie/oxicleanarr/internal/storage"
@@ -153,6 +154,43 @@ func deletionCandidates(e *RulesEngine, cfg *config.Config, mediaList []models.M
 	return result
 }
 
+// ── Episode strategy guards ───────────────────────────────────────────────────
+
+func TestEpisodeRule_OldestFirst_MaxEpisodesZeroDeletesNothing(t *testing.T) {
+	// Regression: explicit oldest_first with MaxEpisodes:0 must NOT delete all files.
+	rule := NewEpisodeRule(config.AdvancedRule{
+		Name:                  "test-episode",
+		EpisodeDeleteStrategy: "oldest_first",
+		MaxEpisodes:           0, // not configured
+	}, nil)
+
+	episodes := []clients.SonarrEpisode{
+		{EpisodeFileID: 1, SeasonNumber: 1, EpisodeNumber: 1, HasFile: true, AirDateUTC: time.Now().AddDate(0, 0, -30)},
+		{EpisodeFileID: 2, SeasonNumber: 1, EpisodeNumber: 2, HasFile: true, AirDateUTC: time.Now().AddDate(0, 0, -20)},
+		{EpisodeFileID: 3, SeasonNumber: 1, EpisodeNumber: 3, HasFile: true, AirDateUTC: time.Now().AddDate(0, 0, -10)},
+	}
+
+	toDelete := rule.applyOldestFirstStrategy(episodes)
+	assert.Empty(t, toDelete)
+}
+
+func TestEpisodeRule_OldestFirst_DeletesExcess(t *testing.T) {
+	rule := NewEpisodeRule(config.AdvancedRule{
+		Name:                  "test-episode",
+		EpisodeDeleteStrategy: "oldest_first",
+		MaxEpisodes:           2,
+	}, nil)
+
+	episodes := []clients.SonarrEpisode{
+		{EpisodeFileID: 1, SeasonNumber: 1, EpisodeNumber: 1, HasFile: true, AirDateUTC: time.Now().AddDate(0, 0, -30)},
+		{EpisodeFileID: 2, SeasonNumber: 1, EpisodeNumber: 2, HasFile: true, AirDateUTC: time.Now().AddDate(0, 0, -20)},
+		{EpisodeFileID: 3, SeasonNumber: 1, EpisodeNumber: 3, HasFile: true, AirDateUTC: time.Now().AddDate(0, 0, -10)},
+	}
+
+	toDelete := rule.applyOldestFirstStrategy(episodes)
+	assert.ElementsMatch(t, []int{1}, toDelete) // only the oldest (1) is deleted, keeping 2 newest
+}
+
 // ── parseDuration ─────────────────────────────────────────────────────────────
 
 func TestParseDuration(t *testing.T) {
@@ -170,6 +208,9 @@ func TestParseDuration(t *testing.T) {
 		{"invalid format - unknown unit", "90x", 0, true},
 		{"empty string", "", 0, true},
 		{"invalid number", "abcd", 0, true},
+		{"overflow days", "999999d", 0, true},
+		{"overflow hours", "99999999999h", 0, true},
+		{"out of range number", "99999999999999999999d", 0, true},
 	}
 
 	for _, tt := range tests {
@@ -215,18 +256,19 @@ func TestEngine_Exclusions(t *testing.T) {
 
 // ── Requested protection ──────────────────────────────────────────────────────
 
-func TestEngine_RequestedProtection(t *testing.T) {
+func TestEngine_RequestedMedia_FollowsStandardRetention(t *testing.T) {
 	cfg := mockConfig("90d", "120d", 14)
 	excl := mockExclusions()
 	engine := buildEngine(cfg, excl)
 
-	// Requested with no advanced rules → protected
+	// Requested media is not special-cased — it adheres to default rules
+	// unless an advanced rule overrides. No rules → standard retention.
 	media := mockMedia("movie-1", models.MediaTypeMovie, 200, -1, true)
 	v := eval(engine, cfg, &media)
 
-	assert.True(t, v.IsProtected)
-	assert.Equal(t, ProtectedRequested, v.ProtectionReason)
-	assert.True(t, v.DeleteAfter.IsZero())
+	assert.False(t, v.IsProtected)
+	assert.True(t, v.ShouldDelete())
+	assert.Equal(t, SourceStandardRetention, v.ScheduleSource)
 }
 
 // ── Standard movie retention ──────────────────────────────────────────────────
@@ -331,7 +373,7 @@ func TestEngine_DeletionCandidates(t *testing.T) {
 	mediaList := []models.Media{
 		mockMedia("movie-1", models.MediaTypeMovie, 120, -1, false), // should delete
 		mockMedia("movie-2", models.MediaTypeMovie, 30, -1, false),  // within retention
-		mockMedia("movie-3", models.MediaTypeMovie, 150, -1, true),  // requested → protected
+		mockMedia("movie-3", models.MediaTypeMovie, 150, -1, true),  // requested, no override → standard retention → delete
 		mockMedia("tv-1", models.MediaTypeTVShow, 150, -1, false),   // should delete
 		mockMedia("tv-2", models.MediaTypeTVShow, 60, -1, false),    // within retention
 	}
@@ -341,7 +383,7 @@ func TestEngine_DeletionCandidates(t *testing.T) {
 	candidates := deletionCandidates(engine, cfg, mediaList)
 
 	t.Run("correct count", func(t *testing.T) {
-		assert.Len(t, candidates, 2) // movie-1 and tv-1
+		assert.Len(t, candidates, 3) // movie-1, movie-3, tv-1
 	})
 
 	t.Run("correct IDs", func(t *testing.T) {
@@ -350,6 +392,7 @@ func TestEngine_DeletionCandidates(t *testing.T) {
 			ids[i] = c.ID
 		}
 		assert.Contains(t, ids, "movie-1")
+		assert.Contains(t, ids, "movie-3")
 		assert.Contains(t, ids, "tv-1")
 	})
 }
@@ -561,8 +604,60 @@ func TestEngine_BothRetentionsDisabled(t *testing.T) {
 		media := mockMediaWithUser("movie-1", models.MediaTypeMovie, 365, -1, &differentUserID, &username, &email)
 		v := eval(engine, cfg, &media)
 
+		// Standard retention is disabled ("never") and no advanced rule matches
+		// this requester → nothing schedules an item, so it is not deletable.
 		assert.True(t, v.IsProtected)
 		assert.Equal(t, ProtectedNoRule, v.ProtectionReason)
+	})
+}
+
+func TestEngine_RequestedMedia_FollowsOverridingRules(t *testing.T) {
+	t.Run("non-matching rule → standard retention governs requested item", func(t *testing.T) {
+		cfg := &config.Config{
+			Rules: config.RulesConfig{
+				MovieRetention: "90d",
+				TVRetention:    "120d",
+			},
+			AdvancedRules: []config.AdvancedRule{
+				{Name: "Anime Rule", Type: "tag", Enabled: true, Tag: "anime", Retention: "30d"},
+			},
+			App: config.AppConfig{LeavingSoonDays: 14},
+		}
+		excl := mockExclusions()
+		engine := buildEngine(cfg, excl)
+
+		// Item does not carry the "anime" tag → the rule does not override,
+		// so the requested item follows standard 90d retention.
+		media := mockMedia("movie-1", models.MediaTypeMovie, 200, -1, true)
+		media.Tags = []string{"comedy"}
+		v := eval(engine, cfg, &media)
+
+		assert.False(t, v.IsProtected)
+		assert.True(t, v.ShouldDelete())
+		assert.Equal(t, SourceStandardRetention, v.ScheduleSource)
+	})
+
+	t.Run("matching tag rule governs requested item", func(t *testing.T) {
+		cfg := &config.Config{
+			Rules: config.RulesConfig{
+				MovieRetention: "90d",
+				TVRetention:    "120d",
+			},
+			AdvancedRules: []config.AdvancedRule{
+				{Name: "Anime Rule", Type: "tag", Enabled: true, Tag: "anime", Retention: "30d"},
+			},
+			App: config.AppConfig{LeavingSoonDays: 14},
+		}
+		excl := mockExclusions()
+		engine := buildEngine(cfg, excl)
+
+		media := mockMedia("movie-1", models.MediaTypeMovie, 60, -1, true)
+		media.Tags = []string{"anime"}
+		v := eval(engine, cfg, &media)
+
+		assert.False(t, v.IsProtected)
+		assert.Equal(t, SourceTagRule, v.ScheduleSource)
+		assert.Equal(t, "30d", v.RetentionValue)
 	})
 }
 
@@ -604,10 +699,13 @@ func TestEngine_EdgeCases(t *testing.T) {
 			ID:      "test-1",
 			Type:    models.MediaTypeMovie,
 			Title:   "Test",
-			AddedAt: time.Time{}, // zero time → 90d from year 1 = way in the past
+			AddedAt: time.Time{}, // zero AddedAt = no valid retention base
 		}
 		v := eval(engine, cfg, &media)
-		assert.True(t, v.ShouldDelete())
+		// Fail-safe: never schedule deletion from a fabricated year-1 timestamp.
+		assert.True(t, v.DeleteAfter.IsZero())
+		assert.False(t, v.ShouldDelete())
+		assert.True(t, v.IsProtected)
 	})
 }
 
@@ -674,6 +772,7 @@ func TestEngine_UserRule_UserIDMatching(t *testing.T) {
 		v := eval(engine, cfg, &media)
 
 		// Falls through to standard 90d retention — 10 days is within
+		assert.False(t, v.IsProtected)
 		assert.False(t, v.ShouldDelete())
 		assert.Equal(t, SourceStandardRetention, v.ScheduleSource)
 	})
@@ -684,6 +783,7 @@ func TestEngine_UserRule_UserIDMatching(t *testing.T) {
 		media := mockMediaWithUser("movie-3", models.MediaTypeMovie, 10, 10, nil, &username, &email)
 		v := eval(engine, cfg, &media)
 
+		assert.False(t, v.IsProtected)
 		assert.False(t, v.ShouldDelete())
 		assert.Equal(t, SourceStandardRetention, v.ScheduleSource)
 	})
@@ -725,11 +825,12 @@ func TestEngine_UserRule_UsernameMatching(t *testing.T) {
 		assert.Equal(t, SourceUserRule, v.ScheduleSource)
 	})
 
-	t.Run("different username falls through", func(t *testing.T) {
+	t.Run("different username falls through to standard retention", func(t *testing.T) {
 		differentID := 456
 		username := "JaneDoe"
 		media := mockMediaWithUser("movie-4", models.MediaTypeMovie, 20, 20, &differentID, &username, &email)
 		v := eval(engine, cfg, &media)
+		assert.False(t, v.IsProtected)
 		assert.False(t, v.ShouldDelete())
 		assert.Equal(t, SourceStandardRetention, v.ScheduleSource)
 	})
@@ -862,6 +963,48 @@ func TestEngine_UserRule_RequireWatchedFalse(t *testing.T) {
 	})
 }
 
+func TestEngine_UserRule_RetentionNever_Protects(t *testing.T) {
+	userID := 123
+	cfg := configWithUserRules([]config.AdvancedRule{
+		{Name: "Keep User Forever", Type: "user", Enabled: true, Users: []config.UserRule{
+			{UserID: &userID, Retention: "never"},
+		}},
+	})
+	excl := mockExclusions()
+	engine := buildEngine(cfg, excl)
+
+	username := "testuser"
+	email := "test@example.com"
+
+	// Very old media requested by the user — "never" must protect, not
+	// fall through to standard retention.
+	media := mockMediaWithUser("movie-1", models.MediaTypeMovie, 500, 400, &userID, &username, &email)
+	v := eval(engine, cfg, &media)
+
+	assert.True(t, v.IsProtected)
+	assert.Equal(t, ProtectedByRule, v.ProtectionReason)
+	assert.Equal(t, "Keep User Forever", v.ProtectingRule)
+	assert.False(t, v.ShouldDelete())
+}
+
+func TestEngine_WatchedRule_RetentionNever_Protects(t *testing.T) {
+	cfg := mockConfig("90d", "120d", 14)
+	cfg.AdvancedRules = []config.AdvancedRule{
+		{Name: "Keep Everything", Type: "watched", Enabled: true, Retention: "never"},
+	}
+	excl := mockExclusions()
+	engine := buildEngine(cfg, excl)
+
+	// Very old watched media — "never" must protect.
+	media := mockMedia("movie-1", models.MediaTypeMovie, 500, 400, false)
+	v := eval(engine, cfg, &media)
+
+	assert.True(t, v.IsProtected)
+	assert.Equal(t, ProtectedByRule, v.ProtectionReason)
+	assert.Equal(t, "Keep Everything", v.ProtectingRule)
+	assert.False(t, v.ShouldDelete())
+}
+
 func TestEngine_UserRule_MultipleUsers(t *testing.T) {
 	userID1, userID2, userID3 := 301, 302, 303
 	cfg := configWithUserRules([]config.AdvancedRule{
@@ -930,6 +1073,7 @@ func TestEngine_UserRule_PriorityOverStandard(t *testing.T) {
 		media := mockMediaWithUser("movie-2", models.MediaTypeMovie, 10, 10, &differentUserID, &username, &email)
 		v := eval(engine, cfg, &media)
 
+		assert.False(t, v.IsProtected)
 		assert.False(t, v.ShouldDelete())
 		assert.Equal(t, SourceStandardRetention, v.ScheduleSource)
 	})
@@ -945,24 +1089,26 @@ func TestEngine_UserRule_FallbackToStandard(t *testing.T) {
 	excl := mockExclusions()
 	engine := buildEngine(cfg, excl)
 
-	t.Run("non-matching user past standard retention → delete", func(t *testing.T) {
+	t.Run("non-matching user → standard retention past retention deletes", func(t *testing.T) {
 		differentUserID := 999
 		username := "nonmatching"
 		email := "nonmatching@example.com"
 		media := mockMediaWithUser("movie-1", models.MediaTypeMovie, 200, 200, &differentUserID, &username, &email)
 		v := eval(engine, cfg, &media)
 
+		assert.False(t, v.IsProtected)
 		assert.True(t, v.ShouldDelete())
 		assert.Equal(t, SourceStandardRetention, v.ScheduleSource)
 	})
 
-	t.Run("non-matching user within standard retention → keep", func(t *testing.T) {
+	t.Run("non-matching user → standard retention within retention keeps", func(t *testing.T) {
 		differentUserID := 888
 		username := "another"
 		email := "another@example.com"
 		media := mockMediaWithUser("movie-2", models.MediaTypeMovie, 50, 50, &differentUserID, &username, &email)
 		v := eval(engine, cfg, &media)
 
+		assert.False(t, v.IsProtected)
 		assert.False(t, v.ShouldDelete())
 		assert.Equal(t, SourceStandardRetention, v.ScheduleSource)
 	})
@@ -983,7 +1129,8 @@ func TestEngine_UserRule_Disabled(t *testing.T) {
 	media := mockMediaWithUser("movie-1", models.MediaTypeMovie, 10, 10, &userID, &username, &email)
 	v := eval(engine, cfg, &media)
 
-	// Disabled rule ignored → standard 90d retention → 10 days is within
+	// Disabled rules do not apply → standard retention applies (within 90d).
+	assert.False(t, v.IsProtected)
 	assert.False(t, v.ShouldDelete())
 	assert.Equal(t, SourceStandardRetention, v.ScheduleSource)
 }

@@ -20,12 +20,21 @@ func NewUserRule(rule config.AdvancedRule) *UserRule {
 func (r *UserRule) Name() string     { return r.rule.Name }
 func (r *UserRule) Scope() RuleScope { return ScopeAll }
 
-// Protect returns ProtectedByRule when the user matches and require_watched is true
-// but the item has not been watched.
+// Protect returns ProtectedByRule when the user matches and either:
+//   - retention is "never" (explicitly keep this user's requests forever), or
+//   - require_watched is true but the item has not been watched.
+//
+// Matches TagRule semantics: "never" is protection, not an empty retention.
 func (r *UserRule) Protect(ctx EvalContext) *ProtectionStatus {
 	userRule := r.matchedUserRule(ctx)
 	if userRule == nil {
 		return nil
+	}
+
+	// retention: never — explicitly protect this user's requests forever
+	if userRule.Retention == "never" {
+		s := ProtectedByRule
+		return &s
 	}
 
 	requireWatched := userRule.RequireWatched != nil && *userRule.RequireWatched

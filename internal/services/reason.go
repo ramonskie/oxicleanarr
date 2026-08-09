@@ -20,8 +20,6 @@ func FormatDeletionReason(v rules.RuleVerdict, media *models.Media) string {
 			return "Disk space is adequate — rules are dormant."
 		case rules.ProtectedUnwatched:
 			return "Never delete unwatched content (unwatched_behavior: never)."
-		case rules.ProtectedRequested:
-			return "Protected: item was requested and no matching user rule applies."
 		case rules.ProtectedByRule:
 			if v.ProtectingRule != "" {
 				return fmt.Sprintf("Protected by rule '%s'.", v.ProtectingRule)

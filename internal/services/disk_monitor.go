@@ -111,6 +111,9 @@ func (m *DiskMonitor) Update(ctx context.Context) error {
 
 // GetStatus returns a snapshot of the current disk status for use in EvalContext.
 // Returns nil if the disk threshold feature is disabled.
+// Before the first successful Update, cached values are zero and ThresholdBreached is
+// false — the gate treats this as "not breached" and protects everything (fail-closed:
+// no disk data means no deletions).
 func (m *DiskMonitor) GetStatus() *rules.DiskStatus {
 	cfg := config.Get()
 	if !cfg.App.DiskThreshold.Enabled {

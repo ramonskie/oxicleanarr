@@ -119,6 +119,13 @@ func (r *EpisodeRule) showMatchesRule(ctx EvalContext) bool {
 // applyOldestFirstStrategy keeps the newest max_episodes episodes and marks the rest for deletion.
 // Episodes are sorted by air date (newest first); episodes beyond max_episodes are deleted.
 func (r *EpisodeRule) applyOldestFirstStrategy(episodes []clients.SonarrEpisode) []int {
+	// MaxEpisodes <= 0 means "not configured" — never delete when no keep-limit is set.
+	// Without this guard, an explicit oldest_first strategy with MaxEpisodes left at 0
+	// would delete every episode file.
+	if r.rule.MaxEpisodes <= 0 {
+		return nil
+	}
+
 	withFiles := filterHasFile(episodes)
 
 	if len(r.rule.SeasonNumbers) > 0 {
