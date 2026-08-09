@@ -1,6 +1,8 @@
 package cache
 
 import (
+	"fmt"
+	"sync"
 	"time"
 
 	gocache "github.com/patrickmn/go-cache"
@@ -37,12 +39,22 @@ const (
 // Cache is a wrapper around go-cache
 type Cache struct {
 	store *gocache.Cache
+
+	inflightMu sync.Mutex
+	inflight   map[string]*inflightCall
+}
+
+type inflightCall struct {
+	done chan struct{}
+	val  any
+	err  error
 }
 
 // New creates a new Cache instance
 func New() *Cache {
 	return &Cache{
-		store: gocache.New(5*time.Minute, 10*time.Minute),
+		store:    gocache.New(5*time.Minute, 10*time.Minute),
+		inflight: make(map[string]*inflightCall),
 	}
 }
 
@@ -76,17 +88,52 @@ func (c *Cache) DeletePattern(pattern string) {
 	}
 }
 
-// GetOrSet retrieves a value from cache, or sets it if not found
-func (c *Cache) GetOrSet(key string, ttl time.Duration, fn func() (any, error)) (any, error) {
+// GetOrSet retrieves a value from cache, or sets it if not found.
+// Concurrent callers for the same key share a single factory invocation
+// (single-flight), so fn never runs twice for the same key at once.
+//
+// If fn panics, the panic is recovered into a returned error so waiters are
+// released instead of hanging. Note: if fn exits via runtime.Goexit (rather
+// than returning or panicking), waiters are still released but receive a zero
+// value with a nil error; callers must not rely on recovering from that.
+func (c *Cache) GetOrSet(key string, ttl time.Duration, fn func() (any, error)) (val any, err error) {
 	if val, found := c.Get(key); found {
 		return val, nil
 	}
 
-	val, err := fn()
-	if err != nil {
-		return nil, err
+	// Claim or join an in-flight computation for this key.
+	c.inflightMu.Lock()
+	if call, ok := c.inflight[key]; ok {
+		c.inflightMu.Unlock()
+		<-call.done
+		return call.val, call.err
 	}
 
-	c.Set(key, val, ttl)
-	return val, nil
+	call := &inflightCall{done: make(chan struct{})}
+	c.inflight[key] = call
+	c.inflightMu.Unlock()
+
+	// If fn panics, recover it into call.err so waiters are released and the
+	// panic becomes a returned error instead of crashing the calling goroutine
+	// (or stranding concurrent/future callers on <-call.done).
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			call.err = fmt.Errorf("cache GetOrSet factory panicked: %v", recovered)
+			err = call.err
+		}
+		close(call.done)
+		c.inflightMu.Lock()
+		delete(c.inflight, key)
+		c.inflightMu.Unlock()
+	}()
+
+	val, err = fn()
+
+	call.val = val
+	call.err = err
+	if err == nil {
+		c.Set(key, val, ttl)
+	}
+
+	return val, err
 }

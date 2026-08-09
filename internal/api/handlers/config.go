@@ -216,7 +216,11 @@ func (h *ConfigHandler) UpdateConfig(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Get current config
+	// Serialize the read-modify-write so concurrent updates can't lose changes.
+	configWriteMu.Lock()
+	defer configWriteMu.Unlock()
+
+	// Re-read config under the lock: a concurrent writer may have changed it.
 	cfg := config.Get()
 	if cfg == nil {
 		log.Error().Msg("Config not initialized")
@@ -227,7 +231,7 @@ func (h *ConfigHandler) UpdateConfig(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Create a new config with updated values
-	newCfg := *cfg
+	newCfg := cloneConfigWithRules(cfg)
 
 	// Capture old retention values BEFORE updating (for change detection later)
 	oldMovieRetention := cfg.Rules.MovieRetention
@@ -369,7 +373,7 @@ func (h *ConfigHandler) UpdateConfig(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Validate the new config
-	if err := config.Validate(&newCfg); err != nil {
+	if err := config.Validate(newCfg); err != nil {
 		log.Error().Err(err).Msg("Config validation failed")
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusBadRequest)
@@ -380,7 +384,7 @@ func (h *ConfigHandler) UpdateConfig(w http.ResponseWriter, r *http.Request) {
 	log.Info().Int("leaving_soon_days", newCfg.App.LeavingSoonDays).Msg("About to write config to file")
 
 	// Write to config file
-	if err := writeConfigToFile(&newCfg); err != nil {
+	if err := writeConfigToFile(newCfg); err != nil {
 		log.Error().Err(err).Msg("Failed to write config to file")
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusInternalServerError)
@@ -423,6 +427,7 @@ func (h *ConfigHandler) UpdateConfig(w http.ResponseWriter, r *http.Request) {
 	if retentionChanged && h.syncEngine != nil {
 		log.Info().Msg("Re-applying retention rules to existing media (no external API calls needed)")
 		go func() {
+			defer recoverPanic("reapply retention rules")
 			h.syncEngine.ReapplyRetentionRules()
 			log.Info().Msg("Retention rules re-applied successfully")
 		}()
@@ -438,6 +443,7 @@ func (h *ConfigHandler) UpdateConfig(w http.ResponseWriter, r *http.Request) {
 				Int("new_incr_interval", req.Sync.IncrementalInterval).
 				Msg("Sync intervals changed, restarting scheduler")
 			go func() {
+				defer recoverPanic("restart sync scheduler")
 				if err := h.syncEngine.RestartScheduler(); err != nil {
 					log.Error().Err(err).Msg("Failed to restart sync scheduler")
 				}

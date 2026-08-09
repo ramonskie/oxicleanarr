@@ -61,7 +61,7 @@ func NewRouter(deps *RouterDependencies) *chi.Mux {
 	configHandler := handlers.NewConfigHandler(deps.SyncEngine)
 	rulesHandler := handlers.NewRulesHandler()
 	systemHandler := handlers.NewSystemHandler(deps.SyncEngine, deps.ShutdownCh)
-	servicesHandler := handlers.NewServiceStatusHandler(config.Get())
+	servicesHandler := handlers.NewServiceStatusHandler()
 	logsHandler := handlers.NewLogsHandler()
 
 	// Public routes

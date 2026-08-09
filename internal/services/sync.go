@@ -129,16 +129,16 @@ func (e *SyncEngine) Start() error {
 		e.incrSyncTicker = time.NewTicker(incrInterval)
 
 		// Run initial full sync immediately
-		go func() {
+		goRecover(func() {
 			ctx := context.Background()
 			if err := e.FullSync(ctx); err != nil {
 				log.Error().Err(err).Msg("Initial full sync failed")
 			}
-		}()
+		})
 
 		// Start ticker goroutines
-		go e.runFullSyncLoop()
-		go e.runIncrementalSyncLoop()
+		goRecover(e.runFullSyncLoop)
+		goRecover(e.runIncrementalSyncLoop)
 
 		log.Info().
 			Dur("full_interval", fullInterval).
@@ -220,10 +220,10 @@ func (e *SyncEngine) runFullSyncLoop() {
 	for {
 		select {
 		case <-e.fullSyncTicker.C:
-			ctx := context.Background()
-			if err := e.FullSync(ctx); err != nil {
-				log.Error().Err(err).Msg("Scheduled full sync failed")
-			}
+			runSyncSafe("full", func() error {
+				ctx := context.Background()
+				return e.FullSync(ctx)
+			})
 		case <-e.stopChan:
 			return
 		}
@@ -235,10 +235,10 @@ func (e *SyncEngine) runIncrementalSyncLoop() {
 	for {
 		select {
 		case <-e.incrSyncTicker.C:
-			ctx := context.Background()
-			if err := e.IncrementalSync(ctx); err != nil {
-				log.Error().Err(err).Msg("Scheduled incremental sync failed")
-			}
+			runSyncSafe("incremental", func() error {
+				ctx := context.Background()
+				return e.IncrementalSync(ctx)
+			})
 		case <-e.stopChan:
 			return
 		}

@@ -4,13 +4,14 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"sync/atomic"
 
 	"github.com/rs/zerolog/log"
 	"github.com/spf13/viper"
 )
 
 var (
-	globalConfig *Config
+	globalConfig atomic.Pointer[Config]
 	configPath   string
 )
 
@@ -71,19 +72,19 @@ func Load(path string) (*Config, error) {
 		return nil, err
 	}
 
-	globalConfig = cfg
+	globalConfig.Store(cfg)
 	return cfg, nil
 }
 
 // Get returns the global config instance
 func Get() *Config {
-	return globalConfig
+	return globalConfig.Load()
 }
 
 // SetTestConfig sets a test config (for testing only - bypasses validation)
 // This should only be used in test files
 func SetTestConfig(cfg *Config) {
-	globalConfig = cfg
+	globalConfig.Store(cfg)
 }
 
 // GetPath returns the current config file path
@@ -98,7 +99,7 @@ func Reload() error {
 	if err != nil {
 		return err
 	}
-	globalConfig = cfg
+	globalConfig.Store(cfg)
 	log.Info().
 		Str("movie_retention", cfg.Rules.MovieRetention).
 		Str("tv_retention", cfg.Rules.TVRetention).

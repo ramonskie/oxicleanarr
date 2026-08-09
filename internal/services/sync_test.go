@@ -3,6 +3,7 @@ package services
 import (
 	"context"
 	"fmt"
+	"runtime"
 	"testing"
 	"time"
 
@@ -197,6 +198,71 @@ func TestSyncEngine_StartStop(t *testing.T) {
 		// Should not panic
 		engine.Stop()
 		assert.False(t, engine.running)
+	})
+
+	t.Run("scheduler goroutines exit after stop", func(t *testing.T) {
+		tmpDir := t.TempDir()
+
+		cfg := &config.Config{
+			Sync: config.SyncConfig{
+				FullInterval:        1,
+				IncrementalInterval: 1,
+				AutoStart:           true,
+			},
+			Rules: config.RulesConfig{
+				MovieRetention: "90d",
+				TVRetention:    "120d",
+			},
+		}
+		config.SetTestConfig(cfg)
+
+		cacheInstance := cache.New()
+		jobs, err := storage.NewJobsFile(tmpDir, 50)
+		require.NoError(t, err)
+
+		exclusions, err := storage.NewExclusionsFile(tmpDir)
+		require.NoError(t, err)
+
+		manualLS, err := storage.NewManualLeavingSoonFile(tmpDir)
+		require.NoError(t, err)
+
+		rulesEngine := rules.NewRulesEngine(exclusions, nil)
+		engine := NewSyncEngine(cfg, cacheInstance, jobs, exclusions, manualLS, rulesEngine)
+
+		baseline := runtime.NumGoroutine()
+		require.NoError(t, engine.Start())
+		assert.NotNil(t, engine.fullSyncTicker)
+		assert.NotNil(t, engine.incrSyncTicker)
+
+		// Wait for the scheduler goroutines to be up (poll rather than a fixed
+		// sleep so timing stays robust on loaded CI). Stop before the 1-minute
+		// ticker intervals fire.
+		started := false
+		deadline := time.Now().Add(2 * time.Second)
+		for time.Now().Before(deadline) {
+			if runtime.NumGoroutine() > baseline {
+				started = true
+				break
+			}
+			time.Sleep(10 * time.Millisecond)
+		}
+		require.True(t, started, "start should spawn scheduler goroutines")
+
+		engine.Stop()
+		assert.False(t, engine.running)
+
+		// The loop goroutines must exit on stop, not keep spinning on the
+		// closed stop channel (regression: a panic-recovering wrapper around
+		// the whole loop restarted it forever). Wait for the goroutine count to
+		// drop back toward the pre-start baseline.
+		deadline = time.Now().Add(2 * time.Second)
+		for time.Now().Before(deadline) {
+			if runtime.NumGoroutine() <= baseline+1 {
+				return
+			}
+			time.Sleep(10 * time.Millisecond)
+		}
+		t.Fatal("scheduler goroutines did not exit after Stop()")
 	})
 }
 

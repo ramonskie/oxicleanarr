@@ -81,6 +81,11 @@ func (h *RulesHandler) CreateRule(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Serialize the read-modify-write so concurrent updates can't lose changes.
+	configWriteMu.Lock()
+	defer configWriteMu.Unlock()
+
+	// Re-read config under the lock: a concurrent writer may have changed it.
 	cfg := config.Get()
 	if cfg == nil {
 		log.Error().Msg("Config not initialized")
@@ -90,7 +95,7 @@ func (h *RulesHandler) CreateRule(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Check for duplicate rule name
+	// Check for duplicate rule name (under the lock, against the re-read config)
 	for _, existingRule := range cfg.AdvancedRules {
 		if existingRule.Name == rule.Name {
 			log.Error().Str("name", rule.Name).Msg("Rule with this name already exists")
@@ -102,11 +107,11 @@ func (h *RulesHandler) CreateRule(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Add rule to config
-	newCfg := *cfg
+	newCfg := cloneConfigWithRules(cfg)
 	newCfg.AdvancedRules = append(newCfg.AdvancedRules, rule)
 
 	// Validate the entire config
-	if err := config.Validate(&newCfg); err != nil {
+	if err := config.Validate(newCfg); err != nil {
 		log.Error().Err(err).Msg("Config validation failed")
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusBadRequest)
@@ -115,7 +120,7 @@ func (h *RulesHandler) CreateRule(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Write to config file
-	if err := writeConfigToFile(&newCfg); err != nil {
+	if err := writeConfigToFile(newCfg); err != nil {
 		log.Error().Err(err).Msg("Failed to write config to file")
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusInternalServerError)
@@ -157,6 +162,24 @@ func (h *RulesHandler) UpdateRule(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Create updated rule
+	updatedRule := config.AdvancedRule{
+		Name:           req.Name,
+		Type:           req.Type,
+		Enabled:        req.Enabled,
+		Tag:            req.Tag,
+		Retention:      req.Retention,
+		MaxEpisodes:    req.MaxEpisodes,
+		MaxAge:         req.MaxAge,
+		RequireWatched: req.RequireWatched,
+		Users:          req.Users,
+	}
+
+	// Serialize the read-modify-write so concurrent updates can't lose changes.
+	configWriteMu.Lock()
+	defer configWriteMu.Unlock()
+
+	// Re-read config under the lock: a concurrent writer may have changed it.
 	cfg := config.Get()
 	if cfg == nil {
 		log.Error().Msg("Config not initialized")
@@ -183,19 +206,6 @@ func (h *RulesHandler) UpdateRule(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Create updated rule
-	updatedRule := config.AdvancedRule{
-		Name:           req.Name,
-		Type:           req.Type,
-		Enabled:        req.Enabled,
-		Tag:            req.Tag,
-		Retention:      req.Retention,
-		MaxEpisodes:    req.MaxEpisodes,
-		MaxAge:         req.MaxAge,
-		RequireWatched: req.RequireWatched,
-		Users:          req.Users,
-	}
-
 	// Validate rule
 	if err := validateRule(&updatedRule); err != nil {
 		log.Error().Err(err).Msg("Rule validation failed")
@@ -206,11 +216,11 @@ func (h *RulesHandler) UpdateRule(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Update rule in config
-	newCfg := *cfg
+	newCfg := cloneConfigWithRules(cfg)
 	newCfg.AdvancedRules[ruleIndex] = updatedRule
 
 	// Validate the entire config
-	if err := config.Validate(&newCfg); err != nil {
+	if err := config.Validate(newCfg); err != nil {
 		log.Error().Err(err).Msg("Config validation failed")
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusBadRequest)
@@ -219,7 +229,7 @@ func (h *RulesHandler) UpdateRule(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Write to config file
-	if err := writeConfigToFile(&newCfg); err != nil {
+	if err := writeConfigToFile(newCfg); err != nil {
 		log.Error().Err(err).Msg("Failed to write config to file")
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusInternalServerError)
@@ -252,6 +262,11 @@ func (h *RulesHandler) DeleteRule(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Serialize the read-modify-write so concurrent updates can't lose changes.
+	configWriteMu.Lock()
+	defer configWriteMu.Unlock()
+
+	// Re-read config under the lock: a concurrent writer may have changed it.
 	cfg := config.Get()
 	if cfg == nil {
 		log.Error().Msg("Config not initialized")
@@ -279,11 +294,11 @@ func (h *RulesHandler) DeleteRule(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Remove rule from config
-	newCfg := *cfg
+	newCfg := cloneConfigWithRules(cfg)
 	newCfg.AdvancedRules = append(newCfg.AdvancedRules[:ruleIndex], newCfg.AdvancedRules[ruleIndex+1:]...)
 
 	// Write to config file
-	if err := writeConfigToFile(&newCfg); err != nil {
+	if err := writeConfigToFile(newCfg); err != nil {
 		log.Error().Err(err).Msg("Failed to write config to file")
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusInternalServerError)
@@ -330,6 +345,11 @@ func (h *RulesHandler) ToggleRule(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Serialize the read-modify-write so concurrent updates can't lose changes.
+	configWriteMu.Lock()
+	defer configWriteMu.Unlock()
+
+	// Re-read config under the lock: a concurrent writer may have changed it.
 	cfg := config.Get()
 	if cfg == nil {
 		log.Error().Msg("Config not initialized")
@@ -357,11 +377,11 @@ func (h *RulesHandler) ToggleRule(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Update rule enabled state
-	newCfg := *cfg
+	newCfg := cloneConfigWithRules(cfg)
 	newCfg.AdvancedRules[ruleIndex].Enabled = req.Enabled
 
 	// Write to config file
-	if err := writeConfigToFile(&newCfg); err != nil {
+	if err := writeConfigToFile(newCfg); err != nil {
 		log.Error().Err(err).Msg("Failed to write config to file")
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusInternalServerError)
@@ -450,4 +470,24 @@ func (e ErrInvalidInput) Error() string {
 		return e.Field + "[" + string(rune(*e.Index)) + "]: " + e.Message
 	}
 	return e.Field + ": " + e.Message
+}
+
+// cloneConfigWithRules returns a deep copy of cfg whose AdvancedRules slice
+// (including each rule's Users slice) is detached from the live config.
+// `newCfg := *cfg` is only a shallow copy, so appending/replacing/removing
+// elements (and toggle's element mutation) would otherwise write into the
+// shared backing array that concurrent readers see.
+func cloneConfigWithRules(cfg *config.Config) *config.Config {
+	clone := *cfg
+	if cfg.AdvancedRules != nil {
+		clone.AdvancedRules = make([]config.AdvancedRule, len(cfg.AdvancedRules))
+		for i, rule := range cfg.AdvancedRules {
+			clone.AdvancedRules[i] = rule
+			if rule.Users != nil {
+				clone.AdvancedRules[i].Users = make([]config.UserRule, len(rule.Users))
+				copy(clone.AdvancedRules[i].Users, rule.Users)
+			}
+		}
+	}
+	return &clone
 }

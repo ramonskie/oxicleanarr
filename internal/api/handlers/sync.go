@@ -28,6 +28,7 @@ func (h *SyncHandler) TriggerFullSync(w http.ResponseWriter, r *http.Request) {
 	// Use background context for async operation, not request context
 	// which would be canceled when the response is sent
 	go func() {
+		defer recoverPanic("manual full sync")
 		ctx := context.Background()
 		if err := h.syncEngine.FullSync(ctx); err != nil {
 			log.Error().Err(err).Msg("Manual full sync failed")
@@ -49,6 +50,7 @@ func (h *SyncHandler) TriggerIncrementalSync(w http.ResponseWriter, r *http.Requ
 	// Use background context for async operation, not request context
 	// which would be canceled when the response is sent
 	go func() {
+		defer recoverPanic("manual incremental sync")
 		ctx := context.Background()
 		if err := h.syncEngine.IncrementalSync(ctx); err != nil {
 			log.Error().Err(err).Msg("Manual incremental sync failed")

@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"net/http"
 	"os"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/ramonskie/oxicleanarr/internal/services"
@@ -14,15 +16,15 @@ import (
 type SystemHandler struct {
 	syncEngine   *services.SyncEngine
 	shutdownCh   chan struct{}
-	isRestarting bool
+	shutdownOnce sync.Once
+	isRestarting atomic.Bool
 }
 
 // NewSystemHandler creates a new SystemHandler
 func NewSystemHandler(syncEngine *services.SyncEngine, shutdownCh chan struct{}) *SystemHandler {
 	return &SystemHandler{
-		syncEngine:   syncEngine,
-		shutdownCh:   shutdownCh,
-		isRestarting: false,
+		syncEngine: syncEngine,
+		shutdownCh: shutdownCh,
 	}
 }
 
@@ -53,7 +55,8 @@ func (h *SystemHandler) Restart(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if h.isRestarting {
+	// Atomically claim the restart; a concurrent request will see it as claimed.
+	if !h.isRestarting.CompareAndSwap(false, true) {
 		log.Warn().Msg("Restart already in progress")
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusConflict)
@@ -63,8 +66,6 @@ func (h *SystemHandler) Restart(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
-
-	h.isRestarting = true
 
 	log.Info().Bool("force", req.Force).Msg("Application restart requested via API")
 
@@ -76,8 +77,16 @@ func (h *SystemHandler) Restart(w http.ResponseWriter, r *http.Request) {
 		"status":  "restarting",
 	})
 
-	// Trigger graceful shutdown in a separate goroutine
+	// Trigger graceful shutdown in a separate goroutine. The shutdown signal
+	// is sent unconditionally via a deferred sync.Once, so even if stopping
+	// the sync engine panics (recovered below) the process still exits and the
+	// restart actually happens instead of wedging in a "restarting" state.
 	go func() {
+		defer recoverPanic("application restart")
+		defer h.shutdownOnce.Do(func() {
+			close(h.shutdownCh)
+		})
+
 		// Give time for the response to be sent
 		time.Sleep(500 * time.Millisecond)
 
@@ -88,9 +97,6 @@ func (h *SystemHandler) Restart(w http.ResponseWriter, r *http.Request) {
 			log.Info().Msg("Stopping sync engine")
 			h.syncEngine.Stop()
 		}
-
-		// Signal shutdown to main
-		close(h.shutdownCh)
 	}()
 }
 
@@ -118,7 +124,7 @@ func (h *SystemHandler) GetInfo(w http.ResponseWriter, r *http.Request) {
 		"hostname":   hostname,
 		"pid":        os.Getpid(),
 		"go_version": os.Getenv("GO_VERSION"),
-		"restarting": h.isRestarting,
+		"restarting": h.isRestarting.Load(),
 	}
 
 	w.Header().Set("Content-Type", "application/json")

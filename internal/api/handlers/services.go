@@ -9,18 +9,15 @@ import (
 
 	"github.com/ramonskie/oxicleanarr/internal/clients"
 	"github.com/ramonskie/oxicleanarr/internal/config"
+	"github.com/rs/zerolog/log"
 )
 
 // ServiceStatusHandler handles checking the status of connected services
-type ServiceStatusHandler struct {
-	config *config.Config
-}
+type ServiceStatusHandler struct{}
 
 // NewServiceStatusHandler creates a new ServiceStatusHandler
-func NewServiceStatusHandler(cfg *config.Config) *ServiceStatusHandler {
-	return &ServiceStatusHandler{
-		config: cfg,
-	}
+func NewServiceStatusHandler() *ServiceStatusHandler {
+	return &ServiceStatusHandler{}
 }
 
 // ServiceStatus represents the status of a service
@@ -51,7 +48,6 @@ func (h *ServiceStatusHandler) CheckStatus(w http.ResponseWriter, r *http.Reques
 
 	// Helper to check service
 	checkService := func(name string, enabled bool, pinger func(context.Context) error) {
-		defer wg.Done()
 		status := ServiceStatus{
 			Name:    name,
 			Enabled: enabled,
@@ -73,47 +69,38 @@ func (h *ServiceStatusHandler) CheckStatus(w http.ResponseWriter, r *http.Reques
 		resultsChan <- status
 	}
 
+	// launch runs checkService in a goroutine, releasing wg even if it panics so
+	// the handler can never hang on wg.Wait().
+	launch := func(name string, enabled bool, pinger func(context.Context) error) {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			defer func() {
+				if recovered := recover(); recovered != nil {
+					log.Error().Str("service", name).Interface("panic", recovered).Msg("Service check panicked")
+				}
+			}()
+			checkService(name, enabled, pinger)
+		}()
+	}
+
 	// Jellyfin
-	wg.Add(1)
-	go func() {
-		client := clients.NewJellyfinClient(cfg.Integrations.Jellyfin)
-		checkService("Jellyfin", cfg.Integrations.Jellyfin.Enabled, client.Ping)
-	}()
+	launch("Jellyfin", cfg.Integrations.Jellyfin.Enabled, clients.NewJellyfinClient(cfg.Integrations.Jellyfin).Ping)
 
 	// Radarr
-	wg.Add(1)
-	go func() {
-		client := clients.NewRadarrClient(cfg.Integrations.Radarr)
-		checkService("Radarr", cfg.Integrations.Radarr.Enabled, client.Ping)
-	}()
+	launch("Radarr", cfg.Integrations.Radarr.Enabled, clients.NewRadarrClient(cfg.Integrations.Radarr).Ping)
 
 	// Sonarr
-	wg.Add(1)
-	go func() {
-		client := clients.NewSonarrClient(cfg.Integrations.Sonarr)
-		checkService("Sonarr", cfg.Integrations.Sonarr.Enabled, client.Ping)
-	}()
+	launch("Sonarr", cfg.Integrations.Sonarr.Enabled, clients.NewSonarrClient(cfg.Integrations.Sonarr).Ping)
 
 	// Jellyseerr
-	wg.Add(1)
-	go func() {
-		client := clients.NewJellyseerrClient(cfg.Integrations.Jellyseerr)
-		checkService("Jellyseerr", cfg.Integrations.Jellyseerr.Enabled, client.Ping)
-	}()
+	launch("Jellyseerr", cfg.Integrations.Jellyseerr.Enabled, clients.NewJellyseerrClient(cfg.Integrations.Jellyseerr).Ping)
 
 	// Jellystat
-	wg.Add(1)
-	go func() {
-		client := clients.NewJellystatClient(cfg.Integrations.Jellystat)
-		checkService("Jellystat", cfg.Integrations.Jellystat.Enabled, client.Ping)
-	}()
+	launch("Jellystat", cfg.Integrations.Jellystat.Enabled, clients.NewJellystatClient(cfg.Integrations.Jellystat).Ping)
 
 	// Streamystats
-	wg.Add(1)
-	go func() {
-		client := clients.NewStreamystatsClient(cfg.Integrations.Streamystats)
-		checkService("Streamystats", cfg.Integrations.Streamystats.Enabled, client.Ping)
-	}()
+	launch("Streamystats", cfg.Integrations.Streamystats.Enabled, clients.NewStreamystatsClient(cfg.Integrations.Streamystats).Ping)
 
 	// Wait for all checks to complete
 	go func() {
