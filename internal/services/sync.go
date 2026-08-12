@@ -2,6 +2,7 @@ package services
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -43,6 +44,10 @@ type SyncEngine struct {
 	stopChan       chan struct{}
 	running        bool
 	runningLock    sync.Mutex
+
+	// syncRunMu serializes manual/scheduled sync invocations so a full and an
+	// incremental sync (or two fulls) can't overlap and race the media library.
+	syncRunMu sync.Mutex
 }
 
 // NewSyncEngine creates a new sync engine
@@ -245,8 +250,24 @@ func (e *SyncEngine) runIncrementalSyncLoop() {
 	}
 }
 
+// acquireSyncRunLock serializes sync runs on syncRunMu. If another sync holds
+// the lock, it waits (the scheduler and manual triggers queue behind a running
+// sync) and logs once so the queued wait is visible in the server log.
+func (e *SyncEngine) acquireSyncRunLock() {
+	if e.syncRunMu.TryLock() {
+		return
+	}
+	log.Info().Msg("A sync is already running; this sync is queued and will start when it finishes")
+	e.syncRunMu.Lock()
+}
+
 // FullSync performs a complete sync of all media
 func (e *SyncEngine) FullSync(ctx context.Context) error {
+	// Only one sync run at a time: a manual full sync while a scheduled one is
+	// running would otherwise race the media library and rules evaluation.
+	e.acquireSyncRunLock()
+	defer e.syncRunMu.Unlock()
+
 	jobID := uuid.New().String()
 	startTime := time.Now()
 
@@ -268,13 +289,13 @@ func (e *SyncEngine) FullSync(ctx context.Context) error {
 	// Sync all services
 	movieCount := 0
 	tvShowCount := 0
-	var lastErr error
+	var syncErrs []error
 
 	// Sync movies from Radarr
 	if e.radarrClient != nil {
 		movies, err := e.syncRadarr(ctx)
 		if err != nil {
-			lastErr = err
+			syncErrs = append(syncErrs, err)
 			log.Error().Err(err).Msg("Failed to sync Radarr")
 		} else {
 			movieCount = len(movies)
@@ -285,7 +306,7 @@ func (e *SyncEngine) FullSync(ctx context.Context) error {
 	if e.sonarrClient != nil {
 		shows, err := e.syncSonarr(ctx)
 		if err != nil {
-			lastErr = err
+			syncErrs = append(syncErrs, err)
 			log.Error().Err(err).Msg("Failed to sync Sonarr")
 		} else {
 			tvShowCount = len(shows)
@@ -295,7 +316,7 @@ func (e *SyncEngine) FullSync(ctx context.Context) error {
 	// Sync Jellyfin watch data
 	if e.jellyfinClient != nil {
 		if err := e.syncJellyfin(ctx); err != nil {
-			lastErr = err
+			syncErrs = append(syncErrs, err)
 			log.Error().Err(err).Msg("Failed to sync Jellyfin")
 		}
 	}
@@ -303,7 +324,7 @@ func (e *SyncEngine) FullSync(ctx context.Context) error {
 	// Sync detailed watch history from the active stats provider (Jellystat or Streamystats)
 	if e.statsClient != nil {
 		if err := e.syncStats(ctx); err != nil {
-			lastErr = err
+			syncErrs = append(syncErrs, err)
 			log.Error().Err(err).Msg("Failed to sync stats provider")
 		}
 	}
@@ -311,7 +332,7 @@ func (e *SyncEngine) FullSync(ctx context.Context) error {
 	// Sync requested items from Jellyseerr
 	if e.jellyseerrClient != nil {
 		if err := e.syncJellyseerr(ctx); err != nil {
-			lastErr = err
+			syncErrs = append(syncErrs, err)
 			log.Error().Err(err).Msg("Failed to sync Jellyseerr")
 		}
 	} else {
@@ -359,7 +380,7 @@ func (e *SyncEngine) FullSync(ctx context.Context) error {
 		var err error
 		leavingSoonCount, err = e.symlinkLibraryManager.SyncLibraries(ctx, mediaLibraryCopy)
 		if err != nil {
-			lastErr = err
+			syncErrs = append(syncErrs, err)
 			log.Error().Err(err).Msg("Failed to sync symlink libraries")
 		}
 	}
@@ -370,11 +391,11 @@ func (e *SyncEngine) FullSync(ctx context.Context) error {
 	// Execute deletions if enabled and not in dry-run mode
 	deletedCount := 0
 	episodeFilesDeleted := 0
+	protectedCount := 0
+	failedCount := 0
 	deletedItems := make([]map[string]interface{}, 0)
 	if e.config.App.EnableDeletion && !e.config.App.DryRun && len(wouldDelete) > 0 {
-		var episodeItemsProcessed int
-		deletedCount, episodeItemsProcessed, episodeFilesDeleted, deletedItems = e.ExecuteDeletions(ctx, wouldDelete)
-		_ = episodeItemsProcessed // job summary tracks episode_files_deleted, not episode items processed
+		deletedCount, _, episodeFilesDeleted, protectedCount, failedCount, deletedItems = e.ExecuteDeletions(ctx, wouldDelete)
 	}
 
 	// Update job
@@ -406,10 +427,16 @@ func (e *SyncEngine) FullSync(ctx context.Context) error {
 	if episodeFilesDeleted > 0 {
 		job.Summary["episode_files_deleted"] = episodeFilesDeleted
 	}
+	if failedCount > 0 {
+		job.Summary["failed_count"] = failedCount
+	}
+	if protectedCount > 0 {
+		job.Summary["protected_count"] = protectedCount
+	}
 
-	if lastErr != nil {
+	if len(syncErrs) > 0 {
 		job.Status = storage.JobStatusFailed
-		job.Error = lastErr.Error()
+		job.Error = errors.Join(syncErrs...).Error()
 	} else {
 		job.Status = storage.JobStatusCompleted
 	}
@@ -432,11 +459,16 @@ func (e *SyncEngine) FullSync(ctx context.Context) error {
 		Dur("duration", duration).
 		Msg("Full sync completed")
 
-	return lastErr
+	return errors.Join(syncErrs...)
 }
 
 // IncrementalSync performs a quick update of watch history
 func (e *SyncEngine) IncrementalSync(ctx context.Context) error {
+	// Serialize with full syncs (and other incremental syncs) so they can't
+	// overlap and race the media library.
+	e.acquireSyncRunLock()
+	defer e.syncRunMu.Unlock()
+
 	jobID := uuid.New().String()
 	startTime := time.Now()
 
@@ -1183,15 +1215,21 @@ func (e *SyncEngine) CalculateDeletionInfo() (int, []map[string]interface{}) {
 // Episode-level deletions skip the safety check — count/age-based cleanup is not
 // affected by recent show-level watch activity.
 //
-// Returns (deletedCount, episodeItemsProcessed, episodeFilesDeleted, deletedItems).
-// - deletedCount: whole-item deletions completed successfully
-// - episodeItemsProcessed: candidates handled via episode-level deletion (not whole-item)
-// - episodeFilesDeleted: individual episode files removed
-// failed = len(candidates) - deletedCount - episodeItemsProcessed
-func (e *SyncEngine) ExecuteDeletions(ctx context.Context, candidates []map[string]interface{}) (int, int, int, []map[string]interface{}) {
+// Returns (deletedCount, episodeItemsProcessed, episodeFilesDeleted, protectedCount, failedCount, deletedItems).
+//   - deletedCount: whole-item deletions completed successfully
+//   - episodeItemsProcessed: candidates handled via episode-level deletion (not whole-item)
+//   - episodeFilesDeleted: individual episode files removed
+//   - protectedCount: candidates skipped by the pre-deletion watch-state safety check
+//     (fresh watch activity extended their retention). Not a failure.
+//   - failedCount: whole-item candidates that failed to delete, plus episode candidates
+//     where at least one episode-file deletion failed. An episode candidate can therefore
+//     contribute to both episodeItemsProcessed and failedCount.
+func (e *SyncEngine) ExecuteDeletions(ctx context.Context, candidates []map[string]interface{}) (int, int, int, int, int, []map[string]interface{}) {
 	deletedCount := 0
 	episodeItemsProcessed := 0 // candidates handled via episode-level deletion (not whole-item)
 	episodeFilesDeleted := 0
+	protectedCount := 0
+	failedCount := 0
 	deletedItems := make([]map[string]interface{}, 0)
 
 	log.Info().
@@ -1215,19 +1253,21 @@ func (e *SyncEngine) ExecuteDeletions(ctx context.Context, candidates []map[stri
 			log.Warn().
 				Err(err).
 				Msg("Pre-deletion safety check failed — skipping all deletions for safety")
-			return 0, 0, 0, deletedItems
+			return 0, 0, 0, 0, len(candidates), deletedItems
 		}
 	}
 
 	for _, candidate := range candidates {
 		mediaID, ok := candidate["id"].(string)
 		if !ok {
+			failedCount++
 			log.Warn().Interface("candidate", candidate).Msg("Invalid media ID in deletion candidate")
 			continue
 		}
 
 		media, found := e.GetMediaByID(mediaID)
 		if !found {
+			failedCount++
 			log.Warn().Str("media_id", mediaID).Msg("Media not found in library, skipping deletion")
 			continue
 		}
@@ -1239,12 +1279,15 @@ func (e *SyncEngine) ExecuteDeletions(ctx context.Context, candidates []map[stri
 			// Episode-level deletion — skip watch-state safety check.
 			// Recent show-level watch activity should not protect old episodes
 			// from rolling-window or age-based cleanup.
+			episodeFailures := 0
 			for _, episodeFileID := range verdict.EpisodeFileIDs {
 				if e.sonarrClient == nil {
 					log.Warn().Msg("Sonarr client not available for episode file deletion")
+					episodeFailures++
 					break
 				}
 				if err := e.sonarrClient.DeleteEpisodeFile(ctx, episodeFileID); err != nil {
+					episodeFailures++
 					log.Error().Err(err).
 						Int("episode_file_id", episodeFileID).
 						Str("show", media.Title).
@@ -1257,7 +1300,13 @@ func (e *SyncEngine) ExecuteDeletions(ctx context.Context, candidates []map[stri
 					Str("show", media.Title).
 					Msg("Episode file deleted")
 			}
-			episodeItemsProcessed++ // count the candidate as processed (not failed)
+			if episodeFailures > 0 {
+				failedCount++
+			}
+			// The candidate itself is counted as processed (its episode files
+			// were handled), but failedCount above still reflects any file-level
+			// deletion failures.
+			episodeItemsProcessed++
 			continue
 		}
 
@@ -1277,6 +1326,7 @@ func (e *SyncEngine) ExecuteDeletions(ctx context.Context, candidates []map[stri
 
 				freshVerdict := e.rules.Evaluate(ctx, &updatedMedia)
 				if freshVerdict.IsProtected || freshVerdict.DeleteAfter.After(time.Now()) {
+					protectedCount++
 					log.Info().
 						Str("media_id", mediaID).
 						Str("title", media.Title).
@@ -1289,6 +1339,7 @@ func (e *SyncEngine) ExecuteDeletions(ctx context.Context, candidates []map[stri
 
 		// Attempt whole-item deletion
 		if err := e.DeleteMedia(ctx, mediaID, false); err != nil {
+			failedCount++
 			log.Error().
 				Err(err).
 				Str("media_id", mediaID).
@@ -1310,10 +1361,35 @@ func (e *SyncEngine) ExecuteDeletions(ctx context.Context, candidates []map[stri
 	log.Info().
 		Int("deleted", deletedCount).
 		Int("episode_files_deleted", episodeFilesDeleted).
-		Int("failed", len(candidates)-deletedCount-episodeItemsProcessed).
+		Int("protected", protectedCount).
+		Int("failed", failedCount).
 		Msg("Deletion execution completed")
 
-	return deletedCount, episodeItemsProcessed, episodeFilesDeleted, deletedItems
+	return deletedCount, episodeItemsProcessed, episodeFilesDeleted, protectedCount, failedCount, deletedItems
+}
+
+// ErrSyncInProgress is returned by ExecuteDeletionsLocked when a full or
+// incremental sync currently holds the serialization lock. Callers should
+// surface it as a transient busy state (e.g. HTTP 409) instead of blocking,
+// since waiting for the lock and then running with an already-expired request
+// context would turn every candidate into a spurious failure.
+var ErrSyncInProgress = errors.New("a sync is currently in progress")
+
+// ExecuteDeletionsLocked runs ExecuteDeletions while holding syncRunMu so a
+// manual deletion pass (POST /api/deletions/execute) cannot overlap a running
+// full or incremental sync. FullSync calls ExecuteDeletions directly while it
+// already holds the lock, so only external callers should use this wrapper.
+//
+// It does not block for the lock: if a sync is running it returns
+// ErrSyncInProgress immediately so the request can be rejected with a retryable
+// status rather than hanging and then executing against a cancelled context.
+func (e *SyncEngine) ExecuteDeletionsLocked(ctx context.Context, candidates []map[string]interface{}) (int, int, int, int, int, []map[string]interface{}, error) {
+	if !e.syncRunMu.TryLock() {
+		return 0, 0, 0, 0, 0, nil, ErrSyncInProgress
+	}
+	defer e.syncRunMu.Unlock()
+	deletedCount, episodeItemsProcessed, episodeFilesDeleted, protectedCount, failedCount, deletedItems := e.ExecuteDeletions(ctx, candidates)
+	return deletedCount, episodeItemsProcessed, episodeFilesDeleted, protectedCount, failedCount, deletedItems, nil
 }
 
 // buildWatchStateMap fetches watch history from the configured stats provider once and returns

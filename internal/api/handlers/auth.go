@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/ramonskie/oxicleanarr/internal/api/middleware"
@@ -48,6 +49,16 @@ type ErrorResponse struct {
 // Login handles POST /api/auth/login
 func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 	r.Body = http.MaxBytesReader(w, r.Body, maxLoginBodyBytes)
+
+	// Reject non-JSON bodies up front so the decode path only sees the shape
+	// we expect (and a form post can't sneak in and trigger a slower failure).
+	contentType := r.Header.Get("Content-Type")
+	if contentType != "" && !strings.HasPrefix(strings.ToLower(contentType), "application/json") {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusUnsupportedMediaType)
+		json.NewEncoder(w).Encode(ErrorResponse{Error: "Content-Type must be application/json"})
+		return
+	}
 
 	var req LoginRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {

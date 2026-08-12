@@ -193,16 +193,15 @@ type UpdateStreamystatsConfig struct {
 	ServerID *string `json:"server_id,omitempty"`
 }
 
-// UpdateJellyfinConfig holds updatable Jellyfin config
+// UpdateJellyfinConfig holds updatable Jellyfin config.
+// Jellyfin is authenticated with an API key (X-Emby-Token); there are no
+// username/password fields on JellyfinConfig, so none are accepted here.
 type UpdateJellyfinConfig struct {
-	Enabled         *bool                        `json:"enabled,omitempty"`
-	URL             *string                      `json:"url,omitempty"`
-	APIKey          *string                      `json:"api_key,omitempty"`
-	Timeout         *string                      `json:"timeout,omitempty"`
-	Username        *string                      `json:"username,omitempty"`
-	Password        *string                      `json:"password,omitempty"`
-	LeavingSoonType *string                      `json:"leaving_soon_type,omitempty"`
-	SymlinkLibrary  *config.SymlinkLibraryConfig `json:"symlink_library,omitempty"`
+	Enabled        *bool                        `json:"enabled,omitempty"`
+	URL            *string                      `json:"url,omitempty"`
+	APIKey         *string                      `json:"api_key,omitempty"`
+	Timeout        *string                      `json:"timeout,omitempty"`
+	SymlinkLibrary *config.SymlinkLibraryConfig `json:"symlink_library,omitempty"`
 }
 
 // UpdateConfig handles PUT /api/config

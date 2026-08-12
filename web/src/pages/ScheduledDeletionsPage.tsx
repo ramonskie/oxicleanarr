@@ -62,9 +62,10 @@ export default function ScheduledDeletionsPage() {
   const executeDeletionsMutation = useMutation({
     mutationFn: () => apiClient.executeDeletions(false),
     onSuccess: (data) => {
+      const protectedMsg = data.protected_count ? ` ${data.protected_count} protected.` : '';
       toast({
         title: 'Deletions Executed',
-        description: `Successfully deleted ${data.deleted_count} items. ${data.failed_count || 0} failed.`,
+        description: `Successfully deleted ${data.deleted_count} items. ${data.failed_count || 0} failed.${protectedMsg}`,
         variant: data.failed_count && data.failed_count > 0 ? 'destructive' : 'default',
       });
       // Refetch media to update the list

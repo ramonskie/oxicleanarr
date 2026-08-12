@@ -31,7 +31,7 @@ func NewRouter(deps *RouterDependencies) *chi.Mux {
 	r.Use(middleware.RequestID)
 	r.Use(middleware.RealIP)
 	r.Use(mw.Logger)
-	r.Use(middleware.Recoverer)
+	r.Use(mw.Recovery)
 	r.Use(middleware.Timeout(60 * time.Second))
 
 	// CORS middleware - restricted to explicitly configured origins.

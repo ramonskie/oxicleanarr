@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/url"
+	"strconv"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/ramonskie/oxicleanarr/internal/config"
@@ -20,6 +21,10 @@ func NewRulesHandler() *RulesHandler {
 
 // ListRules handles GET /api/rules
 func (h *RulesHandler) ListRules(w http.ResponseWriter, r *http.Request) {
+	// Writes clone the config and swap it atomically via config.Reload(), so a
+	// reader always observes a fully-applied config without holding the write
+	// lock. cloneConfigWithRules snapshots the slice defensively against any
+	// future in-place mutation.
 	cfg := config.Get()
 	if cfg == nil {
 		log.Error().Msg("Config not initialized")
@@ -28,11 +33,12 @@ func (h *RulesHandler) ListRules(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode(ErrorResponse{Error: "Config not initialized"})
 		return
 	}
+	rules := cloneConfigWithRules(cfg).AdvancedRules
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(map[string]interface{}{
-		"rules": cfg.AdvancedRules,
+		"rules": rules,
 	})
 }
 
@@ -204,6 +210,24 @@ func (h *RulesHandler) UpdateRule(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNotFound)
 		json.NewEncoder(w).Encode(ErrorResponse{Error: "Rule not found"})
 		return
+	}
+
+	// Check for a name collision on rename: the new name must not belong to a
+	// different rule (a rename onto an existing rule would silently merge two
+	// rules into one).
+	if req.Name != ruleName {
+		for i, existingRule := range cfg.AdvancedRules {
+			if i == ruleIndex {
+				continue
+			}
+			if existingRule.Name == req.Name {
+				log.Error().Str("name", req.Name).Msg("Rule with this name already exists")
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusConflict)
+				json.NewEncoder(w).Encode(ErrorResponse{Error: "Rule with this name already exists"})
+				return
+			}
+		}
 	}
 
 	// Validate rule
@@ -467,7 +491,7 @@ type ErrInvalidInput struct {
 
 func (e ErrInvalidInput) Error() string {
 	if e.Index != nil {
-		return e.Field + "[" + string(rune(*e.Index)) + "]: " + e.Message
+		return e.Field + "[" + strconv.Itoa(*e.Index) + "]: " + e.Message
 	}
 	return e.Field + ": " + e.Message
 }

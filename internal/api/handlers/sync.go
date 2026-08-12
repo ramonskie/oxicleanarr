@@ -3,6 +3,8 @@ package handlers
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"net/http"
 
 	"github.com/ramonskie/oxicleanarr/internal/services"
@@ -117,17 +119,41 @@ func (h *SyncHandler) ExecuteDeletions(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Execute actual deletions
-	deletedCount, episodeItemsProcessed, episodeFilesDeleted, deletedItems := h.syncEngine.ExecuteDeletions(ctx, candidates)
+	deletedCount, _, episodeFilesDeleted, protectedCount, failedCount, deletedItems, err := h.syncEngine.ExecuteDeletionsLocked(ctx, candidates)
+	if errors.Is(err, services.ErrSyncInProgress) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusConflict)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": false,
+			"message": "A sync is currently in progress; retry once it finishes",
+		})
+		return
+	}
+	if err != nil {
+		log.Error().Err(err).Msg("Failed to execute deletions")
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": false,
+			"message": "Failed to execute deletions",
+		})
+		return
+	}
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
+	message := "Deletion execution completed"
+	if failedCount > 0 {
+		message = fmt.Sprintf("Deletion execution completed with %d failure(s)", failedCount)
+	}
 	json.NewEncoder(w).Encode(map[string]interface{}{
-		"success":               true,
+		"success":               failedCount == 0,
 		"scheduled_count":       scheduledCount,
 		"deleted_count":         deletedCount,
 		"episode_files_deleted": episodeFilesDeleted,
-		"failed_count":          len(candidates) - deletedCount - episodeItemsProcessed,
-		"message":               "Deletion execution completed",
+		"protected_count":       protectedCount,
+		"failed_count":          failedCount,
+		"message":               message,
 		"deleted_items":         deletedItems,
 	})
 }

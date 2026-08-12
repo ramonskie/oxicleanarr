@@ -3,7 +3,9 @@ package handlers
 import (
 	"bufio"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -126,15 +128,16 @@ func (h *LogsHandler) streamLogs(w http.ResponseWriter, r *http.Request, logPath
 	w.Header().Set("X-Accel-Buffering", "no") // disable nginx buffering
 	flusher.Flush()
 
-	// Open the file and seek to the position after the last N lines
+	// Open the file
 	f, err := os.Open(logPath)
 	if err != nil {
 		sendSSEEvent(w, flusher, "error", fmt.Sprintf(`{"error":"Cannot open log file: %s"}`, err.Error()))
 		return
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
-	// Send last N initial lines
+	// Send last N initial lines. Reading from the same handle we will tail
+	// guarantees no gap between the snapshot and the resume offset.
 	nLines := 200
 	if s := r.URL.Query().Get("lines"); s != "" {
 		if n, err2 := strconv.Atoi(s); err2 == nil && n > 0 {
@@ -145,19 +148,62 @@ func (h *LogsHandler) streamLogs(w http.ResponseWriter, r *http.Request, logPath
 		}
 	}
 
-	initialLines, _ := tailFile(logPath, nLines)
-	for _, raw := range initialLines {
-		ll := parseLine(raw)
-		data, _ := json.Marshal(ll)
-		sendSSEEvent(w, flusher, "log", string(data))
-	}
-
-	// Seek to end of file so we only tail new writes
-	info, err := f.Stat()
-	if err != nil {
+	if _, err := f.Seek(0, io.SeekStart); err != nil {
+		sendSSEEvent(w, flusher, "error", `{"error":"Cannot read log file"}`)
 		return
 	}
-	offset := info.Size()
+	scanner := bufio.NewScanner(f)
+	scanner.Buffer(make([]byte, 256*1024), 256*1024)
+	initialBuf := make([]string, nLines)
+	initialIdx := 0
+	initialCount := 0
+	for scanner.Scan() {
+		raw := scanner.Text()
+		if raw == "" {
+			continue
+		}
+		initialBuf[initialIdx%nLines] = raw
+		initialIdx++
+		initialCount++
+	}
+	if scanErr := scanner.Err(); scanErr != nil {
+		if errors.Is(scanErr, bufio.ErrTooLong) {
+			// A single line exceeds the scanner token limit. Skip past it instead
+			// of terminating the stream; the snapshot shows what was read before it.
+			log.Warn().Err(scanErr).Str("file", logPath).Msg("Oversized log line encountered during initial scan")
+			if _, serr := skipToNextLine(f); serr != nil {
+				sendSSEEvent(w, flusher, "error", `{"error":"Error reading log file"}`)
+				return
+			}
+		} else {
+			sendSSEEvent(w, flusher, "error", `{"error":"Error reading log file"}`)
+			return
+		}
+	}
+
+	// Emit only the last nLines, in chronological order.
+	if initialCount <= nLines {
+		for i := 0; i < initialCount; i++ {
+			ll := parseLine(initialBuf[i])
+			data, _ := json.Marshal(ll)
+			sendSSEEvent(w, flusher, "log", string(data))
+		}
+	} else {
+		start := initialIdx % nLines
+		for i := 0; i < nLines; i++ {
+			ll := parseLine(initialBuf[(start+i)%nLines])
+			data, _ := json.Marshal(ll)
+			sendSSEEvent(w, flusher, "log", string(data))
+		}
+	}
+
+	// Resume exactly where the snapshot scan stopped, so lines appended while
+	// we were reading (or after) are never lost and never duplicated.
+	offset, err := f.Seek(0, io.SeekCurrent)
+	if err != nil {
+		sendSSEEvent(w, flusher, "error", `{"error":"Error reading log file"}`)
+		return
+	}
 
 	ticker := time.NewTicker(500 * time.Millisecond)
 	defer ticker.Stop()
@@ -168,35 +214,75 @@ func (h *LogsHandler) streamLogs(w http.ResponseWriter, r *http.Request, logPath
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			// Check if file has grown
+			// Check if the file backing logPath changed identity. Rotation
+			// (rename + recreate, e.g. lumberjack) swaps the inode under our fd
+			// while the size can stay identical, so size comparison alone misses
+			// it. The path may briefly be unavailable mid-rotation, in which
+			// case we keepalive and retry.
+			pathInfo, perr := os.Stat(logPath)
 			info2, err := f.Stat()
 			if err != nil {
+				sendSSEEvent(w, flusher, "error", `{"error":"Log file became unreadable"}`)
 				return
-			}
-			if info2.Size() <= offset {
-				// Send a keepalive comment so proxies don't close the connection
-				fmt.Fprintf(w, ": keepalive\n\n")
-				flusher.Flush()
-				continue
 			}
 
-			// Read new bytes
-			if _, err := f.Seek(offset, 0); err != nil {
-				return
-			}
-			scanner := bufio.NewScanner(f)
-			for scanner.Scan() {
-				raw := scanner.Text()
-				if raw == "" {
-					continue
+			switch {
+			case perr == nil && !os.SameFile(pathInfo, info2):
+				// logPath now points at a new inode while our fd still tracks
+				// the rotated-away file. Reopen the path and restart from the
+				// top of the new file.
+				_ = f.Close()
+				f, err = os.Open(logPath)
+				if err != nil {
+					sendSSEEvent(w, flusher, "error", `{"error":"Cannot reopen rotated log file"}`)
+					return
 				}
-				ll := parseLine(raw)
-				data, _ := json.Marshal(ll)
-				sendSSEEvent(w, flusher, "log", string(data))
-			}
-			newInfo, _ := f.Stat()
-			if newInfo != nil {
-				offset = newInfo.Size()
+				offset = 0
+				sendSSEEvent(w, flusher, "notice", `{"message":"Log file rotated, restarting stream"}`)
+				continue
+			case info2.Size() < offset:
+				// File was truncated in place. Reset to the start and emit a
+				// marker so the client knows the stream restarted; without this,
+				// offset > size would spin in a keepalive loop forever.
+				offset = 0
+				sendSSEEvent(w, flusher, "notice", `{"message":"Log file truncated, restarting stream"}`)
+				fallthrough
+			case info2.Size() > offset:
+				// Read new bytes
+				if _, err := f.Seek(offset, io.SeekStart); err != nil {
+					sendSSEEvent(w, flusher, "error", `{"error":"Cannot resume log stream"}`)
+					return
+				}
+				scanner := bufio.NewScanner(f)
+				scanner.Buffer(make([]byte, 256*1024), 256*1024)
+				for scanner.Scan() {
+					raw := scanner.Text()
+					if raw == "" {
+						continue
+					}
+					ll := parseLine(raw)
+					data, _ := json.Marshal(ll)
+					sendSSEEvent(w, flusher, "log", string(data))
+				}
+				if scanErr := scanner.Err(); scanErr != nil {
+					if errors.Is(scanErr, bufio.ErrTooLong) {
+						// Skip past the oversized line and resume after it.
+						log.Warn().Err(scanErr).Str("file", logPath).Msg("Oversized log line encountered during tail scan")
+						if _, serr := skipToNextLine(f); serr != nil {
+							sendSSEEvent(w, flusher, "error", `{"error":"Error reading log file"}`)
+							return
+						}
+					} else {
+						sendSSEEvent(w, flusher, "error", `{"error":"Error reading log file"}`)
+						return
+					}
+				}
+				// Use the exact position where the scanner stopped.
+				offset, _ = f.Seek(0, io.SeekCurrent)
+			default:
+				// No change: send a keepalive comment so proxies don't close the connection
+				fmt.Fprintf(w, ": keepalive\n\n")
+				flusher.Flush()
 			}
 		}
 	}
@@ -206,6 +292,37 @@ func (h *LogsHandler) streamLogs(w http.ResponseWriter, r *http.Request, logPath
 func sendSSEEvent(w http.ResponseWriter, flusher http.Flusher, event, data string) {
 	fmt.Fprintf(w, "event: %s\ndata: %s\n\n", event, data)
 	flusher.Flush()
+}
+
+// skipToNextLine advances f past the end of the current line so a scanner that
+// bailed with bufio.ErrTooLong can resume from the following line. It returns
+// the new absolute offset of f. The scanner may have over-read into the line's
+// tail, so f.Read chunks must not run past the first newline; the position is
+// rewound to exactly one byte after it.
+func skipToNextLine(f *os.File) (int64, error) {
+	start, err := f.Seek(0, io.SeekCurrent)
+	if err != nil {
+		return 0, err
+	}
+	buf := make([]byte, 256*1024)
+	pos := start
+	for {
+		n, err := f.Read(buf)
+		for i := 0; i < n; i++ {
+			if buf[i] == '\n' {
+				offset := pos + int64(i) + 1
+				_, serr := f.Seek(offset, io.SeekStart)
+				return offset, serr
+			}
+		}
+		pos += int64(n)
+		if err != nil {
+			if errors.Is(err, io.EOF) {
+				return pos, nil
+			}
+			return 0, err
+		}
+	}
 }
 
 // tailFile reads the last n lines from the file at path

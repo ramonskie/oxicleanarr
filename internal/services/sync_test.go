@@ -2,7 +2,10 @@ package services
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"runtime"
 	"testing"
 	"time"
@@ -840,10 +843,12 @@ func TestSyncEngine_ExecuteDeletions(t *testing.T) {
 		engine, _, _ := newTestSyncEngine(t)
 		ctx := context.Background()
 
-		deletedCount, episodeItemsProcessed, episodeFilesDeleted, deletedItems := engine.ExecuteDeletions(ctx, []map[string]interface{}{})
+		deletedCount, episodeItemsProcessed, episodeFilesDeleted, protectedCount, failedCount, deletedItems := engine.ExecuteDeletions(ctx, []map[string]interface{}{})
 		assert.Equal(t, 0, deletedCount)
 		assert.Equal(t, 0, episodeItemsProcessed)
 		assert.Equal(t, 0, episodeFilesDeleted)
+		assert.Equal(t, 0, protectedCount)
+		assert.Equal(t, 0, failedCount)
 		assert.Empty(t, deletedItems)
 	})
 
@@ -858,10 +863,12 @@ func TestSyncEngine_ExecuteDeletions(t *testing.T) {
 			},
 		}
 
-		deletedCount, episodeItemsProcessed, episodeFilesDeleted, deletedItems := engine.ExecuteDeletions(ctx, candidates)
+		deletedCount, episodeItemsProcessed, episodeFilesDeleted, protectedCount, failedCount, deletedItems := engine.ExecuteDeletions(ctx, candidates)
 		assert.Equal(t, 0, deletedCount)
 		assert.Equal(t, 0, episodeItemsProcessed)
 		assert.Equal(t, 0, episodeFilesDeleted)
+		assert.Equal(t, 0, protectedCount)
+		assert.Equal(t, 1, failedCount)
 		assert.Empty(t, deletedItems)
 	})
 
@@ -925,12 +932,104 @@ func TestSyncEngine_ExecuteDeletions(t *testing.T) {
 
 		// Note: This will fail in test because we don't have real Radarr
 		// But it verifies the logic flow
-		deletedCount, _, _, deletedItems := engine.ExecuteDeletions(ctx, candidates)
+		deletedCount, _, _, _, _, deletedItems := engine.ExecuteDeletions(ctx, candidates)
 
 		// Should attempt deletion but fail without real Radarr
 		assert.GreaterOrEqual(t, deletedCount, 0)
 		assert.GreaterOrEqual(t, len(deletedItems), 0)
 	})
+}
+
+func TestSyncEngine_ExecuteDeletions_EpisodeFailureAccounting(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	// Sonarr stub: serves episodes for the rule, fails all episode-file deletes.
+	var deleteCalls int
+	sonarrServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodDelete {
+			deleteCalls++
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		// GET /api/v3/episode?seriesId=N
+		episodes := []clients.SonarrEpisode{
+			{ID: 1, SeriesID: 1, EpisodeFileID: 101, EpisodeNumber: 1, SeasonNumber: 1, HasFile: true, AirDateUTC: time.Now().AddDate(0, 0, -30)},
+			{ID: 2, SeriesID: 1, EpisodeFileID: 102, EpisodeNumber: 2, SeasonNumber: 1, HasFile: true, AirDateUTC: time.Now().AddDate(0, 0, -20)},
+			{ID: 3, SeriesID: 1, EpisodeFileID: 103, EpisodeNumber: 3, SeasonNumber: 1, HasFile: true, AirDateUTC: time.Now().AddDate(0, 0, -10)},
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(episodes)
+	}))
+	defer sonarrServer.Close()
+
+	cfg := &config.Config{
+		App: config.AppConfig{
+			DryRun:         false,
+			EnableDeletion: true,
+		},
+		Sync: config.SyncConfig{
+			FullInterval:        60,
+			IncrementalInterval: 5,
+		},
+		Rules: config.RulesConfig{
+			MovieRetention: "90d",
+			TVRetention:    "120d",
+		},
+		AdvancedRules: []config.AdvancedRule{
+			{
+				Name:                  "test-episode",
+				Type:                  "episode",
+				Enabled:               true,
+				EpisodeDeleteStrategy: "oldest_first",
+				MaxEpisodes:           2, // delete the oldest episode file (101)
+			},
+		},
+		Integrations: config.IntegrationsConfig{
+			Sonarr: config.SonarrConfig{
+				BaseIntegrationConfig: config.BaseIntegrationConfig{
+					Enabled: true,
+					URL:     sonarrServer.URL,
+					APIKey:  "test-key",
+				},
+			},
+		},
+	}
+	config.SetTestConfig(cfg)
+
+	cacheInstance := cache.New()
+	jobs, err := storage.NewJobsFile(tmpDir, 50)
+	require.NoError(t, err)
+	exclusions, err := storage.NewExclusionsFile(tmpDir)
+	require.NoError(t, err)
+	manualLS, err := storage.NewManualLeavingSoonFile(tmpDir)
+	require.NoError(t, err)
+
+	rulesEngine := rules.NewRulesEngine(exclusions, nil)
+	engine := NewSyncEngine(cfg, cacheInstance, jobs, exclusions, manualLS, rulesEngine)
+	require.NotNil(t, engine.sonarrClient)
+
+	engine.mediaLibrary["show-1"] = models.Media{
+		ID:       "show-1",
+		Type:     models.MediaTypeTVShow,
+		Title:    "Test Show",
+		SonarrID: 1,
+	}
+
+	ctx := context.Background()
+	candidates := []map[string]interface{}{
+		{
+			"id":    "show-1",
+			"title": "Test Show",
+			"type":  models.MediaTypeTVShow,
+		},
+	}
+
+	_, _, _, episodeFilesDeleted, failedCount, _ := engine.ExecuteDeletions(ctx, candidates)
+
+	// The rule scheduled episode file 101; the delete failed → candidate must be counted as failed.
+	assert.GreaterOrEqual(t, deleteCalls, 1, "episode file delete should have been attempted")
+	assert.Equal(t, 0, episodeFilesDeleted)
+	assert.Equal(t, 1, failedCount, "candidate with failed episode-file deletion must count as failed")
 }
 
 func TestSyncEngine_FullSync_EnableDeletion(t *testing.T) {
@@ -1028,4 +1127,100 @@ func TestSyncEngine_FullSync_EnableDeletion(t *testing.T) {
 		assert.True(t, latestJob.Summary["enable_deletion"].(bool))
 		assert.True(t, latestJob.Summary["dry_run"].(bool))
 	})
+}
+
+func TestSyncEngine_ExecuteDeletionsLocked_BusyReturnsErrSyncInProgress(t *testing.T) {
+	engine, _, _ := newTestSyncEngine(t)
+
+	// Simulate a running sync holding the serialization lock.
+	engine.syncRunMu.Lock()
+	defer engine.syncRunMu.Unlock()
+
+	_, _, _, _, _, _, err := engine.ExecuteDeletionsLocked(context.Background(), []map[string]interface{}{{}})
+	require.ErrorIs(t, err, ErrSyncInProgress)
+}
+
+func TestSyncEngine_ExecuteDeletionsLocked_RunsWhenLockFree(t *testing.T) {
+	engine, _, _ := newTestSyncEngine(t)
+
+	// Lock is free: the wrapper must acquire it and delegate without error.
+	deletedCount, episodeItemsProcessed, episodeFilesDeleted, protectedCount, failedCount, deletedItems, err := engine.ExecuteDeletionsLocked(context.Background(), nil)
+	require.NoError(t, err)
+	assert.Zero(t, deletedCount)
+	assert.Zero(t, episodeItemsProcessed)
+	assert.Zero(t, episodeFilesDeleted)
+	assert.Zero(t, protectedCount)
+	assert.Zero(t, failedCount)
+	assert.Empty(t, deletedItems)
+}
+
+type stubStatsProvider struct {
+	history []clients.StatsHistoryItem
+}
+
+func (s *stubStatsProvider) GetHistory(ctx context.Context, itemIDs []string) ([]clients.StatsHistoryItem, error) {
+	return s.history, nil
+}
+
+func (s *stubStatsProvider) Ping(ctx context.Context) error { return nil }
+
+func TestSyncEngine_ExecuteDeletions_ProtectsOnFreshWatchActivity(t *testing.T) {
+	engine, _, _ := newTestSyncEngine(t)
+
+	now := time.Now()
+	engine.mediaLibrary["movie-1"] = models.Media{
+		ID:          "movie-1",
+		Type:        models.MediaTypeMovie,
+		Title:       "Test Movie",
+		JellyfinID:  "jf-1",
+		LastWatched: now.AddDate(0, 0, -100), // overdue under 90d retention
+	}
+	engine.statsClient = &stubStatsProvider{
+		history: []clients.StatsHistoryItem{
+			{JellyfinItemID: "jf-1", WatchedAt: now}, // watched since evaluation
+		},
+	}
+
+	ctx := context.Background()
+	candidates := []map[string]interface{}{
+		{
+			"id":    "movie-1",
+			"title": "Test Movie",
+			"type":  models.MediaTypeMovie,
+		},
+	}
+
+	deletedCount, _, _, protectedCount, failedCount, _ := engine.ExecuteDeletions(ctx, candidates)
+
+	assert.Equal(t, 0, deletedCount, "protected item must not be deleted")
+	assert.Equal(t, 1, protectedCount, "fresh watch activity must count as protected, not failed")
+	assert.Equal(t, 0, failedCount)
+}
+
+func TestSyncEngine_SyncQueuesBehindRunningSync(t *testing.T) {
+	engine, _, _ := newTestSyncEngine(t)
+
+	// Simulate a running sync holding the serialization lock.
+	engine.syncRunMu.Lock()
+
+	done := make(chan error, 1)
+	go func() {
+		done <- engine.IncrementalSync(context.Background())
+	}()
+
+	// The queued sync must block until the lock is released.
+	select {
+	case err := <-done:
+		t.Fatalf("IncrementalSync returned while lock held: %v", err)
+	case <-time.After(150 * time.Millisecond):
+	}
+
+	engine.syncRunMu.Unlock()
+
+	select {
+	case err := <-done:
+		require.NoError(t, err, "queued sync must run once the lock is released")
+	case <-time.After(2 * time.Second):
+		t.Fatal("queued sync did not run after lock release")
+	}
 }

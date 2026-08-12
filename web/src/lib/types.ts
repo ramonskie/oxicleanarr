@@ -101,6 +101,8 @@ export interface DeletionExecutionResponse {
   success: boolean;
   scheduled_count: number;
   deleted_count?: number;
+  episode_files_deleted?: number;
+  protected_count?: number;
   failed_count?: number;
   dry_run?: boolean;
   message: string;

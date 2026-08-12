@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"encoding/json"
+	"io"
 	"net/http"
 	"os"
 	"sync"
@@ -37,7 +38,18 @@ type RestartRequest struct {
 func (h *SystemHandler) Restart(w http.ResponseWriter, r *http.Request) {
 	var req RestartRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		// Allow empty body (default to non-force restart)
+		if err != io.EOF {
+			// Malformed JSON is a client error, not a silent Force:false.
+			log.Warn().Err(err).Msg("Invalid restart request body")
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusBadRequest)
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"error":   "Invalid request body",
+				"message": "Request body must be valid JSON",
+			})
+			return
+		}
+		// Empty body — default to a non-force restart.
 		req.Force = false
 	}
 
@@ -69,13 +81,19 @@ func (h *SystemHandler) Restart(w http.ResponseWriter, r *http.Request) {
 
 	log.Info().Bool("force", req.Force).Msg("Application restart requested via API")
 
-	// Send success response before shutting down
+	// Send success response before shutting down.
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"message": "Application restart initiated. Server will be unavailable for a few seconds.",
 		"status":  "restarting",
 	})
+
+	// Flush the response so the client actually receives it before the
+	// process tears down. Waiting on a fixed sleep does not guarantee this.
+	if flusher, ok := w.(http.Flusher); ok {
+		flusher.Flush()
+	}
 
 	// Trigger graceful shutdown in a separate goroutine. The shutdown signal
 	// is sent unconditionally via a deferred sync.Once, so even if stopping
@@ -86,9 +104,6 @@ func (h *SystemHandler) Restart(w http.ResponseWriter, r *http.Request) {
 		defer h.shutdownOnce.Do(func() {
 			close(h.shutdownCh)
 		})
-
-		// Give time for the response to be sent
-		time.Sleep(500 * time.Millisecond)
 
 		log.Info().Msg("Initiating graceful shutdown for restart")
 

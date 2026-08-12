@@ -3,7 +3,7 @@ package integration
 import (
 	"fmt"
 	"testing"
-	
+
 	"gopkg.in/yaml.v3"
 )
 
@@ -26,21 +26,21 @@ advanced_rules:
 	if err := yaml.Unmarshal([]byte(input), &config); err != nil {
 		t.Fatal("Error:", err)
 	}
-	
+
 	// Modify movie_retention like UpdateRetentionPolicy does
 	rules, ok := config["rules"].(map[string]interface{})
 	if !ok {
 		t.Fatalf("rules not map[string]interface{}, got %T", config["rules"])
 	}
 	rules["movie_retention"] = "999d"
-	
+
 	out, err := yaml.Marshal(config)
 	if err != nil {
 		t.Fatal("Marshal error:", err)
 	}
 	fmt.Println("Output YAML:")
 	fmt.Println(string(out))
-	
+
 	// Check advanced_rules preserved
 	ar, ok := config["advanced_rules"]
 	if !ok {
