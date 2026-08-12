@@ -59,6 +59,7 @@ paths = [
   '''\.github/workflows/.*''',          # CI/CD configs
   '''.*_test\.go$''',                   # Test files with mock data
   '''test/.*\.go$''',                   # Integration test helpers
+  '''.*\.md$''',                        # Documentation (example tokens/keys)
 ]
 
 # Allowlist specific test values
