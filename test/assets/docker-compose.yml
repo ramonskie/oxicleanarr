@@ -113,6 +113,9 @@ services:
       - PGID=1000
       - TZ=UTC
       - LOG_LEVEL=debug
+      # Required by the app since auth hardening: with disable_auth: false the
+      # process refuses to start without a JWT_SECRET (min 32 chars).
+      - JWT_SECRET=test-jwt-secret-for-oxicleanarr-integration-tests-only-0123456789
     extra_hosts:
       - "host.docker.internal:host-gateway"
     depends_on:

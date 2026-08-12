@@ -2074,3 +2074,63 @@ func (tc *TestClient) GetDiskStatus() (map[string]interface{}, error) {
 
 	return result, nil
 }
+
+// clientToken returns the JWT currently held by the test client.
+func clientToken(client *TestClient) string {
+	return client.token
+}
+
+// syncRunning reports whether the OxiCleanarr sync engine is currently running.
+func syncRunning(t *testing.T, client *TestClient) bool {
+	resp, err := client.Get("/api/sync/status")
+	require.NoError(t, err)
+	defer resp.Body.Close()
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+
+	var status struct {
+		Running bool `json:"running"`
+	}
+	require.NoError(t, json.NewDecoder(resp.Body).Decode(&status))
+	return status.Running
+}
+
+// loginToken authenticates via the API and returns the JWT token.
+func loginToken(t *testing.T) string {
+	t.Helper()
+	resp, err := http.Post(OxiCleanarrURL+"/api/auth/login", "application/json",
+		bytes.NewReader([]byte(`{"username":"admin","password":"adminpassword"}`)))
+	require.NoError(t, err)
+	defer resp.Body.Close()
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+
+	var result struct {
+		Token string `json:"token"`
+	}
+	require.NoError(t, json.NewDecoder(resp.Body).Decode(&result))
+	require.NotEmpty(t, result.Token)
+	return result.Token
+}
+
+// rawRequest performs an arbitrary HTTP request with optional token,
+// content-type, and body, returning the response and its body.
+func rawRequest(t *testing.T, method, url, token, contentType string, body []byte) (*http.Response, []byte) {
+	t.Helper()
+	var bodyReader io.Reader
+	if body != nil {
+		bodyReader = bytes.NewReader(body)
+	}
+	req, err := http.NewRequest(method, url, bodyReader)
+	require.NoError(t, err)
+	if contentType != "" {
+		req.Header.Set("Content-Type", contentType)
+	}
+	if token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
+	resp, err := http.DefaultClient.Do(req)
+	require.NoError(t, err)
+	defer resp.Body.Close()
+	data, err := io.ReadAll(resp.Body)
+	require.NoError(t, err)
+	return resp, data
+}

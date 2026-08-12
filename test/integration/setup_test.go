@@ -94,6 +94,56 @@ func TestIntegrationSuite(t *testing.T) {
 		infrastructureReady = true
 	})
 
+	// Run auth hardening endpoint tests (non-destructive)
+	t.Run("AuthEndpoints", func(t *testing.T) {
+		if !infrastructureReady {
+			t.Log("⚠️  Infrastructure not ready (filtered by -run), setting up now...")
+			testInfrastructureSetup(t)
+			infrastructureReady = true
+		}
+		testAuthEndpoints(t)
+	})
+
+	// Run system endpoint tests (non-destructive)
+	t.Run("SystemEndpoints", func(t *testing.T) {
+		if !infrastructureReady {
+			t.Log("⚠️  Infrastructure not ready (filtered by -run), setting up now...")
+			testInfrastructureSetup(t)
+			infrastructureReady = true
+		}
+		testSystemEndpoints(t)
+	})
+
+	// Run log streaming tests (non-destructive)
+	t.Run("LogStreaming", func(t *testing.T) {
+		if !infrastructureReady {
+			t.Log("⚠️  Infrastructure not ready (filtered by -run), setting up now...")
+			testInfrastructureSetup(t)
+			infrastructureReady = true
+		}
+		testLogStreaming(t)
+	})
+
+	// Run sync queueing tests (non-destructive)
+	t.Run("SyncQueueing", func(t *testing.T) {
+		if !infrastructureReady {
+			t.Log("⚠️  Infrastructure not ready (filtered by -run), setting up now...")
+			testInfrastructureSetup(t)
+			infrastructureReady = true
+		}
+		testSyncQueueing(t)
+	})
+
+	// Run SPA traversal security tests (non-destructive)
+	t.Run("SPATraversal", func(t *testing.T) {
+		if !infrastructureReady {
+			t.Log("⚠️  Infrastructure not ready (filtered by -run), setting up now...")
+			testInfrastructureSetup(t)
+			infrastructureReady = true
+		}
+		testSPATraversalBlocked(t)
+	})
+
 	// Run symlink lifecycle tests second (uses existing environment)
 	t.Run("SymlinkLifecycle", func(t *testing.T) {
 		// If infrastructure wasn't set up (due to -run filter), set it up now
@@ -182,7 +232,7 @@ func TestIntegrationSuite(t *testing.T) {
 		testEpisodeCleanupLifecycle(t)
 	})
 
-	// Run deletion lifecycle tests LAST (uses existing environment, but destructive)
+	// Run deletion lifecycle tests (uses existing environment, destructive)
 	t.Run("DeletionLifecycle", func(t *testing.T) {
 		// If infrastructure wasn't set up (due to -run filter), set it up now
 		if !infrastructureReady {
@@ -191,6 +241,17 @@ func TestIntegrationSuite(t *testing.T) {
 			infrastructureReady = true
 		}
 		testDeletionLifecycle(t)
+	})
+
+	// Run deletion execution endpoint tests LAST (deletes remaining overdue media)
+	t.Run("DeletionExecute", func(t *testing.T) {
+		// If infrastructure wasn't set up (due to -run filter), set it up now
+		if !infrastructureReady {
+			t.Log("⚠️  Infrastructure not ready (filtered by -run), setting up now...")
+			testInfrastructureSetup(t)
+			infrastructureReady = true
+		}
+		testDeletionExecute(t)
 	})
 }
 
