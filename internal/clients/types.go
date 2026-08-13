@@ -16,29 +16,6 @@ type JellyfinItem struct {
 	ProviderIds    map[string]string `json:"ProviderIds"`
 }
 
-// JellyfinVirtualFolder represents a virtual folder (library) in Jellyfin
-type JellyfinVirtualFolder struct {
-	Name           string                       `json:"Name"`
-	Locations      []string                     `json:"Locations"`
-	CollectionType string                       `json:"CollectionType"` // "movies", "tvshows", etc.
-	LibraryOptions JellyfinVirtualFolderOptions `json:"LibraryOptions,omitempty"`
-	ItemId         string                       `json:"ItemId,omitempty"`
-}
-
-// JellyfinVirtualFolderOptions represents library options
-type JellyfinVirtualFolderOptions struct {
-	EnablePhotos                          bool               `json:"EnablePhotos,omitempty"`
-	EnableRealtimeMonitor                 bool               `json:"EnableRealtimeMonitor,omitempty"`
-	EnableChapterImageExtraction          bool               `json:"EnableChapterImageExtraction,omitempty"`
-	ExtractChapterImagesDuringLibraryScan bool               `json:"ExtractChapterImagesDuringLibraryScan,omitempty"`
-	PathInfos                             []JellyfinPathInfo `json:"PathInfos,omitempty"`
-}
-
-// JellyfinPathInfo represents path information for a library
-type JellyfinPathInfo struct {
-	Path string `json:"Path"`
-}
-
 // JellyfinUserData represents user-specific data for a Jellyfin item
 type JellyfinUserData struct {
 	PlayCount      int       `json:"PlayCount"`
@@ -229,87 +206,4 @@ type DiskSpace struct {
 	Label      string `json:"label"`
 	FreeSpace  int64  `json:"freeSpace"`  // Bytes
 	TotalSpace int64  `json:"totalSpace"` // Bytes
-}
-
-// OxiCleanarr Bridge Plugin Types
-// These types are used for communicating with the Jellyfin OxiCleanarr Bridge Plugin
-
-// PluginSymlinkItem represents a symlink to be created by the plugin
-type PluginSymlinkItem struct {
-	SourcePath      string `json:"sourcePath"`      // Full path to the actual media file
-	TargetDirectory string `json:"targetDirectory"` // Directory where symlink should be created
-}
-
-// PluginAddSymlinksRequest represents the request to add symlinks
-type PluginAddSymlinksRequest struct {
-	Items  []PluginSymlinkItem `json:"items"`
-	DryRun bool                `json:"dry_run,omitempty"`
-}
-
-// PluginAddSymlinksResponse represents the response from adding symlinks
-type PluginAddSymlinksResponse struct {
-	Success         bool     `json:"Success"`         // Plugin uses PascalCase
-	CreatedSymlinks []string `json:"CreatedSymlinks"` // Plugin returns array of created paths
-	Errors          []string `json:"Errors"`          // Plugin returns array of error messages
-}
-
-// PluginRemoveSymlinksRequest represents the request to remove symlinks
-type PluginRemoveSymlinksRequest struct {
-	Paths  []string `json:"symlinkPaths"` // Plugin expects camelCase "symlinkPaths"
-	DryRun bool     `json:"dry_run,omitempty"`
-}
-
-// PluginRemoveSymlinksResponse represents the response from removing symlinks
-type PluginRemoveSymlinksResponse struct {
-	Success         bool     `json:"Success"`         // Plugin uses PascalCase
-	RemovedSymlinks []string `json:"RemovedSymlinks"` // Plugin returns array of removed paths
-	Errors          []string `json:"Errors"`          // Plugin returns array of error messages
-}
-
-// PluginSymlinkInfo represents information about a symlink
-type PluginSymlinkInfo struct {
-	Path   string `json:"Path"`   // Plugin uses PascalCase
-	Target string `json:"Target"` // Plugin uses PascalCase
-	Name   string `json:"Name"`   // Filename of the symlink
-}
-
-// PluginListSymlinksResponse represents the response from listing symlinks
-type PluginListSymlinksResponse struct {
-	Symlinks     []PluginSymlinkInfo `json:"Symlinks"`     // Plugin uses PascalCase
-	Count        int                 `json:"Count"`        // Total number of symlinks
-	SymlinkNames []string            `json:"SymlinkNames"` // Array of just filenames
-	Message      string              `json:"Message"`      // Human-readable status
-	ErrorMessage string              `json:"error,omitempty"`
-}
-
-// PluginStatusResponse represents the health check response from the plugin
-type PluginStatusResponse struct {
-	Status  string `json:"Status"` // Plugin uses PascalCase
-	Message string `json:"Message,omitempty"`
-}
-
-// PluginCreateDirectoryRequest represents the request to create a directory
-type PluginCreateDirectoryRequest struct {
-	Directory string `json:"directory"`
-}
-
-// PluginCreateDirectoryResponse represents the response from directory creation
-type PluginCreateDirectoryResponse struct {
-	Success   bool   `json:"Success"` // Plugin uses PascalCase
-	Directory string `json:"Directory,omitempty"`
-	Created   bool   `json:"Created,omitempty"`
-	Message   string `json:"Message,omitempty"`
-}
-
-// PluginDeleteDirectoryRequest represents the request to delete a directory
-type PluginDeleteDirectoryRequest struct {
-	Directory string `json:"directory"`
-	Force     bool   `json:"force,omitempty"`
-}
-
-// PluginDeleteDirectoryResponse represents the response from directory deletion
-type PluginDeleteDirectoryResponse struct {
-	Success   bool   `json:"Success"` // Plugin uses PascalCase
-	Directory string `json:"Directory,omitempty"`
-	Message   string `json:"Message,omitempty"`
 }

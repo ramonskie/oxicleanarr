@@ -29,12 +29,11 @@ type SyncEngine struct {
 	rules             *rules.RulesEngine
 	diskMonitor       *DiskMonitor
 
-	jellyfinClient        *clients.JellyfinClient
-	radarrClient          *clients.RadarrClient
-	sonarrClient          *clients.SonarrClient
-	jellyseerrClient      *clients.JellyseerrClient
-	statsClient           clients.StatsProvider
-	symlinkLibraryManager *SymlinkLibraryManager
+	jellyfinClient   *clients.JellyfinClient
+	radarrClient     *clients.RadarrClient
+	sonarrClient     *clients.SonarrClient
+	jellyseerrClient *clients.JellyseerrClient
+	statsClient      clients.StatsProvider
 
 	mediaLibrary     map[string]models.Media
 	mediaLibraryLock sync.RWMutex
@@ -98,12 +97,6 @@ func NewSyncEngine(
 		engine.diskMonitor = NewDiskMonitor(engine.radarrClient, engine.sonarrClient)
 		rulesEngine.SetDiskMonitor(engine.diskMonitor)
 		log.Info().Msg("Disk monitor initialized")
-	}
-
-	// Initialize symlink library manager if enabled
-	if cfg.Integrations.Jellyfin.Enabled && cfg.Integrations.Jellyfin.SymlinkLibrary.Enabled {
-		engine.symlinkLibraryManager = NewSymlinkLibraryManager(engine.jellyfinClient, cfg)
-		log.Info().Msg("Symlink library manager initialized")
 	}
 
 	return engine
@@ -367,22 +360,20 @@ func (e *SyncEngine) FullSync(ctx context.Context) error {
 	// Apply manual leaving soon overrides (fixed DeleteAfter, set at flag time)
 	e.applyManualLeavingSoon()
 
-	// Sync symlink libraries for "Leaving Soon" items
+	// Count items in the leaving-soon window for the job summary (used by the UI).
+	// Matches what the UI's leaving-soon page shows (GET /api/media/leaving-soon/list):
+	// in-window and not excluded. Unlike the plugin contract, the UI list does not
+	// require a Jellyfin id, so the count intentionally does not either.
 	leavingSoonCount := 0
-	if e.symlinkLibraryManager != nil {
+	{
+		cfg := config.Get()
 		e.mediaLibraryLock.RLock()
-		mediaLibraryCopy := make(map[string]models.Media, len(e.mediaLibrary))
-		for k, v := range e.mediaLibrary {
-			mediaLibraryCopy[k] = v
+		for _, media := range e.mediaLibrary {
+			if !media.IsExcluded && media.DaysUntilDue > 0 && media.DaysUntilDue <= cfg.App.LeavingSoonDays {
+				leavingSoonCount++
+			}
 		}
 		e.mediaLibraryLock.RUnlock()
-
-		var err error
-		leavingSoonCount, err = e.symlinkLibraryManager.SyncLibraries(ctx, mediaLibraryCopy)
-		if err != nil {
-			syncErrs = append(syncErrs, err)
-			log.Error().Err(err).Msg("Failed to sync symlink libraries")
-		}
 	}
 
 	// Calculate scheduled deletions and dry-run preview
@@ -1583,6 +1574,7 @@ func (e *SyncEngine) RemoveExclusion(ctx context.Context, mediaID string) error 
 // SyncStatus represents the current sync engine status
 type SyncStatus struct {
 	Running       bool      `json:"running"`
+	InProgress    bool      `json:"in_progress"`
 	MediaCount    int       `json:"media_count"`
 	LastFullSync  time.Time `json:"last_full_sync,omitempty"`
 	LastIncrSync  time.Time `json:"last_incr_sync,omitempty"`
@@ -1599,11 +1591,20 @@ func (e *SyncEngine) GetStatus() SyncStatus {
 	running := e.running
 	e.runningLock.Unlock()
 
+	// A sync (full/incremental) or deletion pass is in progress when the
+	// serialization lock is held. Snapshot without blocking: TryLock fails if a
+	// sync currently owns the lock.
+	syncInProgress := !e.syncRunMu.TryLock()
+	if !syncInProgress {
+		e.syncRunMu.Unlock()
+	}
+
 	e.mediaLibraryLock.RLock()
 	defer e.mediaLibraryLock.RUnlock()
 
 	status := SyncStatus{
 		Running:      running,
+		InProgress:   syncInProgress,
 		MediaCount:   len(e.mediaLibrary),
 		FullInterval: e.config.Sync.FullInterval,
 		IncrInterval: e.config.Sync.IncrementalInterval,

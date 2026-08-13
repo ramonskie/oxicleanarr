@@ -77,17 +77,6 @@ func Validate(cfg *Config) error {
 	// Validate Jellyfin
 	if cfg.Integrations.Jellyfin.Enabled {
 		errors = validateIntegration(errors, "integrations.jellyfin", cfg.Integrations.Jellyfin.URL, cfg.Integrations.Jellyfin.APIKey)
-
-		// Validate symlink library config
-		if cfg.Integrations.Jellyfin.SymlinkLibrary.Enabled {
-			if cfg.Integrations.Jellyfin.SymlinkLibrary.BasePath == "" {
-				errors = append(errors, ValidationError{
-					Field:   "integrations.jellyfin.symlink_library.base_path",
-					Message: "required when symlink_library.enabled=true",
-				})
-			}
-			// Library names are optional - defaults will be applied if empty
-		}
 	}
 
 	// Validate Radarr
