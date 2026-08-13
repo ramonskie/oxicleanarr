@@ -13,14 +13,18 @@
 **Violation of this policy is a critical failure.** The user MUST have final control over all commits.
 
 ## Project Overview
-OxiCleanarr is an orchestrator that manages media lifecycle through APIs. Its primary purpose is to automatically identify and handle media that should be cleaned up (e.g., watched content, expired content) by creating "leaving soon" libraries with symlinks, allowing users to take action before deletion.
+OxiCleanarr is an orchestrator that manages media lifecycle through APIs. It automatically
+identifies media that should be cleaned up (e.g., watched content, expired content) and
+schedules it for deletion. Scheduled-deletion media is surfaced to the standalone
+[jellyfin-plugin-leaving-soon](https://github.com/ramonskie/jellyfin-plugin-leaving-soon)
+plugin, which polls OxiCleanarr's `GET /api/media/leaving-soon` endpoint and manages the
+"leaving soon" symlink libraries in Jellyfin.
 
 It coordinates between:
 - **Jellyfin** - Media server for playback and user interaction
 - **Jellyseerr** - Media request and discovery platform
 - **Jellystat** - Analytics and watch history tracking
 - **Radarr/Sonarr** - Media acquisition and management
-- **Jellyfin Plugin** - File system operations (symlink management)
 
 All operations are API-driven. OxiCleanarr maintains no direct file system access except for configuration.
 
@@ -51,14 +55,15 @@ All operations are API-driven. OxiCleanarr maintains no direct file system acces
 - **JSON**: Use struct tags (e.g., `json:"field_name"`) for API types
 
 ## Dependencies
-- **Jellyfin Plugin**: Requires [jellyfin-plugin-oxicleanarr](https://github.com/ramonskie/jellyfin-plugin-oxicleanarr) installed in Jellyfin
-  - Plugin provides file system operations on the Jellyfin server
-  - API endpoints (relative to Jellyfin base URL):
-    - `GET /api/oxicleanarr/status` - Check plugin status (no auth required)
-    - `POST /api/oxicleanarr/symlinks/add` - Create symlinks (body: `{items: [{sourcePath, targetDirectory}]}`)
-    - `POST /api/oxicleanarr/symlinks/remove` - Remove symlinks (body: `{symlinkPaths: []}`)
-    - `GET /api/oxicleanarr/symlinks/list?directory=/path` - List symlinks in specified directory
-    - `POST /api/oxicleanarr/directories/create` - Create directory (body: `{directory}`)
-    - `DELETE /api/oxicleanarr/directories/remove` - Delete directory (body: `{directory, force}`)
-  - All requests except `/status` require Jellyfin API key header: `X-Emby-Token`
-  - Plugin is stateless - all paths are provided via API requests
+- **Jellyfin** - Watch data, poster proxying, and post-deletion library refreshes.
+- **Leaving Soon plugin** (optional): The standalone
+  [jellyfin-plugin-leaving-soon](https://github.com/ramonskie/jellyfin-plugin-leaving-soon)
+  plugin manages all "leaving soon" symlink libraries inside Jellyfin. It polls provider
+  apps for scheduled-deletion media and reconciles the symlink libraries itself.
+  - Provider contract (shared by every provider, e.g. OxiCleanarr, Maintainerr):
+    `GET /api/media/leaving-soon` returns `{version: 1, items: [{mediaServerId, type,
+    title?, deletionDate?, sourcePath?}]}` where `type` is `movie`/`show` and
+    `mediaServerId` is the Jellyfin item GUID.
+  - The plugin authenticates with the static `admin.api_key` sent as a Bearer token;
+    OxiCleanarr accepts it on every protected endpoint. The integration test config sets
+    `admin.api_key` and the plugin installer writes it into the plugin `config.xml`.

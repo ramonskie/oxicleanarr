@@ -16,29 +16,31 @@ Before running OxiCleanarr, ensure you have:
    - Radarr API key
    - Sonarr API key
 
-3. **OxiCleanarr Bridge Plugin**:
-   - **Required** for "Leaving Soon" library functionality
-   - Provides symlink management via HTTP API
+3. **jellyfin-plugin-leaving-soon** (optional):
+   - Used for the "Leaving Soon" library feature
+   - Polls OxiCleanarr's `GET /api/media/leaving-soon` endpoint and manages the symlink libraries itself
    - See installation instructions below
 
 ## Installation
 
-### Step 0: Install the OxiCleanarr Bridge Plugin
+### Step 0: Install the Leaving Soon Plugin (optional)
 
-> **⚠️ REQUIRED**: This plugin is necessary for OxiCleanarr to create "Leaving Soon" libraries in Jellyfin.
+> **ℹ️ OPTIONAL**: Only needed for the "Leaving Soon" library feature. The plugin manages
+> the symlink libraries inside Jellyfin; OxiCleanarr only exposes the data.
 
 1. Open Jellyfin → **Dashboard** → **Plugins** → **Repositories**
 2. Click **"+"** to add a repository
 3. Enter:
-   - **Repository Name**: `OxiCleanarr Plugin Repository`
-   - **Repository URL**: `https://cdn.jsdelivr.net/gh/ramonskie/jellyfin-plugin-oxicleanarr@main/manifest.json`
+   - **Repository Name**: `Leaving Soon Plugin Repository`
+   - **Repository URL**: `https://cdn.jsdelivr.net/gh/ramonskie/jellyfin-plugin-leaving-soon@main/manifest.json`
 4. Click **Save**
 5. Go to **Dashboard** → **Plugins** → **Catalog**
-6. Find "OxiCleanarr Bridge" and click **Install**
+6. Find "Leaving Soon" and click **Install**
 7. Restart Jellyfin when prompted
-8. Verify: **Dashboard** → **Plugins** → Confirm "OxiCleanarr Bridge" is listed and active
+8. Configure the plugin (Settings → Leaving Soon): add an `oxicleanarr` provider pointing
+   at your OxiCleanarr server and set the base path + library names
 
-> **Manual Installation**: For manual installation, see the [plugin repository](https://github.com/ramonskie/jellyfin-plugin-oxicleanarr)
+> **Manual Installation**: For manual installation, see the [plugin repository](https://github.com/ramonskie/jellyfin-plugin-leaving-soon)
 
 ## Configuration
 
@@ -55,19 +57,10 @@ cp config/config.yaml.example config/config.yaml
 
 ### Step 2: Configure "Leaving Soon" Library (Optional)
 
-If you want the "Leaving Soon" feature, configure the symlink library paths:
-
-1. **Create directories** on your Jellyfin server:
-   ```bash
-   mkdir -p /path/to/media/leaving-soon/movies
-   mkdir -p /path/to/media/leaving-soon/tv
-   ```
-
-2. **Add libraries in Jellyfin**:
-   - Go to **Dashboard** → **Libraries** → **Add Media Library**
-   - Create library "Leaving Soon - Movies" pointing to `/path/to/media/leaving-soon/movies`
-   - Create library "Leaving Soon - TV" pointing to `/path/to/media/leaving-soon/tv`
-   - Set content type to Movies/Shows respectively
+If you want the "Leaving Soon" feature, install and configure the
+[jellyfin-plugin-leaving-soon](https://github.com/ramonskie/jellyfin-plugin-leaving-soon)
+plugin in Jellyfin (see Step 0). The plugin creates and manages the "leaving soon"
+symlink library directories itself — no path configuration is needed in OxiCleanarr.
 
 ### Step 3: Edit Configuration
 
@@ -78,19 +71,15 @@ admin:
   username: admin
   password: changeme  # ⚠️ CHANGE THIS! Bcrypt hashes supported
   disable_auth: false  # Set true to skip login (NOT recommended for production)
+  api_key: ""          # Optional static Bearer key for machine clients (e.g. Leaving Soon plugin)
 
 integrations:
   jellyfin:
     enabled: true
     url: http://YOUR-JELLYFIN-HOST:8096  # Update this
     api_key: YOUR-JELLYFIN-API-KEY       # Update this
-    
-    # Optional: Enable "Leaving Soon" library
-    symlink_library:
-      enabled: true
-      base_path: /path/to/media/leaving-soon  # Path on Jellyfin server
-      movies_library_name: "Leaving Soon - Movies"
-      tv_library_name: "Leaving Soon - TV"
+    # "Leaving Soon" symlinks are managed by jellyfin-plugin-leaving-soon in Jellyfin;
+    # no symlink_library block is needed here.
   
   radarr:
     enabled: true
@@ -499,11 +488,11 @@ Logs are output to stdout/stderr. Look for:
    - Include `Authorization: Bearer YOUR_TOKEN` header
 
 5. **"Leaving Soon library not working"**
-   - Verify OxiCleanarr Bridge Plugin is installed and active in Jellyfin
+   - Verify jellyfin-plugin-leaving-soon is installed and active in Jellyfin
+   - Check the plugin is configured with an `oxicleanarr` provider pointing at this server
    - Check Jellyfin logs for plugin errors
-   - Verify `symlink_library.enabled: true` in config
-   - Ensure `base_path` exists and is accessible by Jellyfin
-   - Confirm library names match in both config and Jellyfin
+   - Confirm OxiCleanarr's `GET /api/media/leaving-soon` returns items (run a sync first)
+   - Ensure the plugin's base path is accessible to Jellyfin
 
 6. **"Watched rules not working"**
    - Ensure Jellystat integration is enabled and configured

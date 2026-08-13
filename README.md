@@ -13,7 +13,7 @@
 
 - **Automated Media Cleanup**: Intelligently removes unwatched media based on configurable retention rules
 - **Advanced Rules Engine**: Tag-based, user-based, and watched-based cleanup rules for fine-grained control
-- **"Leaving Soon" Library**: Creates symlink libraries in Jellyfin to preview content scheduled for deletion
+- **"Leaving Soon" Library**: Exposes scheduled-deletion media to the [jellyfin-plugin-leaving-soon](https://github.com/ramonskie/jellyfin-plugin-leaving-soon) plugin, which manages the "leaving soon" symlink libraries in Jellyfin
 - **Multi-Service Integration**: Supports Jellyfin, Radarr, Sonarr, Jellyseerr, Jellystat, and Streamystats
 - **Safe Operations**: Dry-run mode enabled by default, manual exclusions, and job history tracking
 - **Hot Configuration Reload**: Update settings without restarting the application
@@ -61,10 +61,6 @@
 ![Settings Advanced Rules](docs/screenshots/settings-advanced-rules.png)
 *Create tag-based, user-based, and watched-based cleanup rules*
 
-### Settings - Symlink Library
-![Settings Symlink Library](docs/screenshots/settings-symlink-library.png)
-*Configure "Leaving Soon" library symlink settings*
-
 ### Settings - Server Admin
 ![Settings Server Admin](docs/screenshots/settings-server-admin.png)
 *Administrative controls including application restart and maintenance*
@@ -78,9 +74,18 @@
 - Docker (recommended) or Go 1.21+ (for building from source)
 - Active *arr stack services (Radarr and/or Sonarr)
 - Jellyfin instance
-- **[OxiCleanarr Bridge Plugin](https://github.com/ramonskie/jellyfin-plugin-oxicleanarr)** installed in Jellyfin
+- **[jellyfin-plugin-leaving-soon](https://github.com/ramonskie/jellyfin-plugin-leaving-soon)** installed in Jellyfin (optional, for the "Leaving Soon" library feature)
 
-> **⚠️ IMPORTANT:** The OxiCleanarr Bridge Plugin is **required** for Jellyfin integration. It provides file system operations (symlink management, directory operations) that Jellyfin's native API doesn't support. Without this plugin, OxiCleanarr cannot create "leaving soon" libraries or manage media lifecycle.
+> **ℹ️ NOTE:** The "Leaving Soon" symlink libraries are managed by the standalone
+> [jellyfin-plugin-leaving-soon](https://github.com/ramonskie/jellyfin-plugin-leaving-soon)
+> plugin inside Jellyfin. It polls this server's `GET /api/media/leaving-soon` endpoint,
+> resolves each item's path from Jellyfin, and creates/removes the symlink libraries
+> itself. OxiCleanarr does not need any file system access for this feature.
+>
+> **⚠️ Auth:** the plugin polls without a user login. Set `admin.api_key` to a static
+> key and configure it in the plugin so its requests are authorized (the key is accepted
+> on every protected endpoint, not just leaving-soon). Alternatively run with
+> `admin.disable_auth: true` (disables login for the whole app).
 
 ### Installation
 
@@ -118,20 +123,21 @@ docker run -d \
 
 #### Option B: Build from Source
 
-#### Step 1: Install the OxiCleanarr Bridge Plugin
+#### Step 1: Install the Leaving Soon Plugin (optional)
 
 1. Open Jellyfin → **Dashboard** → **Plugins** → **Repositories**
 2. Click **"+"** to add a repository
 3. Enter:
-   - **Repository Name**: `OxiCleanarr Plugin Repository`
-   - **Repository URL**: `https://cdn.jsdelivr.net/gh/ramonskie/jellyfin-plugin-oxicleanarr@main/manifest.json`
+   - **Repository Name**: `Leaving Soon Plugin Repository`
+   - **Repository URL**: `https://cdn.jsdelivr.net/gh/ramonskie/jellyfin-plugin-leaving-soon@main/manifest.json`
 4. Click **Save**
 5. Go to **Dashboard** → **Plugins** → **Catalog**
-6. Find "OxiCleanarr Bridge" and click **Install**
+6. Find "Leaving Soon" and click **Install**
 7. Restart Jellyfin when prompted
-8. Verify the plugin is loaded: **Dashboard → Plugins → OxiCleanarr Bridge**
+8. Configure the plugin (Settings → Leaving Soon): point an `oxicleanarr` provider at
+   `http://<oxicleanarr-host>:8080` and set the base path + library names you want
 
-> **Manual Installation**: For manual installation from source or releases, see the [plugin repository](https://github.com/ramonskie/jellyfin-plugin-oxicleanarr)
+> **Manual Installation**: For manual installation from source or releases, see the [plugin repository](https://github.com/ramonskie/jellyfin-plugin-leaving-soon)
 
 #### Step 2: Build OxiCleanarr
 
@@ -152,14 +158,9 @@ mkdir -p config
 cp config/config.yaml.example config/config.yaml
 ```
 
-4. Configure "Leaving Soon" library paths in Jellyfin:
-   - Create directories for symlink libraries (on the Jellyfin server):
-     ```bash
-     mkdir -p /path/to/media/leaving-soon/movies
-     mkdir -p /path/to/media/leaving-soon/tv
-     ```
-   - Add these directories as new libraries in Jellyfin
-   - Name them appropriately (e.g., "Leaving Soon - Movies", "Leaving Soon - TV")
+4. (Optional) Configure the Leaving Soon plugin in Jellyfin — the plugin creates and
+   manages the "leaving soon" symlink library directories itself. No paths need to be
+   configured in OxiCleanarr.
 
 5. Edit `config/config.yaml` with your service URLs and API keys:
 ```yaml
@@ -167,17 +168,13 @@ admin:
   username: admin
   password: changeme          # ⚠️ Change this! Bcrypt hashes are supported
   disable_auth: false         # Set true to skip login (NOT recommended for production)
+  api_key: ""                 # Optional static Bearer key for machine clients (e.g. Leaving Soon plugin)
 
 integrations:
   jellyfin:
     enabled: true
     url: http://jellyfin:8096
     api_key: your-jellyfin-api-key-here
-    symlink_library:
-      enabled: true
-      base_path: /path/to/media/leaving-soon  # Path on Jellyfin server
-      movies_library_name: "Leaving Soon - Movies"
-      tv_library_name: "Leaving Soon - TV"
   
   radarr:
     enabled: true
@@ -439,7 +436,10 @@ advanced_rules:
 
 ### Authentication
 
-All API endpoints (except `/health`, `/api/auth/login`, `/api/auth/me`, and `/api/auth/logout`) require authentication.
+All API endpoints (except `/health`, `/api/auth/login`, `/api/auth/me`, and `/api/auth/logout`)
+require authentication. Authentication accepts either a JWT (cookie or
+`Authorization: Bearer <jwt>`) or the static `admin.api_key` sent as a Bearer token — so
+machine clients like jellyfin-plugin-leaving-soon can call the API without a login.
 
 #### Login
 
@@ -542,15 +542,34 @@ Response: Similar to movies but with `type: "tv_show"`
 
 **GET** `/api/media/leaving-soon`
 
-Returns media items that will be deleted soon (within `leaving_soon_days` threshold).
+Returns media items scheduled for deletion within the `leaving_soon_days` threshold, in
+the normalized contract consumed by jellyfin-plugin-leaving-soon (and any other provider
+consumer). Items without a Jellyfin match and excluded items are omitted.
 
 Response:
 ```json
 {
-  "media": [...],
-  "total": 5
+  "version": 1,
+  "items": [
+    {
+      "mediaServerId": "jellyfin-item-guid",
+      "type": "movie",
+      "title": "The Matrix",
+      "deletionDate": "2026-09-01T00:00:00Z",
+      "sourcePath": "/data/media/movies/The Matrix (1999)/The Matrix (1999).mkv"
+    }
+  ]
 }
 ```
+
+- `mediaServerId` — the Jellyfin item GUID (required; the plugin resolves the path from Jellyfin itself)
+- `type` — `movie` or `show`
+- `title`, `deletionDate`, `sourcePath` — optional, informational
+
+> **Note:** The web UI consumes the same leaving-soon feed through
+> `GET /api/media/leaving-soon/list`, which returns the rich `{items: [...], total: N}`
+> shape (poster ids, watch data, deletion reasons). This endpoint is separate from the
+> machine-readable contract above.
 
 #### Get Media Item
 

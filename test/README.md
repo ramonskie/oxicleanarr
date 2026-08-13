@@ -27,7 +27,9 @@ test/
     ├── jellyfin_setup.go             # Jellyfin user/library/plugin setup functions
     ├── radarr_setup_test.go          # Radarr quality profiles, root folders, movie import
     ├── setup_test.go                 # 21-step infrastructure validation test
-    └── symlink_lifecycle_test.go     # Symlink library lifecycle tests (to be implemented)
+    ├── leaving_soon_lifecycle_test.go # Leaving Soon plugin lifecycle tests
+    ├── leaving_soon_constants.go     # Leaving Soon plugin test constants
+    └── constants_test.go             # Shared test constants
 ```
 
 ---
@@ -88,7 +90,7 @@ go test -v ./test/integration/ -run TestIntegrationSuite
 
 **Expected Output**: 
 - ✅ Infrastructure setup (21 validation steps)
-- ✅ Symlink lifecycle tests (Phase 1 & Phase 2)
+- ✅ Leaving Soon plugin lifecycle tests (Phase 1 & Phase 2)
 
 If the test fails, check the troubleshooting section below.
 
@@ -101,12 +103,12 @@ You can run individual test components. The suite automatically handles infrastr
 go test -v ./test/integration/ -run TestIntegrationSuite/InfrastructureSetup
 
 # Run lifecycle tests (auto-runs setup if needed)
-go test -v ./test/integration/ -run TestIntegrationSuite/SymlinkLifecycle
+go test -v ./test/integration/ -run TestIntegrationSuite/LeavingSoonPluginLifecycle
 ```
 
 **How Auto-Setup Works**:
 - When running the full suite, infrastructure is set up once and shared across all subtests
-- When running a filtered subtest (e.g., `-run TestIntegrationSuite/SymlinkLifecycle`), the suite detects that infrastructure setup was skipped and automatically runs it before executing the test
+- When running a filtered subtest (e.g., `-run TestIntegrationSuite/LeavingSoonPluginLifecycle`), the suite detects that infrastructure setup was skipped and automatically runs it before executing the test
 - This uses an `infrastructureReady` flag to track whether setup has completed in the current test session
 - **Result**: You can run individual subtests without manual setup, while maintaining efficiency when running the full suite
 
@@ -131,8 +133,6 @@ go test -v ./test/integration/ -run TestIntegrationSuite/SymlinkLifecycle
    - Verify Jellyfin container running and API accessible
    - Create test user and generate API key
    - Create media library and scan for movies
-   - Verify OxiCleanarr Bridge plugin installed and active
-   - Verify plugin API endpoint functional
    - Verify Radarr container running and API accessible
    - Create quality profile and root folder
    - Import test movies (7 movies total)
@@ -141,15 +141,16 @@ go test -v ./test/integration/ -run TestIntegrationSuite/SymlinkLifecycle
    - Verify all integrations enabled in config
    - Verify data consistency across all services
 
-4. **Lifecycle Testing** (to be implemented in `symlink_lifecycle_test.go`):
-   - Test symlink creation when media scheduled for deletion
-   - Test symlink cleanup when retention rules change
-   - Test Jellyfin library creation/deletion via plugin API
-   - Test edge cases: missing files, permission errors, concurrent syncs
+4. **Leaving Soon plugin lifecycle** (`leaving_soon_lifecycle_test.go`):
+   - Installs jellyfin-plugin-leaving-soon into the Jellyfin container
+   - Phase 1: 7d retention → OxiCleanarr exposes leaving-soon items → plugin creates
+     symlinks + a Jellyfin library
+   - Phase 2: 0d retention → nothing leaving → plugin removes symlinks and the library
+     (hide_when_empty + double refresh)
 
 5. **Auto-Setup for Filtered Tests**:
    - When running the full suite, infrastructure is set up once and shared
-   - When running a filtered subtest (e.g., `-run TestIntegrationSuite/SymlinkLifecycle`), the suite automatically detects that infrastructure setup was skipped by Go's test runner
+   - When running a filtered subtest (e.g., `-run TestIntegrationSuite/LeavingSoonPluginLifecycle`), the suite automatically detects that infrastructure setup was skipped by Go's test runner
    - Implementation uses `infrastructureReady` flag (package-level variable)
    - Full suite: `InfrastructureSetup` sets flag to `true` → subsequent tests skip setup
    - Filtered run: Flag stays `false` → test wrapper runs setup automatically
@@ -168,9 +169,7 @@ The `TestInfrastructureSetup` function performs these 21 validation steps:
 4. ✅ Test user 'testuser' created successfully
 5. ✅ Test user API key generated
 6. ✅ Test media library created
-7a. ✅ Test media directory scanned (7 movies found)
-7b. ✅ OxiCleanarr Bridge plugin verified (version, Active status)
-7c. ✅ OxiCleanarr Bridge plugin API endpoint functional
+7. ✅ Test media directory scanned (7 movies found)
 
 ### Radarr Setup (Steps 8-12)
 8. ✅ Radarr container running and reachable
@@ -187,10 +186,8 @@ The `TestInfrastructureSetup` function performs these 21 validation steps:
 ### Integration Validation (Steps 16-21)
 16. ✅ Network connectivity validated (container IPs)
 17. ✅ All integrations enabled in config
-18. ✅ Symlink library feature enabled
-19. ✅ Leaving-soon base path configured
-20. ✅ Data consistency validated (all services report 7 movies)
-21. ✅ Infrastructure ready for lifecycle tests
+18. ✅ Data consistency validated (all services report 7 movies)
+19. ✅ Infrastructure ready for lifecycle tests
 
 ---
 
@@ -198,13 +195,13 @@ The `TestInfrastructureSetup` function performs these 21 validation steps:
 
 ### The Problem with Go's `-run` Filter
 
-When you run `go test -run TestIntegrationSuite/SymlinkLifecycle`, Go's test runner:
+When you run `go test -run TestIntegrationSuite/LeavingSoonPluginLifecycle`, Go's test runner:
 1. Matches `TestIntegrationSuite` function and enters it
-2. Evaluates subtest filter `/SymlinkLifecycle`
+2. Evaluates subtest filter `/LeavingSoonPluginLifecycle`
 3. **Skips** `t.Run("InfrastructureSetup", ...)` - doesn't match filter
-4. **Runs** `t.Run("SymlinkLifecycle", ...)` - matches filter
+4. **Runs** `t.Run("LeavingSoonPluginLifecycle", ...)` - matches filter
 
-This causes SymlinkLifecycle to run without infrastructure being set up first.
+This causes LeavingSoonPluginLifecycle to run without infrastructure being set up first.
 
 ### The Solution: Auto-Setup Detection
 
@@ -222,14 +219,14 @@ func TestIntegrationSuite(t *testing.T) {
     })
 
     // Lifecycle subtest with auto-setup
-    t.Run("SymlinkLifecycle", func(t *testing.T) {
+    t.Run("LeavingSoonPluginLifecycle", func(t *testing.T) {
         // Check if setup was skipped by Go's -run filter
         if !infrastructureReady {
             t.Log("⚠️ Infrastructure not ready (filtered by -run), setting up now...")
             testInfrastructureSetup(t)
             infrastructureReady = true
         }
-        TestSymlinkLifecycle(t)  // Now safe to run
+        testLeavingSoonLifecycle(t)  // Now safe to run
     })
 }
 ```
@@ -239,21 +236,21 @@ func TestIntegrationSuite(t *testing.T) {
 **Scenario 1: Full Suite** (`-run TestIntegrationSuite`)
 ```
 1. InfrastructureSetup runs → sets infrastructureReady = true
-2. SymlinkLifecycle checks flag → sees true → skips setup → uses existing infra
+2. LeavingSoonPluginLifecycle checks flag → sees true → skips setup → uses existing infra
 ```
 ✅ Infrastructure built once, shared across all subtests
 
-**Scenario 2: Filtered Subtest** (`-run TestIntegrationSuite/SymlinkLifecycle`)
+**Scenario 2: Filtered Subtest** (`-run TestIntegrationSuite/LeavingSoonPluginLifecycle`)
 ```
 1. InfrastructureSetup skipped by Go (doesn't match filter)
-2. SymlinkLifecycle checks flag → sees false → runs setup → then runs tests
+2. LeavingSoonPluginLifecycle checks flag → sees false → runs setup → then runs tests
 ```
 ✅ Tests work correctly even when run individually
 
 **Scenario 3: Infrastructure Only** (`-run TestIntegrationSuite/InfrastructureSetup`)
 ```
 1. InfrastructureSetup runs → sets infrastructureReady = true
-2. SymlinkLifecycle skipped by Go (doesn't match filter)
+2. LeavingSoonPluginLifecycle skipped by Go (doesn't match filter)
 ```
 ✅ Only infrastructure validation runs
 
@@ -280,7 +277,7 @@ func TestIntegrationSuite(t *testing.T) {
 - **`TEST_JELLYFIN_URL`** - Override Jellyfin URL (default: auto-detected)
 - **`TEST_RADARR_URL`** - Override Radarr URL (default: auto-detected)
 - **`TEST_OXICLEANARR_URL`** - Override OxiCleanarr URL (default: auto-detected)
-- **`GITHUB_TOKEN`** - GitHub personal access token to avoid API rate limiting when downloading the OxiCleanarr Bridge plugin
+- **`GITHUB_TOKEN`** - GitHub personal access token to avoid API rate limiting when downloading the Leaving Soon plugin
 
 Example:
 ```bash
@@ -290,7 +287,7 @@ go test -v ./test/integration/ -run TestIntegrationSuite/InfrastructureSetup
 
 ### Using GITHUB_TOKEN to Avoid Rate Limiting
 
-The tests automatically download the OxiCleanarr Bridge plugin from GitHub. Without authentication, GitHub limits you to 60 API requests per hour per IP address. If you encounter rate limit errors:
+The tests automatically download the Leaving Soon plugin from GitHub. Without authentication, GitHub limits you to 60 API requests per hour per IP address. If you encounter rate limit errors:
 
 ```bash
 # Create a GitHub personal access token (no scopes required for public repos)
@@ -380,29 +377,26 @@ docker images | grep oxicleanarr
 
 ### Test Failures
 
-#### Step 7b: Plugin verification failed
-**Error**: "OxiCleanarr Bridge plugin not found in Jellyfin"
+#### Leaving Soon plugin install failed
+**Error**: "Failed to install Leaving Soon plugin"
 
-**Solution**: Install the plugin manually:
-1. Open Jellyfin UI: http://localhost:8096
-2. Go to Dashboard → Plugins → Catalog
-3. Search for "OxiCleanarr Bridge"
-4. Install and restart Jellyfin
-5. Verify status shows "Active"
+**Solution**: Check the GitHub release is reachable and the plugin zip is available:
+1. Verify `https://api.github.com/repos/ramonskie/jellyfin-plugin-leaving-soon/releases/latest` returns a release with a `.zip` asset
+2. Set `GITHUB_TOKEN` if hitting API rate limits
+3. Check the Jellyfin container is running (`docker ps`)
 
-#### Step 7c: Plugin API endpoint not functional
-**Error**: "Plugin API endpoint returned non-200 status"
+#### Leaving Soon plugin sync not creating symlinks
+**Error**: `WaitForContainerSymlinkCount` timeout
 
-**Solution**:
-```bash
-# Test the endpoint manually
-curl -H "X-Emby-Token: <api-key>" http://localhost:8096/api/oxicleanarr/status
-
-# If 404: Plugin not fully loaded, restart Jellyfin
-docker-compose restart jellyfin
-
-# Wait 30 seconds and retry test
-```
+**Solution**: The plugin polls `GET /api/media/leaving-soon` on OxiCleanarr:
+1. Verify OxiCleanarr returns items (send the `admin.api_key` as a Bearer token):
+   ```bash
+   curl -s -H "Authorization: Bearer test-api-key" http://localhost:9709/api/media/leaving-soon
+   # Expect { "version": 1, "items": [ ... ] }
+   ```
+2. The test config sets `admin.api_key: test-api-key`, and the plugin installer writes
+   that key into the plugin's `config.xml`, so the plugin's poll is authorized.
+3. Check Jellyfin logs for plugin errors: `docker logs oxicleanarr-test-jellyfin | grep -i "leaving soon"`
 
 #### Step 12: Movies not imported
 **Error**: "Expected 7 movies in Radarr, got 0"
@@ -472,7 +466,7 @@ go test -v ./test/integration/
 ### Run Specific Test
 ```bash
 go test -v ./test/integration/ -run TestIntegrationSuite/InfrastructureSetup
-go test -v ./test/integration/ -run TestIntegrationSuite/SymlinkLifecycle
+go test -v ./test/integration/ -run TestIntegrationSuite/LeavingSoonPluginLifecycle
 ```
 
 ### Run with Verbose Output
@@ -642,32 +636,26 @@ jobs:
 
 ## Future Test Scenarios
 
-### Symlink Lifecycle Tests (To Be Implemented)
+### Leaving Soon Plugin Lifecycle (Implemented)
 
-Planned test cases in `test/integration/symlink_lifecycle_test.go`:
+See `test/integration/leaving_soon_lifecycle_test.go` — runs as the
+`LeavingSoonPluginLifecycle` subtest in `TestIntegrationSuite`:
 
-1. **Test Symlink Creation**:
-   - Set low retention (immediate deletion)
-   - Trigger sync
-   - Verify symlinks created in `/data/media/leaving-soon/movies/`
-   - Verify Jellyfin library appears via plugin API
+1. **Phase 1 - Symlink Creation**:
+   - 7d retention → OxiCleanarr exposes leaving-soon items
+   - Trigger plugin sync → verify symlinks created in the container's leaving-soon/movies dir
+   - Verify the Jellyfin library was created
 
-2. **Test Symlink Cleanup**:
-   - Set high retention (no deletions)
-   - Trigger sync
-   - Verify symlinks removed
-   - Verify Jellyfin library removed (if `hide_when_empty: true`)
+2. **Phase 2 - Symlink Cleanup**:
+   - 0d retention → nothing leaving soon
+   - Trigger plugin sync → verify symlinks removed
+   - Verify the Jellyfin library deleted (hide_when_empty + double refresh)
 
-3. **Test Edge Cases**:
+3. **Potential future cases**:
    - Missing source files (symlink creation should skip)
    - Permission errors (graceful error handling)
    - Concurrent syncs (thread safety)
-   - Plugin API failures (fallback behavior)
-
-4. **Test Configuration Changes**:
-   - Change `base_path` (symlinks recreated in new location)
-   - Toggle `enabled: false` (symlinks cleaned up)
-   - Change `hide_when_empty` (library visibility)
+   - Provider outage (ForceEmptyAfterFailureCount behavior)
 
 ---
 
@@ -716,6 +704,6 @@ When contributing integration tests:
 
 ---
 
-**Last Updated**: Nov 9, 2025  
+**Last Updated**: Aug 13, 2026  
 **OxiCleanarr Version**: v1.3.0+  
 **Test Framework**: Go testing package + Docker Compose

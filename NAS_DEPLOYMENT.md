@@ -2,23 +2,27 @@
 
 ## Prerequisites Check
 
-### 1. Install OxiCleanarr Bridge Plugin in Jellyfin
+### 1. Install Leaving Soon Plugin in Jellyfin (optional)
 
-> **⚠️ REQUIRED**: The OxiCleanarr Bridge Plugin must be installed in Jellyfin for symlink management to work.
+> **ℹ️ OPTIONAL**: Only needed for the "Leaving Soon" library feature. The standalone
+> [jellyfin-plugin-leaving-soon](https://github.com/ramonskie/jellyfin-plugin-leaving-soon)
+> plugin polls OxiCleanarr's `GET /api/media/leaving-soon` endpoint and manages the
+> symlink libraries inside Jellyfin itself.
 
 **Install via Plugin Repository (Recommended):**
 1. Open Jellyfin → **Dashboard** → **Plugins** → **Repositories**
 2. Click **"+"** to add a repository
 3. Enter:
-   - **Repository Name**: `OxiCleanarr Plugin Repository`
-   - **Repository URL**: `https://cdn.jsdelivr.net/gh/ramonskie/jellyfin-plugin-oxicleanarr@main/manifest.json`
+   - **Repository Name**: `Leaving Soon Plugin Repository`
+   - **Repository URL**: `https://cdn.jsdelivr.net/gh/ramonskie/jellyfin-plugin-leaving-soon@main/manifest.json`
 4. Click **Save**
 5. Go to **Dashboard** → **Plugins** → **Catalog**
-6. Find "OxiCleanarr Bridge" and click **Install**
+6. Find "Leaving Soon" and click **Install**
 7. Restart Jellyfin when prompted
-8. Verify: **Dashboard** → **Plugins** → Confirm "OxiCleanarr Bridge" is active
+8. Configure the plugin (Settings → Leaving Soon): add an `oxicleanarr` provider pointing
+   at your OxiCleanarr server, and set a base path that Jellyfin can write to
 
-> **Manual Installation**: See the [plugin repository](https://github.com/ramonskie/jellyfin-plugin-oxicleanarr) for manual installation steps.
+> **Manual Installation**: See the [plugin repository](https://github.com/ramonskie/jellyfin-plugin-leaving-soon) for manual installation steps.
 
 ### 2. Verify NAS Setup
 
@@ -44,10 +48,9 @@ docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
 - **Jellyfin** sees same file at: `/data/media/movies/Movie Name (2020)/movie.mkv`
 - **OxiCleanarr** will see it at: `/data/media/movies/Movie Name (2020)/movie.mkv`
 
-**Symlinks will be created:**
-- **On host (NAS)**: `/volume3/docker/oxicleanarr/leaving-soon/movies/Movie Name (2020).mkv`
-- **OxiCleanarr container sees**: `/app/leaving-soon/movies/Movie Name (2020).mkv`
-- **Jellyfin container should see**: `/app/leaving-soon/movies/Movie Name (2020).mkv` (mount same host dir)
+**Symlinks are created by the plugin (running inside Jellyfin):**
+- **On host (NAS)**: `/volume3/docker/leaving-soon/movies/Movie Name (2020).mkv`
+- **Jellyfin container sees**: `/app/leaving-soon/movies/Movie Name (2020).mkv` (mount the same host dir)
 - **Symlink target**: → `/data/media/movies/Movie Name (2020)/movie.mkv`
 
 **Common Media Path Patterns:**
@@ -70,7 +73,6 @@ docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
 sudo mkdir -p /volume3/docker/oxicleanarr/config
 sudo mkdir -p /volume3/docker/oxicleanarr/data
 sudo mkdir -p /volume3/docker/oxicleanarr/logs
-sudo mkdir -p /volume3/docker/oxicleanarr/leaving-soon
 sudo chown -R 1027:65536 /volume3/docker/oxicleanarr
 ```
 
@@ -129,13 +131,10 @@ rules:
 server:
   host: 0.0.0.0
   port: 8080
-
-symlink_library:
-  enabled: true
-  base_path: /data/media/leaving-soon  # RECOMMENDED: Inside existing media mount
-  movies_library_name: "Leaving Soon - Movies"
-  tv_library_name: "Leaving Soon - TV Shows"
 ```
+
+> **Note:** "Leaving Soon" symlink libraries are managed by jellyfin-plugin-leaving-soon
+> inside Jellyfin (see Step 5). There is no `symlink_library` config in OxiCleanarr.
 
 Save and exit (Ctrl+X, Y, Enter)
 
@@ -216,7 +215,6 @@ services:
       - /volume3/docker/oxicleanarr/config:/app/config:z
       - /volume3/docker/oxicleanarr/data:/app/data:z
       - /volume3/docker/oxicleanarr/logs:/app/logs:z
-      - /volume3/docker/oxicleanarr/leaving-soon:/app/leaving-soon:z
       
       # Media paths - MUST match your Radarr/Sonarr/Jellyfin configuration
       # Mount ONLY the media directory (more restrictive = more secure)
@@ -233,32 +231,49 @@ services:
     restart: always
 ```
 
-### Step 5: Verify Jellyfin Can Access Symlinks
+> **Note:** The old `leaving-soon` volume mount is no longer needed on the OxiCleanarr
+> container — symlink management moved into jellyfin-plugin-leaving-soon, which runs
+> inside the Jellyfin container.
 
-**RECOMMENDED APPROACH:** If you configured `base_path: /data/media/leaving-soon`, **no changes needed!**
+### Step 5: Configure the Leaving Soon Plugin in Jellyfin
 
-Jellyfin already has the `/data/media` mount, which includes the `leaving-soon` subdirectory where OxiCleanarr creates symlinks.
+The plugin (running inside Jellyfin) creates the symlink directories and virtual
+folders itself. You only need to give Jellyfin a writable directory to host them.
+
+**RECOMMENDED:** reuse the existing media mount — the plugin writes symlinks under
+`/data/media/leaving-soon/` on the Jellyfin container:
 
 **How it works:**
-- OxiCleanarr creates: `/data/media/leaving-soon/movies/Red Dawn (2012).mkv` → `/data/media/movies/Red Dawn (2012)/file.mkv`
+- The plugin creates: `/data/media/leaving-soon/movies/Red Dawn (2012).mkv` → `/data/media/movies/Red Dawn (2012)/file.mkv`
 - Jellyfin Virtual Folder points to: `/data/media/leaving-soon/movies/`
 - Jellyfin can read both the symlink AND follow it to the real file (same mount!)
 
-**Verify Jellyfin has the media mount** (edit your jellyfin docker-compose.yml if needed):
+**Verify Jellyfin has a writable media mount** (edit your jellyfin docker-compose.yml if needed):
 
 ```yaml
 volumes:
   - /volume3/docker/jellyfin:/config
-  - /volume1/data/media:/data/media:ro  # This gives access to both media files AND symlinks
+  - /volume1/data/media:/data/media:rw  # writable, so the plugin can create symlinks
 ```
 
-**Alternative approach** (if you used `base_path: /app/leaving-soon` instead):
+Then configure the plugin in Jellyfin (**Dashboard → Plugins → Leaving Soon → Settings**):
+- **Base Path**: `/data/media/leaving-soon`
+- **Library names**: e.g. "Leaving Soon - Movies", "Leaving Soon - TV"
+- **Provider**: add an `oxicleanarr` provider with URL `http://<oxicleanarr-ip>:8080`
+- **Sync Interval**: how often to poll OxiCleanarr
+
+> **⚠️ Auth:** the plugin polls OxiCleanarr without a user login. Set `admin.api_key` in
+> OxiCleanarr's config to a static key and enter it as the provider's API key in the
+> plugin settings — the key is accepted on every protected endpoint. Alternatively run
+> with `admin.disable_auth: true`, which disables the login for the whole app.
+
+**Alternative approach** (dedicated directory, requires an extra Jellyfin mount):
 
 ```yaml
 volumes:
   - /volume3/docker/jellyfin:/config
   - /volume1/data/media:/data/media:ro                          # Access actual files
-  - /volume3/docker/oxicleanarr/leaving-soon:/app/leaving-soon:ro  # Access symlinks (extra mount)
+  - /volume3/docker/leaving-soon:/app/leaving-soon:rw           # Plugin's symlink dir
 ```
 
 If you changed anything, recreate Jellyfin container:
@@ -296,47 +311,36 @@ docker logs -f oxicleanarr
 4. Trigger manual sync: Dashboard → "Sync Now"
 5. Check Timeline page for items scheduled for deletion
 
-### Step 9: Verify Symlinks Created
+### Step 9: Verify Symlinks & Libraries (created by the plugin)
+
+The Leaving Soon plugin creates the symlink directories and virtual folders inside
+Jellyfin after a sync. To verify:
 
 ```bash
-# Check symlink directories exist (adjust path based on your config)
-ls -la /volume1/data/media/leaving-soon/   # If using recommended base_path
-# OR
-ls -la /volume3/docker/oxicleanarr/leaving-soon/  # If using separate directory
+# Check the symlink dir the plugin writes to (adjust to the base path you configured)
+ls -la /volume1/data/media/leaving-soon/   # If using the recommended /data/media/leaving-soon
+# Should see movies/ and tv/ subdirectories once items are scheduled
 
-# Should see:
-# drwxr-xr-x movies/
-# drwxr-xr-x tv/
-
-# Check symlink contents
-ls -la /volume3/docker/oxicleanarr/leaving-soon/movies/ | head -5
-ls -la /volume3/docker/oxicleanarr/leaving-soon/tv/ | head -5
-
-# Verify symlinks point to real files
-file /volume3/docker/oxicleanarr/leaving-soon/movies/* | head -3
+# Check symlinks point to real files
+ls -la /volume1/data/media/leaving-soon/movies/ | head -5
+file /volume1/data/media/leaving-soon/movies/* | head -3
 ```
 
 ### Step 10: Verify Jellyfin Libraries Created
 
 1. Open Jellyfin web UI
 2. Click hamburger menu → Libraries
-3. You should see two new libraries:
-   - "Leaving Soon - Movies"
-   - "Leaving Soon - TV Shows"
+3. You should see the libraries configured in the plugin (e.g. "Leaving Soon - Movies",
+   "Leaving Soon - TV Shows")
 4. Click into each library - should show scheduled items
 
-### Step 11: Check OxiCleanarr Logs
+### Step 11: Check Plugin Logs
 
 ```bash
-docker logs oxicleanarr 2>&1 | grep -i symlink
-docker logs oxicleanarr 2>&1 | grep -i "virtual folder"
+docker logs jellyfin 2>&1 | grep -i "leaving soon"
 ```
 
-Look for:
-- `"Syncing symlink libraries"`
-- `"Created virtual folder: Leaving Soon - Movies"`
-- `"Created X symlinks for movies"`
-- `"Symlink library sync completed"`
+Look for plugin sync lines (e.g. "Reconciling leaving-soon libraries").
 
 ## Troubleshooting
 
@@ -357,7 +361,6 @@ volumes:
   - /volume3/docker/oxicleanarr/config:/app/config:z
   - /volume3/docker/oxicleanarr/data:/app/data:z
   - /volume3/docker/oxicleanarr/logs:/app/logs:z
-  - /volume3/docker/oxicleanarr/leaving-soon:/app/leaving-soon:z
   - /volume1/data:/data:ro  # Read-only mounts don't need :z
 ```
 
@@ -397,60 +400,64 @@ sudo chown -R 1027:65536 /volume3/docker/oxicleanarr
 docker-compose up -d --force-recreate
 ```
 
-### Problem: No symlinks created
+### Problem: No symlinks created (Leaving Soon)
 
-```bash
-# Check if symlink directory exists and has correct permissions
-# (Adjust path based on your base_path config)
+The symlinks are created by jellyfin-plugin-leaving-soon inside Jellyfin — not by
+OxiCleanarr. Check in this order:
 
-# If using base_path: /data/media/leaving-soon (recommended)
-ls -la /volume1/data/media/leaving-soon/
-
-# If using base_path: /app/leaving-soon (separate directory)
-ls -la /volume3/docker/oxicleanarr/leaving-soon/
-
-# Should be owned by your PUID:PGID (default 1027:65536)
-# If not, fix it:
-sudo chown -R 1027:65536 /volume1/data/media/leaving-soon
-```
+1. **OxiCleanarr exposes data**: run a sync, then verify the endpoint returns items
+   (send the `admin.api_key` as a Bearer token):
+   ```bash
+   curl -s -H "Authorization: Bearer YOUR_API_KEY" http://localhost:8080/api/media/leaving-soon | jq
+   # Expect { "version": 1, "items": [ ... ] } with at least one item
+   ```
+2. **Plugin installed & configured**: Dashboard → Plugins → Leaving Soon → Settings —
+   confirm the `oxicleanarr` provider URL points at OxiCleanarr and is enabled.
+3. **Plugin can write**: verify the base path exists and is writable by Jellyfin:
+   ```bash
+   ls -la /volume1/data/media/leaving-soon/
+   # Should be owned by your PUID:PGID (default 1027:65536)
+   # If not, fix it:
+   sudo chown -R 1027:65536 /volume1/data/media/leaving-soon
+   ```
 
 ### Problem: Jellyfin libraries not created
 
 ```bash
-# Check if OxiCleanarr can reach Jellyfin API
-docker exec oxicleanarr curl -s http://jellyfin:8096/System/Info/Public | jq
+# Check that OxiCleanarr is reachable from Jellyfin (provider URL in plugin settings)
+docker exec jellyfin curl -s http://<oxicleanarr-ip>:8080/health | jq
 ```
 
 ### Problem: Jellyfin libraries empty or not showing items
 
 **Symptoms:**
 - "Leaving Soon - Movies" library exists but shows 0 items
-- Jellyfin can't see the symlinks OxiCleanarr created
+- Jellyfin can't see the symlinks the plugin created
 
 **Root Cause:** Jellyfin doesn't have access to the symlink directory.
 
-**Solution depends on your `base_path` setting:**
+**Solution depends on the plugin's `BasePath` setting:**
 
-**If using `base_path: /data/media/leaving-soon` (recommended):**
+**If using `/data/media/leaving-soon` (recommended):**
 ```yaml
-# Jellyfin docker-compose.yml - Only needs ONE mount!
+# Jellyfin docker-compose.yml - Only needs ONE mount (writable!)
 volumes:
   - /volume3/docker/jellyfin:/config
-  - /volume1/data/media:/data/media:ro  # Already includes /data/media/leaving-soon/ ✅
+  - /volume1/data/media:/data/media:rw  # Includes /data/media/leaving-soon/ ✅
 ```
 
-**If using `base_path: /app/leaving-soon` (separate directory):**
+**If using a dedicated directory (e.g. `/app/leaving-soon`):**
 ```yaml
 # Jellyfin docker-compose.yml - Needs TWO mounts
 volumes:
   - /volume3/docker/jellyfin:/config
   - /volume1/data/media:/data/media:ro                          # Actual media files
-  - /volume3/docker/oxicleanarr/leaving-soon:/app/leaving-soon:ro  # Symlinks (extra mount)
+  - /volume3/docker/leaving-soon:/app/leaving-soon:rw           # Plugin's symlink dir
 ```
 
 **Verify mounts are working:**
 
-**If using `base_path: /data/media/leaving-soon` (recommended):**
+**If using `/data/media/leaving-soon` (recommended):**
 ```bash
 # From host: Check symlinks exist
 ls -la /volume1/data/media/leaving-soon/movies/
@@ -458,13 +465,13 @@ ls -la /volume1/data/media/leaving-soon/movies/
 # From Jellyfin container: Check if it can see symlinks
 docker exec jellyfin ls -la /data/media/leaving-soon/movies/
 
-# Should show the same files! Both containers share the same mount.
+# Should show the same files! Same mount.
 ```
 
-**If using `base_path: /app/leaving-soon` (separate directory):**
+**If using a dedicated directory:**
 ```bash
 # From host: Check symlinks exist
-ls -la /volume3/docker/oxicleanarr/leaving-soon/movies/
+ls -la /volume3/docker/leaving-soon/movies/
 
 # From Jellyfin container: Check if it can see symlinks
 docker exec jellyfin ls -la /app/leaving-soon/movies/
@@ -474,7 +481,7 @@ docker-compose restart jellyfin
 ```
 
 **How symlinks work:**
-1. OxiCleanarr creates symlink: `/data/media/leaving-soon/movies/Movie.mkv` → `/data/media/movies/Movie/file.mkv`
+1. The plugin creates symlink: `/data/media/leaving-soon/movies/Movie.mkv` → `/data/media/movies/Movie/file.mkv`
 2. Jellyfin Virtual Folder points to: `/data/media/leaving-soon/movies/`
 3. Jellyfin reads the symlink file and follows it to the real file
 4. **Jellyfin only needs one mount** (the `/data/media` mount) to access both!
@@ -501,8 +508,9 @@ Once you've deployed, share:
 
 2. **Symlink directory contents:**
    ```bash
-   ls -laR /volume3/docker/oxicleanarr/leaving-soon/
+   ls -laR /volume1/data/media/leaving-soon/
    ```
+   (or whatever base path you configured for the Leaving Soon plugin)
 
 3. **Integration status from API:**
    ```bash
@@ -519,5 +527,5 @@ Once you've deployed, share:
 
 - ✅ Config has `dry_run: true` - no actual deletions
 - ✅ Media volumes mounted read-only (`:ro`) - cannot modify originals
-- ✅ Only symlink directory is read-write
+- ✅ Only the plugin's symlink directory is read-write (in the Jellyfin container)
 - ✅ Symlinks are safe - deleting them doesn't delete source files
