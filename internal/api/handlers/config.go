@@ -35,10 +35,11 @@ type SanitizedConfig struct {
 	AdvancedRules []config.AdvancedRule       `json:"advanced_rules"`
 }
 
-// SanitizedAdminConfig holds admin config without password
+// SanitizedAdminConfig holds admin config without password or API key
 type SanitizedAdminConfig struct {
 	Username    string `json:"username"`
 	DisableAuth bool   `json:"disable_auth"`
+	HasAPIKey   bool   `json:"has_api_key"`
 }
 
 // SanitizedIntegrationsConfig holds sanitized integration configs
@@ -71,11 +72,10 @@ type SanitizedStreamystatsConfig struct {
 
 // SanitizedJellyfinConfig holds sanitized Jellyfin config
 type SanitizedJellyfinConfig struct {
-	Enabled        bool                        `json:"enabled"`
-	URL            string                      `json:"url"`
-	HasAPIKey      bool                        `json:"has_api_key"`
-	Timeout        string                      `json:"timeout"`
-	SymlinkLibrary config.SymlinkLibraryConfig `json:"symlink_library"`
+	Enabled   bool   `json:"enabled"`
+	URL       string `json:"url"`
+	HasAPIKey bool   `json:"has_api_key"`
+	Timeout   string `json:"timeout"`
 }
 
 // GetConfig handles GET /api/config
@@ -94,6 +94,7 @@ func (h *ConfigHandler) GetConfig(w http.ResponseWriter, r *http.Request) {
 		Admin: SanitizedAdminConfig{
 			Username:    cfg.Admin.Username,
 			DisableAuth: cfg.Admin.DisableAuth,
+			HasAPIKey:   cfg.Admin.APIKey != "",
 		},
 		App:           cfg.App,
 		Sync:          cfg.Sync,
@@ -102,11 +103,10 @@ func (h *ConfigHandler) GetConfig(w http.ResponseWriter, r *http.Request) {
 		AdvancedRules: cfg.AdvancedRules,
 		Integrations: SanitizedIntegrationsConfig{
 			Jellyfin: SanitizedJellyfinConfig{
-				Enabled:        cfg.Integrations.Jellyfin.Enabled,
-				URL:            cfg.Integrations.Jellyfin.URL,
-				HasAPIKey:      cfg.Integrations.Jellyfin.APIKey != "",
-				Timeout:        cfg.Integrations.Jellyfin.Timeout,
-				SymlinkLibrary: cfg.Integrations.Jellyfin.SymlinkLibrary,
+				Enabled:   cfg.Integrations.Jellyfin.Enabled,
+				URL:       cfg.Integrations.Jellyfin.URL,
+				HasAPIKey: cfg.Integrations.Jellyfin.APIKey != "",
+				Timeout:   cfg.Integrations.Jellyfin.Timeout,
 			},
 			Radarr: SanitizedBaseIntegrationConfig{
 				Enabled:   cfg.Integrations.Radarr.Enabled,
@@ -164,6 +164,7 @@ type UpdateAdminConfig struct {
 	Username    *string `json:"username,omitempty"`
 	Password    *string `json:"password,omitempty"`
 	DisableAuth *bool   `json:"disable_auth,omitempty"`
+	APIKey      *string `json:"api_key,omitempty"`
 }
 
 // UpdateIntegrationsConfig holds updatable integration configs
@@ -197,11 +198,10 @@ type UpdateStreamystatsConfig struct {
 // Jellyfin is authenticated with an API key (X-Emby-Token); there are no
 // username/password fields on JellyfinConfig, so none are accepted here.
 type UpdateJellyfinConfig struct {
-	Enabled        *bool                        `json:"enabled,omitempty"`
-	URL            *string                      `json:"url,omitempty"`
-	APIKey         *string                      `json:"api_key,omitempty"`
-	Timeout        *string                      `json:"timeout,omitempty"`
-	SymlinkLibrary *config.SymlinkLibraryConfig `json:"symlink_library,omitempty"`
+	Enabled *bool   `json:"enabled,omitempty"`
+	URL     *string `json:"url,omitempty"`
+	APIKey  *string `json:"api_key,omitempty"`
+	Timeout *string `json:"timeout,omitempty"`
 }
 
 // UpdateConfig handles PUT /api/config
@@ -251,6 +251,11 @@ func (h *ConfigHandler) UpdateConfig(w http.ResponseWriter, r *http.Request) {
 		if req.Admin.DisableAuth != nil {
 			newCfg.Admin.DisableAuth = *req.Admin.DisableAuth
 		}
+		// API key is not returned by GET, so a provided value always wins
+		// (send an empty string to clear it).
+		if req.Admin.APIKey != nil {
+			newCfg.Admin.APIKey = *req.Admin.APIKey
+		}
 	}
 
 	if req.App != nil {
@@ -282,9 +287,6 @@ func (h *ConfigHandler) UpdateConfig(w http.ResponseWriter, r *http.Request) {
 			}
 			if req.Integrations.Jellyfin.Timeout != nil {
 				newCfg.Integrations.Jellyfin.Timeout = *req.Integrations.Jellyfin.Timeout
-			}
-			if req.Integrations.Jellyfin.SymlinkLibrary != nil {
-				newCfg.Integrations.Jellyfin.SymlinkLibrary = *req.Integrations.Jellyfin.SymlinkLibrary
 			}
 		}
 

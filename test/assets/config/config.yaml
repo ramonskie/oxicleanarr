@@ -1,4 +1,5 @@
 admin:
+    api_key: test-api-key
     password: adminpassword
     username: admin
 app:
@@ -9,12 +10,6 @@ integrations:
     jellyfin:
         api_key: your-jellyfin-api-key-here
         enabled: true
-        symlink_library:
-            base_path: /data/media/leaving-soon
-            enabled: true
-            hide_when_empty: true
-            movies_library_name: Test - Leaving Soon Movies
-            tv_library_name: Test - Leaving Soon TV
         url: http://oxicleanarr-test-jellyfin:8096
     jellyseerr:
         api_key: your-jellyfin-api-key-here

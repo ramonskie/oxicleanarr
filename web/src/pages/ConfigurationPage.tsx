@@ -58,6 +58,10 @@ export default function ConfigurationPage() {
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
 
+  // Track API key change (the key is never returned by the API, only a has_api_key flag)
+  const [newApiKey, setNewApiKey] = useState('');
+  const [removeApiKey, setRemoveApiKey] = useState(false);
+
 
 
   // Update formData when config loads
@@ -154,6 +158,8 @@ export default function ConfigurationPage() {
       admin: {
         ...formData.admin,
         ...(newPassword ? { password: newPassword } : {}),
+        ...(newApiKey ? { api_key: newApiKey } : {}),
+        ...(removeApiKey ? { api_key: '' } : {}),
       },
       integrations: {
         jellyfin: {
@@ -209,22 +215,6 @@ export default function ConfigurationPage() {
           ...(prev.integrations?.[integration as keyof typeof prev.integrations] as any),
           [field]: value,
         },
-      } as any,
-    }));
-  };
-
-  const handleSymlinkLibraryChange = (field: string, value: any) => {
-    setFormData(prev => ({
-      ...prev,
-      integrations: {
-        ...prev.integrations,
-        jellyfin: {
-          ...prev.integrations?.jellyfin,
-          symlink_library: {
-            ...prev.integrations?.jellyfin?.symlink_library,
-            [field]: value,
-          } as any,
-        } as any,
       } as any,
     }));
   };
@@ -350,7 +340,6 @@ export default function ConfigurationPage() {
             <h1 className="text-3xl font-bold">
               {section === 'general' && 'General Settings'}
               {section === 'integrations' && 'Integrations'}
-              {section === 'symlink' && 'Symlink Library'}
               {section === 'admin' && 'Server & Admin'}
             </h1>
           </div>
@@ -379,7 +368,7 @@ export default function ConfigurationPage() {
             <Info className="h-4 w-4 mt-0.5 text-blue-400 flex-shrink-0" />
             <div className="flex-1">
               <span className="text-gray-300">Most settings apply immediately.</span>
-              <span className="text-orange-400 ml-2">Integrations, Symlink Library, and Server/Admin changes require restart.</span>
+              <span className="text-orange-400 ml-2">Integrations and Server/Admin changes require restart.</span>
             </div>
           </div>
         </div>
@@ -793,97 +782,6 @@ export default function ConfigurationPage() {
 
 
 
-        {/* Symlink Library Section */}
-        {section === 'symlink' && (
-          <div className="space-y-6">
-            <div className="mb-4">
-              <h2 className="text-xl font-bold mb-2">Symlink Library Configuration</h2>
-              <p className="text-sm text-muted-foreground">
-                Configure the "Leaving Soon" symlink library for Jellyfin. Changes require application restart.
-              </p>
-            </div>
-
-            <Card>
-              <CardHeader>
-                <CardTitle>Symlink Library Settings</CardTitle>
-                <CardDescription>
-                  Create a "Leaving Soon" library with symlinks to media scheduled for deletion
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <label className="text-sm font-medium">Enable Symlink Library</label>
-                    <p className="text-sm text-gray-500">
-                      Create a "Leaving Soon" library with symlinks to media
-                    </p>
-                  </div>
-                  <input
-                    type="checkbox"
-                    checked={formData.integrations?.jellyfin?.symlink_library?.enabled || false}
-                    onChange={(e) => handleSymlinkLibraryChange('enabled', e.target.checked)}
-                    className="h-4 w-4"
-                  />
-                </div>
-
-                <div>
-                  <label className="text-sm font-medium">Base Path</label>
-                  <p className="text-sm text-gray-500 mb-2">
-                    Root directory for symlink library
-                  </p>
-                  <Input
-                    type="text"
-                    value={formData.integrations?.jellyfin?.symlink_library?.base_path || ''}
-                    onChange={(e) => handleSymlinkLibraryChange('base_path', e.target.value)}
-                    placeholder="/path/to/leaving-soon"
-                  />
-                </div>
-
-                <div>
-                  <label className="text-sm font-medium">Movies Library Name</label>
-                  <p className="text-sm text-gray-500 mb-2">
-                    Name for the movies leaving soon library
-                  </p>
-                  <Input
-                    type="text"
-                    value={formData.integrations?.jellyfin?.symlink_library?.movies_library_name || ''}
-                    onChange={(e) => handleSymlinkLibraryChange('movies_library_name', e.target.value)}
-                    placeholder="Movies - Leaving Soon"
-                  />
-                </div>
-
-                <div>
-                  <label className="text-sm font-medium">TV Shows Library Name</label>
-                  <p className="text-sm text-gray-500 mb-2">
-                    Name for the TV shows leaving soon library
-                  </p>
-                  <Input
-                    type="text"
-                    value={formData.integrations?.jellyfin?.symlink_library?.tv_library_name || ''}
-                    onChange={(e) => handleSymlinkLibraryChange('tv_library_name', e.target.value)}
-                    placeholder="TV Shows - Leaving Soon"
-                  />
-                </div>
-
-                <div className="flex items-center justify-between">
-                  <div>
-                    <label className="text-sm font-medium">Hide When Empty</label>
-                    <p className="text-sm text-gray-500">
-                      Hide library when there are no items leaving soon
-                    </p>
-                  </div>
-                  <input
-                    type="checkbox"
-                    checked={formData.integrations?.jellyfin?.symlink_library?.hide_when_empty || false}
-                    onChange={(e) => handleSymlinkLibraryChange('hide_when_empty', e.target.checked)}
-                    className="h-4 w-4"
-                  />
-              </div>
-            </CardContent>
-          </Card>
-          </div>
-        )}
-
         {/* Server & Admin Section */}
         {section === 'admin' && (
           <div className="space-y-6">
@@ -978,6 +876,39 @@ export default function ConfigurationPage() {
                   placeholder="Confirm new password"
                 />
               </div>
+
+              <div>
+                <label className="text-sm font-medium">API Key</label>
+                <p className="text-sm text-gray-500 mb-2">
+                  {formData.admin?.has_api_key
+                    ? 'A static API key is set. Enter a new value to replace it.'
+                    : 'Optional static Bearer key for machine clients (e.g. the Leaving Soon plugin). Leave blank to keep unchanged.'}
+                </p>
+                <Input
+                  type="password"
+                  value={newApiKey}
+                  onChange={(e) => setNewApiKey(e.target.value)}
+                  disabled={removeApiKey}
+                  placeholder={formData.admin?.has_api_key ? '••••••••' : 'Enter API key'}
+                />
+              </div>
+
+              {formData.admin?.has_api_key && (
+                <div className="flex items-center justify-between">
+                  <div>
+                    <label className="text-sm font-medium">Remove API Key</label>
+                    <p className="text-sm text-gray-500">
+                      Disable the static API key (machine clients will need to log in)
+                    </p>
+                  </div>
+                  <input
+                    type="checkbox"
+                    checked={removeApiKey}
+                    onChange={(e) => setRemoveApiKey(e.target.checked)}
+                    className="h-4 w-4"
+                  />
+                </div>
+              )}
 
               <div className="flex items-center justify-between">
                 <div>

@@ -124,6 +124,7 @@ export interface Config {
 export interface AdminConfig {
   username: string;
   disable_auth: boolean;
+  has_api_key: boolean;
 }
 
 export interface DiskThresholdConfig {
@@ -184,21 +185,11 @@ export interface BaseIntegration {
   timeout: string;
 }
 
-export interface JellyfinIntegration extends BaseIntegration {
-  symlink_library: SymlinkLibraryConfig;
-}
+export interface JellyfinIntegration extends BaseIntegration {}
 
 export interface StreamystatsIntegration extends BaseIntegration {
   has_server_id: boolean;
   server_id: string;
-}
-
-export interface SymlinkLibraryConfig {
-  enabled: boolean;
-  base_path: string;
-  movies_library_name: string;
-  tv_library_name: string;
-  hide_when_empty: boolean;
 }
 
 export interface AdvancedRule {

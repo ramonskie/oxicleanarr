@@ -180,3 +180,66 @@ func TestGetTokenFromRequest_Priority(t *testing.T) {
 		t.Errorf("Expected empty token, got %q", got)
 	}
 }
+
+func makeAuthHandler() http.Handler {
+	return Auth(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("ok"))
+	}))
+}
+
+func TestAuth_AcceptsAPIKey(t *testing.T) {
+	initTestJWT(t)
+	config.SetTestConfig(&config.Config{
+		Admin: config.AdminConfig{APIKey: "test-api-key"},
+	})
+	defer config.SetTestConfig(nil)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/media", nil)
+	req.Header.Set("Authorization", "Bearer test-api-key")
+	w := httptest.NewRecorder()
+
+	makeAuthHandler().ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("Expected 200 with API key, got %d", w.Code)
+	}
+}
+
+func TestAuth_RejectsWrongAPIKey(t *testing.T) {
+	initTestJWT(t)
+	config.SetTestConfig(&config.Config{
+		Admin: config.AdminConfig{APIKey: "test-api-key"},
+	})
+	defer config.SetTestConfig(nil)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/media", nil)
+	req.Header.Set("Authorization", "Bearer wrong-key")
+	w := httptest.NewRecorder()
+
+	makeAuthHandler().ServeHTTP(w, req)
+
+	if w.Code != http.StatusUnauthorized {
+		t.Errorf("Expected 401 with wrong API key, got %d", w.Code)
+	}
+}
+
+func TestAuth_APIKeyHeaderNotShadowedByStaleCookie(t *testing.T) {
+	initTestJWT(t)
+	config.SetTestConfig(&config.Config{
+		Admin: config.AdminConfig{APIKey: "test-api-key"},
+	})
+	defer config.SetTestConfig(nil)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/media", nil)
+	req.AddCookie(&http.Cookie{Name: AuthCookieName, Value: "stale-invalid-cookie"})
+	req.Header.Set("Authorization", "Bearer test-api-key")
+	w := httptest.NewRecorder()
+
+	makeAuthHandler().ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("Expected 200 with API key header despite stale cookie, got %d", w.Code)
+	}
+}
+

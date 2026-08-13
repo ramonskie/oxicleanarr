@@ -4,7 +4,7 @@ import { useQuery } from '@tanstack/react-query';
 import { apiClient } from '@/lib/api';
 import { useAuthStore } from '@/store/auth';
 import { Button } from '@/components/ui/button';
-import { Clock, LogOut, Settings, LayoutDashboard, Calendar, Library, Trash2, History, ChevronDown, ChevronRight, Sliders, Wrench, Plug, Link, Shield, ScrollText } from 'lucide-react';
+import { Clock, LogOut, Settings, LayoutDashboard, Calendar, Library, Trash2, History, ChevronDown, ChevronRight, Sliders, Wrench, Plug, Shield, ScrollText } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { useState } from 'react';
 
@@ -47,7 +47,6 @@ export default function AppLayout({ children }: AppLayoutProps) {
   const settingsSubItems = [
     { path: '/settings/general', label: 'General', icon: Wrench },
     { path: '/settings/integrations', label: 'Integrations', icon: Plug },
-    { path: '/settings/symlink', label: 'Symlink Library', icon: Link },
     { path: '/settings/admin', label: 'Server & Admin', icon: Shield },
     { path: '/rules', label: 'Advanced Rules', icon: Sliders },
   ];

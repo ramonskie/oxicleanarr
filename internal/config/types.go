@@ -16,6 +16,10 @@ type AdminConfig struct {
 	Username    string `mapstructure:"username" yaml:"username" json:"username"`
 	Password    string `mapstructure:"password" yaml:"password" json:"password"`
 	DisableAuth bool   `mapstructure:"disable_auth" yaml:"disable_auth" json:"disable_auth"`
+	// APIKey is a static Bearer key accepted on every protected endpoint as an
+	// alternative to a JWT (e.g. machine clients like jellyfin-plugin-leaving-soon).
+	// Empty disables the key path.
+	APIKey string `mapstructure:"api_key" yaml:"api_key,omitempty" json:"api_key,omitempty"`
 }
 
 // AppConfig holds general application settings
@@ -77,16 +81,6 @@ type BaseIntegrationConfig struct {
 // JellyfinConfig holds Jellyfin integration settings
 type JellyfinConfig struct {
 	BaseIntegrationConfig `mapstructure:",squash" yaml:",inline" json:",inline"`
-	SymlinkLibrary        SymlinkLibraryConfig `mapstructure:"symlink_library" yaml:"symlink_library" json:"symlink_library"`
-}
-
-// SymlinkLibraryConfig holds symlink-based library management settings
-type SymlinkLibraryConfig struct {
-	Enabled           bool   `mapstructure:"enabled" yaml:"enabled" json:"enabled"`
-	BasePath          string `mapstructure:"base_path" yaml:"base_path" json:"base_path"`                                         // Base directory for symlinks (e.g., /data/media/prunarr-leaving-soon)
-	MoviesLibraryName string `mapstructure:"movies_library_name" yaml:"movies_library_name,omitempty" json:"movies_library_name"` // Jellyfin library name for movies (default: "Leaving Soon - Movies")
-	TVLibraryName     string `mapstructure:"tv_library_name" yaml:"tv_library_name,omitempty" json:"tv_library_name"`             // Jellyfin library name for TV shows (default: "Leaving Soon - TV Shows")
-	HideWhenEmpty     bool   `mapstructure:"hide_when_empty" yaml:"hide_when_empty" json:"hide_when_empty"`                       // Automatically delete libraries when no items are scheduled (prevents empty libraries in sidebar)
 }
 
 // RadarrConfig holds Radarr integration settings
