@@ -99,6 +99,7 @@ func (h *SyncHandler) ExecuteDeletions(w http.ResponseWriter, r *http.Request) {
 			"success":         true,
 			"scheduled_count": 0,
 			"message":         "No items scheduled for deletion",
+			"dry_run":         dryRun,
 			"candidates":      []map[string]interface{}{},
 		})
 		return

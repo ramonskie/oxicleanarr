@@ -53,16 +53,16 @@ func (h *SystemHandler) Restart(w http.ResponseWriter, r *http.Request) {
 		req.Force = false
 	}
 
-	// Check if sync is running
+	// Check if a sync is currently in progress
 	status := h.syncEngine.GetStatus()
-	if status.Running && !req.Force {
-		log.Warn().Msg("Restart requested but sync engine is running")
+	if status.InProgress && !req.Force {
+		log.Warn().Msg("Restart requested but a sync is in progress")
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusConflict)
 		json.NewEncoder(w).Encode(map[string]interface{}{
-			"error":   "Sync engine is currently running",
-			"message": "A sync operation is in progress. Wait for it to complete or use force=true to restart anyway.",
-			"running": true,
+			"error":       "Sync engine is currently running",
+			"message":     "A sync operation is in progress. Wait for it to complete or use force=true to restart anyway.",
+			"in_progress": true,
 		})
 		return
 	}
