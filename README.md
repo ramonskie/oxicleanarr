@@ -83,9 +83,9 @@
 > itself. OxiCleanarr does not need any file system access for this feature.
 >
 > **⚠️ Auth:** the plugin polls without a user login. Set `admin.api_key` to a static
-> key and configure it in the plugin so its requests are authorized (the key is accepted
-> on every protected endpoint, not just leaving-soon). Alternatively run with
-> `admin.disable_auth: true` (disables login for the whole app).
+> key (or leave it empty — OxiCleanarr generates and persists a random key on first
+> start, logging it) and configure it in the plugin so its requests are authorized
+> (the key is accepted on every protected endpoint, not just leaving-soon).
 
 ### Installation
 
@@ -439,7 +439,9 @@ advanced_rules:
 All API endpoints (except `/health`, `/api/auth/login`, `/api/auth/me`, and `/api/auth/logout`)
 require authentication. Authentication accepts either a JWT (cookie or
 `Authorization: Bearer <jwt>`) or the static `admin.api_key` sent as a Bearer token — so
-machine clients like jellyfin-plugin-leaving-soon can call the API without a login.
+machine clients like jellyfin-plugin-leaving-soon can call the API without a login. If
+`admin.api_key` is empty, OxiCleanarr generates a random key on first start, logs it,
+and persists it to the config file.
 
 #### Login
 

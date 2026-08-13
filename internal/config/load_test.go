@@ -2,6 +2,7 @@ package config
 
 import (
 	"os"
+	"strings"
 	"testing"
 )
 
@@ -144,4 +145,58 @@ advanced_rules:
 	}
 
 	t.Log("✅ All simplified user rules loaded correctly!")
+}
+
+func TestLoad_AutoGeneratesAPIKey(t *testing.T) {
+	configContent := `
+admin:
+  username: admin
+  password: changeme
+app:
+  dry_run: true
+integrations:
+  jellyfin:
+    enabled: true
+    url: http://localhost:8096
+    api_key: test-key
+`
+	tmpfile, err := os.CreateTemp("", "oxicleanarr-test-config-*.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.Remove(tmpfile.Name())
+
+	if _, err := tmpfile.Write([]byte(configContent)); err != nil {
+		t.Fatal(err)
+	}
+	if err := tmpfile.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := Load(tmpfile.Name())
+	if err != nil {
+		t.Fatalf("Failed to load config: %v", err)
+	}
+
+	if len(cfg.Admin.APIKey) != 32 {
+		t.Fatalf("Expected a generated 32-char API key, got %q", cfg.Admin.APIKey)
+	}
+
+	// The generated key must be persisted to the config file.
+	persisted, err := os.ReadFile(tmpfile.Name())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(persisted), cfg.Admin.APIKey) {
+		t.Fatalf("Expected the generated API key to be persisted to the config file")
+	}
+
+	// Reloading must keep the same key (not regenerate).
+	cfg2, err := Load(tmpfile.Name())
+	if err != nil {
+		t.Fatalf("Failed to reload config: %v", err)
+	}
+	if cfg2.Admin.APIKey != cfg.Admin.APIKey {
+		t.Fatalf("Expected the API key to be stable across reloads, got %q then %q", cfg.Admin.APIKey, cfg2.Admin.APIKey)
+	}
 }

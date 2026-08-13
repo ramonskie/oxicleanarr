@@ -15,7 +15,8 @@ admin:
   disable_auth: false  # Set to true to skip authentication (NOT recommended for production)
   # Optional static Bearer key accepted on every protected endpoint as an alternative
   # to a JWT. Machine clients (e.g. jellyfin-plugin-leaving-soon) use it to poll the
-  # API without a login. Empty disables the key path.
+  # API without a login. If left empty, a random key is generated on first start,
+  # logged, and persisted here.
   api_key: ""
 
 integrations:

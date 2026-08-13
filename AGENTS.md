@@ -65,5 +65,7 @@ All operations are API-driven. OxiCleanarr maintains no direct file system acces
     title?, deletionDate?, sourcePath?}]}` where `type` is `movie`/`show` and
     `mediaServerId` is the Jellyfin item GUID.
   - The plugin authenticates with the static `admin.api_key` sent as a Bearer token;
-    OxiCleanarr accepts it on every protected endpoint. The integration test config sets
-    `admin.api_key` and the plugin installer writes it into the plugin `config.xml`.
+    OxiCleanarr accepts it on every protected endpoint. If `admin.api_key` is empty it
+    is auto-generated on first start, logged, and persisted to the config file. The
+    integration test config sets `admin.api_key` and the plugin installer writes it
+    into the plugin `config.xml`.

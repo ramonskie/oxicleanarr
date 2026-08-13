@@ -1,6 +1,8 @@
 package config
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"fmt"
 	"os"
 	"strings"
@@ -59,6 +61,25 @@ func Load(path string) (*Config, error) {
 
 	// Apply defaults for any missing values
 	SetDefaults(cfg)
+
+	// Auto-generate an admin API key on first start so machine clients (e.g.
+	// jellyfin-plugin-leaving-soon) don't require manual key setup. The key is
+	// persisted to the config file so it stays stable across restarts.
+	if cfg.Admin.APIKey == "" {
+		key, err := generateAPIKey()
+		if err != nil {
+			return nil, fmt.Errorf("failed to generate admin API key: %w", err)
+		}
+		cfg.Admin.APIKey = key
+		v.Set("admin.api_key", key)
+		if err := v.WriteConfig(); err != nil {
+			log.Warn().Err(err).
+				Msg("Failed to persist auto-generated admin API key to config; it will change on next restart")
+		}
+		log.Info().
+			Str("api_key", key).
+			Msg("Generated admin API key. Use it as the Bearer key for machine clients (e.g. the Leaving Soon plugin).")
+	}
 
 	// Debug: Log admin config after applying defaults
 	log.Debug().
@@ -130,4 +151,13 @@ func getDefaultConfigPath() string {
 
 	// Return first default if none exist
 	return paths[0]
+}
+
+// generateAPIKey returns a cryptographically random API key (32 hex chars).
+func generateAPIKey() (string, error) {
+	b := make([]byte, 16)
+	if _, err := rand.Read(b); err != nil {
+		return "", fmt.Errorf("crypto/rand failed: %w", err)
+	}
+	return hex.EncodeToString(b), nil
 }
