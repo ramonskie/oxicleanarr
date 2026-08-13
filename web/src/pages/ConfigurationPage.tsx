@@ -58,10 +58,6 @@ export default function ConfigurationPage() {
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
 
-  // Track API key change (the key is never returned by the API, only a has_api_key flag)
-  const [newApiKey, setNewApiKey] = useState('');
-  const [removeApiKey, setRemoveApiKey] = useState(false);
-
 
 
   // Update formData when config loads
@@ -158,8 +154,6 @@ export default function ConfigurationPage() {
       admin: {
         ...formData.admin,
         ...(newPassword ? { password: newPassword } : {}),
-        ...(newApiKey ? { api_key: newApiKey } : {}),
-        ...(removeApiKey ? { api_key: '' } : {}),
       },
       integrations: {
         jellyfin: {
@@ -880,35 +874,16 @@ export default function ConfigurationPage() {
               <div>
                 <label className="text-sm font-medium">API Key</label>
                 <p className="text-sm text-gray-500 mb-2">
-                  {formData.admin?.has_api_key
-                    ? 'A static API key is set. Enter a new value to replace it.'
-                    : 'Optional static Bearer key for machine clients (e.g. the Leaving Soon plugin). Leave blank to keep unchanged.'}
+                  Auto-generated machine-client key. Use it as the Bearer token for
+                  plugins like jellyfin-plugin-leaving-soon.
                 </p>
                 <Input
-                  type="password"
-                  value={newApiKey}
-                  onChange={(e) => setNewApiKey(e.target.value)}
-                  disabled={removeApiKey}
-                  placeholder={formData.admin?.has_api_key ? '••••••••' : 'Enter API key'}
+                  type="text"
+                  value={formData.admin?.api_key || ''}
+                  readOnly
+                  className="font-mono"
                 />
               </div>
-
-              {formData.admin?.has_api_key && (
-                <div className="flex items-center justify-between">
-                  <div>
-                    <label className="text-sm font-medium">Remove API Key</label>
-                    <p className="text-sm text-gray-500">
-                      Disable the static API key (machine clients will need to log in)
-                    </p>
-                  </div>
-                  <input
-                    type="checkbox"
-                    checked={removeApiKey}
-                    onChange={(e) => setRemoveApiKey(e.target.checked)}
-                    className="h-4 w-4"
-                  />
-                </div>
-              )}
 
               <div className="flex items-center justify-between">
                 <div>

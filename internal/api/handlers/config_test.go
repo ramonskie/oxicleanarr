@@ -32,6 +32,11 @@ func TestConfigHandler_GetConfig(t *testing.T) {
 	assert.False(t, hasPassword, "admin password must be sanitized out")
 	assert.Equal(t, "admin", admin["username"])
 
+	// The admin API key is returned so the UI can display the auto-generated key.
+	apiKey, hasAPIKey := admin["api_key"].(string)
+	assert.True(t, hasAPIKey, "admin API key must be present in the response")
+	assert.NotEmpty(t, apiKey, "admin API key should be auto-generated")
+
 	// API keys must never be exposed; presence is reported via has_api_key.
 	integrations, ok := body["integrations"].(map[string]interface{})
 	require.True(t, ok)

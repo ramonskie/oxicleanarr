@@ -124,7 +124,7 @@ export interface Config {
 export interface AdminConfig {
   username: string;
   disable_auth: boolean;
-  has_api_key: boolean;
+  api_key: string;
 }
 
 export interface DiskThresholdConfig {

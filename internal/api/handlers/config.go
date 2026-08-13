@@ -35,11 +35,12 @@ type SanitizedConfig struct {
 	AdvancedRules []config.AdvancedRule       `json:"advanced_rules"`
 }
 
-// SanitizedAdminConfig holds admin config without password or API key
+// SanitizedAdminConfig holds admin config (password excluded, API key included so
+// the UI can display the auto-generated machine-client key).
 type SanitizedAdminConfig struct {
 	Username    string `json:"username"`
 	DisableAuth bool   `json:"disable_auth"`
-	HasAPIKey   bool   `json:"has_api_key"`
+	APIKey      string `json:"api_key"`
 }
 
 // SanitizedIntegrationsConfig holds sanitized integration configs
@@ -89,12 +90,12 @@ func (h *ConfigHandler) GetConfig(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Sanitize config (remove passwords and API keys)
+	// Sanitize config (remove passwords, keep the admin API key for display)
 	sanitized := SanitizedConfig{
 		Admin: SanitizedAdminConfig{
 			Username:    cfg.Admin.Username,
 			DisableAuth: cfg.Admin.DisableAuth,
-			HasAPIKey:   cfg.Admin.APIKey != "",
+			APIKey:      cfg.Admin.APIKey,
 		},
 		App:           cfg.App,
 		Sync:          cfg.Sync,
@@ -159,12 +160,12 @@ type UpdateConfigRequest struct {
 	AdvancedRules *[]config.AdvancedRule    `json:"advanced_rules,omitempty"`
 }
 
-// UpdateAdminConfig holds updatable admin config
+// UpdateAdminConfig holds updatable admin config.
+// The admin API key is auto-generated and read-only (not settable via the API).
 type UpdateAdminConfig struct {
 	Username    *string `json:"username,omitempty"`
 	Password    *string `json:"password,omitempty"`
 	DisableAuth *bool   `json:"disable_auth,omitempty"`
-	APIKey      *string `json:"api_key,omitempty"`
 }
 
 // UpdateIntegrationsConfig holds updatable integration configs
@@ -250,11 +251,6 @@ func (h *ConfigHandler) UpdateConfig(w http.ResponseWriter, r *http.Request) {
 		}
 		if req.Admin.DisableAuth != nil {
 			newCfg.Admin.DisableAuth = *req.Admin.DisableAuth
-		}
-		// API key is not returned by GET, so a provided value always wins
-		// (send an empty string to clear it).
-		if req.Admin.APIKey != nil {
-			newCfg.Admin.APIKey = *req.Admin.APIKey
 		}
 	}
 
