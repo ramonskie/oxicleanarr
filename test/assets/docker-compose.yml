@@ -10,12 +10,14 @@ services:
     volumes:
       - ./test-media:/source:ro,z
       - test-media:/target:z
+      - ./leaving-soon:/leaving-soon:z
     command: >
       sh -c "echo 'Copying test media to volume...';
       mkdir -p /target/movies && cp -rf /source/movies/. /target/movies/ &&
       mkdir -p /target/tvshows && cp -rf /source/tvshows/. /target/tvshows/ &&
       chown -R 1000:1000 /target/movies /target/tvshows &&
       chmod -R 755 /target/movies /target/tvshows &&
+      find /leaving-soon -mindepth 1 -delete && mkdir -p /leaving-soon/movies /leaving-soon/tv &&
       echo 'Test media copied successfully'"
     networks:
       - oxicleanarr-test
@@ -31,7 +33,7 @@ services:
       - jellyfin-config:/config
       - jellyfin-cache:/cache
       - test-media:/media:rw,z
-      - ./leaving-soon:/app/leaving-soon
+      - ./leaving-soon:/app/leaving-soon:z
     environment:
       - PUID=1000
       - PGID=1000

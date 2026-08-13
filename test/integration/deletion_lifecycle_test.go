@@ -44,7 +44,6 @@ func testDeletionLifecycle(t *testing.T) {
 	t.Logf("Authentication successful")
 
 	// Extract API keys for direct service calls
-	jellyfinAPIKey := GetJellyfinAPIKey(t, absConfigPath)
 	radarrAPIKey := GetRadarrAPIKeyFromYAMLConfig(t, absConfigPath)
 
 	// Setup: Create tag in Radarr and apply to Pulp Fiction
@@ -167,12 +166,7 @@ func testDeletionLifecycle(t *testing.T) {
 		require.Equal(t, 0, scheduledCount, "Expected 0 items in leaving-soon (Pulp Fiction overdue for immediate deletion)")
 		t.Logf("✅ Leaving-soon is empty (Pulp Fiction overdue for immediate deletion, not 'leaving soon')")
 
-		// Step 8: Verify 0 symlinks exist (Pulp Fiction is overdue, not in "leaving soon" symlink library)
-		t.Logf("Checking symlinks via plugin API...")
-		CheckSymlinks(t, jellyfinAPIKey, SymlinkDir, 0)
-		t.Logf("✅ Plugin API confirms 0 symlinks (Pulp Fiction overdue, not in leaving-soon library)")
-
-		// Step 9: Verify Pulp Fiction still exists in Radarr
+		// Step 8: Verify Pulp Fiction still exists in Radarr
 		exists := VerifyMovieExistsInRadarr(t, RadarrURL, radarrAPIKey, TestMovieTitle)
 		require.True(t, exists, "Pulp Fiction should still exist in Radarr")
 		t.Logf("✅ Pulp Fiction still exists in Radarr")
@@ -273,12 +267,7 @@ func testDeletionLifecycle(t *testing.T) {
 		require.Equal(t, 0, scheduledCount, "Expected 0 items in leaving-soon after deletion")
 		t.Logf("✅ Leaving-soon is now empty")
 
-		// Step 6: Verify symlinks cleaned up
-		t.Logf("Checking symlinks via plugin API...")
-		CheckSymlinks(t, jellyfinAPIKey, SymlinkDir, 0)
-		t.Logf("✅ Plugin API confirms 0 symlinks (cleaned up)")
-
-		// Step 7: Verify Pulp Fiction deleted from Radarr
+		// Step 6: Verify Pulp Fiction deleted from Radarr
 		exists := VerifyMovieExistsInRadarr(t, RadarrURL, radarrAPIKey, TestMovieTitle)
 		require.False(t, exists, "Pulp Fiction should be deleted from Radarr")
 		t.Logf("✅ Pulp Fiction deleted from Radarr")

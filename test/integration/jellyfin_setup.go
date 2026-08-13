@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -335,8 +336,8 @@ func (js *JellyfinSetup) CreateAPIKey(accessToken string) (string, error) {
 func (js *JellyfinSetup) AddMediaLibrary(accessToken, name, path, contentType string) error {
 	js.t.Logf("Adding media library: %s (%s)", name, path)
 
-	// URL encode the library name
-	encodedName := fmt.Sprintf("%s", name) // json.Marshal handles encoding
+	// URL encode the library name (can contain spaces, e.g. "TV Shows")
+	encodedName := url.QueryEscape(name)
 
 	reqBody := map[string]interface{}{
 		"LibraryOptions": map[string]interface{}{
@@ -383,331 +384,6 @@ func (js *JellyfinSetup) AddMediaLibrary(accessToken, name, path, contentType st
 	return nil
 }
 
-// InstallOxiCleanarrPlugin downloads and installs the OxiCleanarr Bridge plugin from GitHub releases
-func InstallOxiCleanarrPlugin(t *testing.T, pluginsDir string) error {
-	pluginSubdir := filepath.Join(pluginsDir, "OxiCleanarr")
-
-	// Check if plugin already exists
-	if _, err := os.Stat(pluginSubdir); err == nil {
-		t.Logf("OxiCleanarr plugin already installed at: %s", pluginSubdir)
-		return nil
-	}
-
-	t.Logf("Installing OxiCleanarr Bridge plugin from GitHub releases...")
-
-	// GitHub API endpoint for latest release
-	releaseURL := "https://api.github.com/repos/ramonskie/jellyfin-plugin-oxicleanarr/releases/latest"
-
-	client := &http.Client{Timeout: 30 * time.Second}
-	req, err := http.NewRequest(http.MethodGet, releaseURL, nil)
-	if err != nil {
-		return fmt.Errorf("failed to create request: %w", err)
-	}
-
-	// GitHub API requires User-Agent header
-	req.Header.Set("User-Agent", "OxiCleanarr-IntegrationTest")
-
-	resp, err := client.Do(req)
-	if err != nil {
-		return fmt.Errorf("failed to fetch release info: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		bodyBytes, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("GitHub API returned status %d: %s", resp.StatusCode, string(bodyBytes))
-	}
-
-	var release struct {
-		TagName string `json:"tag_name"`
-		Assets  []struct {
-			Name               string `json:"name"`
-			BrowserDownloadURL string `json:"browser_download_url"`
-		} `json:"assets"`
-	}
-
-	if err := json.NewDecoder(resp.Body).Decode(&release); err != nil {
-		return fmt.Errorf("failed to decode release info: %w", err)
-	}
-
-	// Find the plugin zip file
-	var downloadURL string
-	for _, asset := range release.Assets {
-		if asset.Name == "jellyfin-plugin-oxicleanarr.zip" {
-			downloadURL = asset.BrowserDownloadURL
-			break
-		}
-	}
-
-	if downloadURL == "" {
-		return fmt.Errorf("plugin zip not found in release %s", release.TagName)
-	}
-
-	t.Logf("Downloading plugin version %s from: %s", release.TagName, downloadURL)
-
-	// Download zip file
-	resp, err = client.Get(downloadURL)
-	if err != nil {
-		return fmt.Errorf("failed to download plugin: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("download failed with status %d", resp.StatusCode)
-	}
-
-	// Read zip file into memory
-	zipData, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return fmt.Errorf("failed to read zip data: %w", err)
-	}
-
-	t.Logf("Downloaded %d bytes, extracting to: %s", len(zipData), pluginSubdir)
-
-	// Extract to temp directory first (to avoid permission issues)
-	tempDir, err := os.MkdirTemp("", "oxicleanarr-plugin-")
-	if err != nil {
-		return fmt.Errorf("failed to create temp directory: %w", err)
-	}
-	defer os.RemoveAll(tempDir)
-
-	tempPluginDir := filepath.Join(tempDir, "OxiCleanarr")
-	if err := os.MkdirAll(tempPluginDir, 0755); err != nil {
-		return fmt.Errorf("failed to create temp plugin directory: %w", err)
-	}
-
-	// Extract zip file to temp directory
-	zipReader, err := zip.NewReader(bytes.NewReader(zipData), int64(len(zipData)))
-	if err != nil {
-		return fmt.Errorf("failed to open zip: %w", err)
-	}
-
-	for _, file := range zipReader.File {
-		// Open file in zip
-		rc, err := file.Open()
-		if err != nil {
-			return fmt.Errorf("failed to open zip entry %s: %w", file.Name, err)
-		}
-
-		// Create destination file in temp directory
-		destPath := filepath.Join(tempPluginDir, file.Name)
-
-		// Guard against zip-slip: entry must not escape tempPluginDir
-		if !isWithinDir(tempPluginDir, destPath) {
-			rc.Close()
-			return fmt.Errorf("zip entry escapes extraction directory: %s", file.Name)
-		}
-
-		if file.FileInfo().IsDir() {
-			os.MkdirAll(destPath, file.Mode())
-			rc.Close()
-			continue
-		}
-
-		// Create parent directory if needed
-		if err := os.MkdirAll(filepath.Dir(destPath), 0755); err != nil {
-			rc.Close()
-			return fmt.Errorf("failed to create directory for %s: %w", destPath, err)
-		}
-
-		// Write file
-		outFile, err := os.OpenFile(destPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, file.Mode())
-		if err != nil {
-			rc.Close()
-			return fmt.Errorf("failed to create file %s: %w", destPath, err)
-		}
-
-		_, err = io.Copy(outFile, rc)
-		outFile.Close()
-		rc.Close()
-
-		if err != nil {
-			return fmt.Errorf("failed to write file %s: %w", destPath, err)
-		}
-
-		t.Logf("  Extracted: %s", file.Name)
-	}
-
-	// Use sudo to copy from temp to final location (handles permission issues)
-	t.Logf("Copying plugin files to Jellyfin plugins directory (may require sudo)...")
-	cmd := exec.Command("sudo", "mkdir", "-p", pluginSubdir)
-	if output, err := cmd.CombinedOutput(); err != nil {
-		return fmt.Errorf("failed to create plugin directory with sudo: %w\nOutput: %s", err, string(output))
-	}
-
-	cmd = exec.Command("sudo", "cp", "-r", tempPluginDir+"/.", pluginSubdir+"/")
-	if output, err := cmd.CombinedOutput(); err != nil {
-		return fmt.Errorf("failed to copy plugin files with sudo: %w\nOutput: %s", err, string(output))
-	}
-
-	t.Logf("OxiCleanarr plugin installed successfully (version %s)", release.TagName)
-	return nil
-}
-
-// InstallOxiCleanarrPluginToContainer downloads and installs the OxiCleanarr Bridge plugin into a Docker container
-// This is the container-aware version that uses docker cp to install into Jellyfin's /config/plugins/ directory
-func InstallOxiCleanarrPluginToContainer(t *testing.T, containerName string) error {
-	t.Logf("Installing OxiCleanarr Bridge plugin to container: %s", containerName)
-
-	// GitHub API endpoint for latest release
-	releaseURL := "https://api.github.com/repos/ramonskie/jellyfin-plugin-oxicleanarr/releases/latest"
-
-	client := &http.Client{Timeout: 30 * time.Second}
-	req, err := http.NewRequest(http.MethodGet, releaseURL, nil)
-	if err != nil {
-		return fmt.Errorf("failed to create request: %w", err)
-	}
-
-	// GitHub API requires User-Agent header
-	req.Header.Set("User-Agent", "OxiCleanarr-IntegrationTest")
-
-	// Use GitHub token if available to avoid rate limiting
-	if githubToken := os.Getenv("GITHUB_TOKEN"); githubToken != "" {
-		req.Header.Set("Authorization", "Bearer "+githubToken)
-		t.Logf("Using GITHUB_TOKEN for authenticated API request")
-	}
-
-	resp, err := client.Do(req)
-	if err != nil {
-		return fmt.Errorf("failed to fetch release info: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		bodyBytes, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("GitHub API returned status %d: %s", resp.StatusCode, string(bodyBytes))
-	}
-
-	var release struct {
-		TagName string `json:"tag_name"`
-		Assets  []struct {
-			Name               string `json:"name"`
-			BrowserDownloadURL string `json:"browser_download_url"`
-		} `json:"assets"`
-	}
-
-	if err := json.NewDecoder(resp.Body).Decode(&release); err != nil {
-		return fmt.Errorf("failed to decode release info: %w", err)
-	}
-
-	// Find the plugin zip file
-	var downloadURL string
-	for _, asset := range release.Assets {
-		if asset.Name == "jellyfin-plugin-oxicleanarr.zip" {
-			downloadURL = asset.BrowserDownloadURL
-			break
-		}
-	}
-
-	if downloadURL == "" {
-		return fmt.Errorf("plugin zip not found in release %s", release.TagName)
-	}
-
-	t.Logf("Downloading plugin version %s from: %s", release.TagName, downloadURL)
-
-	// Download zip file
-	resp, err = client.Get(downloadURL)
-	if err != nil {
-		return fmt.Errorf("failed to download plugin: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("download failed with status %d", resp.StatusCode)
-	}
-
-	// Read zip file into memory
-	zipData, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return fmt.Errorf("failed to read zip data: %w", err)
-	}
-
-	t.Logf("Downloaded %d bytes, extracting to temp directory", len(zipData))
-
-	// Extract to temp directory
-	tempDir, err := os.MkdirTemp("", "oxicleanarr-plugin-")
-	if err != nil {
-		return fmt.Errorf("failed to create temp directory: %w", err)
-	}
-	defer os.RemoveAll(tempDir)
-
-	tempPluginDir := filepath.Join(tempDir, "OxiCleanarr")
-	if err := os.MkdirAll(tempPluginDir, 0755); err != nil {
-		return fmt.Errorf("failed to create temp plugin directory: %w", err)
-	}
-
-	// Extract zip file to temp directory
-	zipReader, err := zip.NewReader(bytes.NewReader(zipData), int64(len(zipData)))
-	if err != nil {
-		return fmt.Errorf("failed to open zip: %w", err)
-	}
-
-	for _, file := range zipReader.File {
-		// Open file in zip
-		rc, err := file.Open()
-		if err != nil {
-			return fmt.Errorf("failed to open zip entry %s: %w", file.Name, err)
-		}
-
-		// Create destination file in temp directory
-		destPath := filepath.Join(tempPluginDir, file.Name)
-
-		// Guard against zip-slip: entry must not escape tempPluginDir
-		if !isWithinDir(tempPluginDir, destPath) {
-			rc.Close()
-			return fmt.Errorf("zip entry escapes extraction directory: %s", file.Name)
-		}
-
-		if file.FileInfo().IsDir() {
-			os.MkdirAll(destPath, file.Mode())
-			rc.Close()
-			continue
-		}
-
-		// Create parent directory if needed
-		if err := os.MkdirAll(filepath.Dir(destPath), 0755); err != nil {
-			rc.Close()
-			return fmt.Errorf("failed to create directory for %s: %w", destPath, err)
-		}
-
-		// Write file
-		outFile, err := os.OpenFile(destPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, file.Mode())
-		if err != nil {
-			rc.Close()
-			return fmt.Errorf("failed to create file %s: %w", destPath, err)
-		}
-
-		_, err = io.Copy(outFile, rc)
-		outFile.Close()
-		rc.Close()
-
-		if err != nil {
-			return fmt.Errorf("failed to write file %s: %w", destPath, err)
-		}
-
-		t.Logf("  Extracted: %s", file.Name)
-	}
-
-	// Use docker cp to copy plugin into container's /config/plugins/ directory
-	t.Logf("Copying plugin files to container %s:/config/plugins/OxiCleanarr/", containerName)
-
-	// First, ensure the plugins directory exists in the container
-	mkdirCmd := exec.Command("docker", "exec", containerName, "mkdir", "-p", "/config/plugins/OxiCleanarr")
-	if output, err := mkdirCmd.CombinedOutput(); err != nil {
-		return fmt.Errorf("failed to create plugins directory in container: %w\nOutput: %s", err, string(output))
-	}
-
-	// Copy plugin files into container
-	// Note: docker cp requires source to end with "/." to copy contents (not the directory itself)
-	cpCmd := exec.Command("docker", "cp", tempPluginDir+"/.", containerName+":/config/plugins/OxiCleanarr/")
-	if output, err := cpCmd.CombinedOutput(); err != nil {
-		return fmt.Errorf("failed to copy plugin files to container: %w\nOutput: %s", err, string(output))
-	}
-
-	t.Logf("OxiCleanarr plugin installed successfully to container (version %s)", release.TagName)
-	return nil
-}
-
 // SetupJellyfinForTest runs the complete Jellyfin setup workflow
 // Returns: (userID, apiKey, error)
 func SetupJellyfinForTest(t *testing.T, jellyfinURL, username, password, composeFile string) (string, string, error) {
@@ -716,28 +392,6 @@ func SetupJellyfinForTest(t *testing.T, jellyfinURL, username, password, compose
 	// Wait for Jellyfin to be ready
 	if err := setup.WaitForReady(60, 2*time.Second); err != nil {
 		return "", "", err
-	}
-
-	// Install OxiCleanarr Bridge plugin before setup wizard
-	// This enables symlink management via Jellyfin plugin API
-	containerName := "oxicleanarr-test-jellyfin"
-	if err := InstallOxiCleanarrPluginToContainer(t, containerName); err != nil {
-		t.Logf("Warning: Failed to install OxiCleanarr plugin: %v", err)
-		t.Logf("Continuing without plugin - symlink tests will use fallback filesystem operations")
-	} else {
-		// Restart Jellyfin container to load the plugin
-		t.Logf("Restarting Jellyfin container to load plugin...")
-		restartCmd := exec.Command("docker", "compose", "-f", composeFile, "restart", "jellyfin")
-		if output, err := restartCmd.CombinedOutput(); err != nil {
-			return "", "", fmt.Errorf("failed to restart Jellyfin: %w\nOutput: %s", err, string(output))
-		}
-
-		// Wait for Jellyfin to be ready again after restart
-		t.Logf("Waiting for Jellyfin to be ready after restart...")
-		if err := setup.WaitForReady(60, 2*time.Second); err != nil {
-			return "", "", fmt.Errorf("Jellyfin not ready after restart: %w", err)
-		}
-		t.Logf("Jellyfin restarted and ready with OxiCleanarr plugin loaded")
 	}
 
 	// Check if setup is needed
@@ -762,6 +416,13 @@ func SetupJellyfinForTest(t *testing.T, jellyfinURL, username, password, compose
 		}
 
 		t.Logf("Successfully authenticated with existing setup")
+
+		// Install the Leaving Soon plugin into the Jellyfin container (mirrors the
+		// old OxiCleanarr-bridge installer, which ran during infrastructure setup).
+		if err := InstallLeavingSoonPluginToContainer(t, composeFile, apiKey); err != nil {
+			return "", "", err
+		}
+
 		return userID, apiKey, nil
 	}
 
@@ -800,88 +461,13 @@ func SetupJellyfinForTest(t *testing.T, jellyfinURL, username, password, compose
 	t.Logf("  User ID: %s", userID)
 	t.Logf("  API Key: %s...", apiKey[:8])
 
+	// Install the Leaving Soon plugin into the Jellyfin container (mirrors the old
+	// OxiCleanarr-bridge installer, which ran during infrastructure setup).
+	if err := InstallLeavingSoonPluginToContainer(t, composeFile, apiKey); err != nil {
+		return "", "", err
+	}
+
 	return userID, apiKey, nil
-}
-
-// VerifyOxiCleanarrPlugin checks if the OxiCleanarr Bridge plugin is installed and active
-// This is a non-fatal check - logs a warning if plugin is missing but doesn't fail tests
-func VerifyOxiCleanarrPlugin(t *testing.T, jellyfinURL, apiKey string) error {
-	t.Logf("Verifying OxiCleanarr Bridge plugin installation...")
-
-	client := &http.Client{Timeout: 10 * time.Second}
-	req, err := http.NewRequest(http.MethodGet, jellyfinURL+"/Plugins", nil)
-	if err != nil {
-		return fmt.Errorf("failed to create plugins request: %w", err)
-	}
-	req.Header.Set("X-MediaBrowser-Token", apiKey)
-
-	resp, err := client.Do(req)
-	if err != nil {
-		return fmt.Errorf("failed to query plugins: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		bodyBytes, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("plugins endpoint returned status %d: %s", resp.StatusCode, string(bodyBytes))
-	}
-
-	var plugins []struct {
-		Name    string `json:"Name"`
-		Version string `json:"Version"`
-		Status  string `json:"Status"`
-	}
-
-	if err := json.NewDecoder(resp.Body).Decode(&plugins); err != nil {
-		return fmt.Errorf("failed to decode plugins response: %w", err)
-	}
-
-	// Look for OxiCleanarr plugin (case-insensitive match)
-	for _, plugin := range plugins {
-		if plugin.Name == "OxiCleanarr" || plugin.Name == "OxiCleanarr Bridge" {
-			t.Logf("✅ OxiCleanarr plugin found: version %s, status: %s", plugin.Version, plugin.Status)
-			if plugin.Status != "Active" {
-				return fmt.Errorf("plugin found but status is '%s' (expected 'Active')", plugin.Status)
-			}
-			return nil
-		}
-	}
-
-	// Plugin not found - this is a critical failure for integration tests
-	return fmt.Errorf("OxiCleanarr Bridge plugin not found in Jellyfin - required for symlink integration tests")
-}
-
-// VerifyOxiCleanarrPluginAPI verifies the OxiCleanarr plugin's custom API endpoint is functional
-// This checks the /api/oxicleanarr/status endpoint that OxiCleanarr will actually call
-func VerifyOxiCleanarrPluginAPI(t *testing.T, jellyfinURL, apiKey string) error {
-	client := &http.Client{Timeout: 10 * time.Second}
-
-	// Call the plugin's custom API endpoint
-	req, err := http.NewRequest(http.MethodGet, jellyfinURL+"/api/oxicleanarr/status", nil)
-	if err != nil {
-		return fmt.Errorf("failed to create status request: %w", err)
-	}
-	req.Header.Set("X-MediaBrowser-Token", apiKey)
-
-	resp, err := client.Do(req)
-	if err != nil {
-		return fmt.Errorf("failed to call plugin API endpoint: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("plugin API returned status %d (expected 200): %s", resp.StatusCode, string(body))
-	}
-
-	// Read and parse response
-	var statusResp map[string]interface{}
-	if err := json.NewDecoder(resp.Body).Decode(&statusResp); err != nil {
-		return fmt.Errorf("failed to decode plugin API response: %w", err)
-	}
-
-	t.Logf("✅ OxiCleanarr plugin API is functional: %+v", statusResp)
-	return nil
 }
 
 // EnsureJellyfinLibrary ensures a media library exists in Jellyfin
@@ -928,4 +514,341 @@ func isWithinDir(base, path string) bool {
 		return false
 	}
 	return rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
+}
+
+// InstallLeavingSoonPluginToContainer downloads and installs the Leaving Soon
+// plugin into a Docker container. This is the container-aware version that uses
+// docker cp to install into Jellyfin's /config/plugins/ directory.
+//
+// The release zip only contains the DLL. Jellyfin also needs a meta.json manifest
+// and a config.xml, so those are written into the extracted folder before the
+// docker cp. The config.xml points the plugin's OxiCleanarr provider at the
+// container URL so it can poll /api/media/leaving-soon.
+func InstallLeavingSoonPluginToContainer(t *testing.T, composeFile, apiKey string) error {
+	t.Logf("Installing Leaving Soon plugin to container: %s", "oxicleanarr-test-jellyfin")
+
+	// GitHub API endpoint for latest release
+	releaseURL := "https://api.github.com/repos/ramonskie/jellyfin-plugin-leaving-soon/releases/latest"
+
+	client := &http.Client{Timeout: 30 * time.Second}
+	req, err := http.NewRequest(http.MethodGet, releaseURL, nil)
+	if err != nil {
+		return fmt.Errorf("failed to create request: %w", err)
+	}
+
+	// GitHub API requires User-Agent header
+	req.Header.Set("User-Agent", "OxiCleanarr-IntegrationTest")
+
+	// Use GitHub token if available to avoid rate limiting
+	if githubToken := os.Getenv("GITHUB_TOKEN"); githubToken != "" {
+		req.Header.Set("Authorization", "Bearer "+githubToken)
+		t.Logf("Using GITHUB_TOKEN for authenticated API request")
+	}
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return fmt.Errorf("failed to fetch release info: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		bodyBytes, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("GitHub API returned status %d: %s", resp.StatusCode, string(bodyBytes))
+	}
+
+	var release struct {
+		TagName string `json:"tag_name"`
+		Assets  []struct {
+			Name               string `json:"name"`
+			BrowserDownloadURL string `json:"browser_download_url"`
+		} `json:"assets"`
+	}
+
+	if err := json.NewDecoder(resp.Body).Decode(&release); err != nil {
+		return fmt.Errorf("failed to decode release info: %w", err)
+	}
+
+	// Find the plugin zip file
+	var downloadURL string
+	for _, asset := range release.Assets {
+		if strings.HasSuffix(asset.Name, ".zip") && strings.Contains(asset.Name, "LeavingSoon") {
+			downloadURL = asset.BrowserDownloadURL
+			break
+		}
+	}
+
+	if downloadURL == "" {
+		return fmt.Errorf("plugin zip not found in release %s", release.TagName)
+	}
+
+	t.Logf("Downloading plugin version %s from: %s", release.TagName, downloadURL)
+
+	// Download zip file
+	resp, err = client.Get(downloadURL)
+	if err != nil {
+		return fmt.Errorf("failed to download plugin: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("download failed with status %d", resp.StatusCode)
+	}
+
+	// Read zip file into memory
+	zipData, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return fmt.Errorf("failed to read zip data: %w", err)
+	}
+
+	t.Logf("Downloaded %d bytes, extracting to temp directory", len(zipData))
+
+	// Extract to temp directory
+	tempDir, err := os.MkdirTemp("", "leaving-soon-plugin-")
+	if err != nil {
+		return fmt.Errorf("failed to create temp directory: %w", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	tempPluginDir := filepath.Join(tempDir, LeavingSoonPluginFolder)
+	if err := os.MkdirAll(tempPluginDir, 0o755); err != nil {
+		return fmt.Errorf("failed to create temp plugin directory: %w", err)
+	}
+
+	// Extract zip file to temp directory
+	zipReader, err := zip.NewReader(bytes.NewReader(zipData), int64(len(zipData)))
+	if err != nil {
+		return fmt.Errorf("failed to open zip: %w", err)
+	}
+
+	for _, file := range zipReader.File {
+		// Open file in zip
+		rc, err := file.Open()
+		if err != nil {
+			return fmt.Errorf("failed to open zip entry %s: %w", file.Name, err)
+		}
+
+		// Create destination file in temp directory
+		destPath := filepath.Join(tempPluginDir, file.Name)
+
+		// Guard against zip-slip: entry must not escape tempPluginDir
+		if !isWithinDir(tempPluginDir, destPath) {
+			rc.Close()
+			return fmt.Errorf("zip entry escapes extraction directory: %s", file.Name)
+		}
+
+		if file.FileInfo().IsDir() {
+			os.MkdirAll(destPath, file.Mode())
+			rc.Close()
+			continue
+		}
+
+		// Create parent directory if needed
+		if err := os.MkdirAll(filepath.Dir(destPath), 0o755); err != nil {
+			rc.Close()
+			return fmt.Errorf("failed to create directory for %s: %w", destPath, err)
+		}
+
+		// Write file
+		outFile, err := os.OpenFile(destPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, file.Mode())
+		if err != nil {
+			rc.Close()
+			return fmt.Errorf("failed to create file %s: %w", destPath, err)
+		}
+
+		_, err = io.Copy(outFile, rc)
+		outFile.Close()
+		rc.Close()
+
+		if err != nil {
+			return fmt.Errorf("failed to write file %s: %w", destPath, err)
+		}
+
+		t.Logf("  Extracted: %s", file.Name)
+	}
+
+	// Write the manifest and config.xml Jellyfin expects.
+	if err := writeLeavingSoonMetaAndConfig(tempPluginDir); err != nil {
+		return err
+	}
+
+	// Use docker cp to copy plugin into container's /config/plugins/ directory
+	t.Logf("Copying plugin files to container %s:%s", "oxicleanarr-test-jellyfin", "/config/plugins/"+LeavingSoonPluginFolder)
+
+	// First, ensure the plugins directory exists in the container
+	mkdirCmd := exec.Command("docker", "exec", "oxicleanarr-test-jellyfin", "mkdir", "-p", "/config/plugins/"+LeavingSoonPluginFolder)
+	if output, err := mkdirCmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("failed to create plugins directory in container: %w\nOutput: %s", err, string(output))
+	}
+
+	// Copy plugin files into container
+	// Note: docker cp requires source to end with "/." to copy contents (not the directory itself)
+	cpCmd := exec.Command("docker", "cp", tempPluginDir+"/.", "oxicleanarr-test-jellyfin:/config/plugins/"+LeavingSoonPluginFolder+"/")
+	if output, err := cpCmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("failed to copy plugin files to container: %w\nOutput: %s", err, string(output))
+	}
+
+	t.Logf("Leaving Soon plugin installed successfully to container (version %s)", release.TagName)
+
+	// Restart Jellyfin to load the plugin.
+	t.Logf("Restarting Jellyfin container to load plugin...")
+	restartCmd := exec.Command("docker", "compose", "-f", composeFile, "restart", "jellyfin")
+	if output, err := restartCmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("failed to restart Jellyfin: %w\nOutput: %s", err, string(output))
+	}
+
+	setup := NewJellyfinSetup(t, JellyfinURL, "", "")
+	if err := setup.WaitForReady(60, 2*time.Second); err != nil {
+		return fmt.Errorf("Jellyfin not ready after plugin install: %w", err)
+	}
+	t.Logf("Jellyfin restarted and ready with Leaving Soon plugin loaded")
+
+	// Configure the plugin through Jellyfin's plugin config API (DB-backed, the
+	// canonical mechanism in Jellyfin 10.11). The config.xml written during install
+	// is a fallback for older versions; the API works regardless.
+	if err := ConfigureLeavingSoonPlugin(t, apiKey); err != nil {
+		return err
+	}
+
+	// Verify the provider is actually configured (ProviderCount >= 1). This turns a
+	// silent "plugin loaded but no provider" failure into an explicit one.
+	if err := WaitForLeavingSoonProviderCount(t, apiKey, 60*time.Second); err != nil {
+		return err
+	}
+
+	t.Logf("Leaving Soon plugin configured with OxiCleanarr provider")
+	return nil
+}
+
+// ConfigureLeavingSoonPlugin sets the plugin configuration via Jellyfin's
+// POST /Plugins/{id}/Configuration endpoint, which stores config in the Jellyfin
+// database. Jellyfin's plugin config API uses PascalCase JSON keys and the plugin
+// id without dashes (verified against a live 10.11 instance).
+func ConfigureLeavingSoonPlugin(t *testing.T, apiKey string) error {
+	t.Helper()
+	configJSON := fmt.Sprintf(`{
+  "BasePath": %q,
+  "MoviesLibraryName": %q,
+  "TvLibraryName": %q,
+  "HideWhenEmpty": true,
+  "SyncIntervalMinutes": 1,
+  "ForceEmptyAfterFailureCount": 3,
+  "Providers": [
+    {
+      "Type": "oxicleanarr",
+      "Name": "oxicleanarr",
+      "Enabled": true,
+      "Url": %q,
+      "ApiKey": %q,
+      "IncludeCollections": ""
+    }
+  ]
+}`, LeavingSoonBasePath, LeavingSoonMoviesLibrary, LeavingSoonTVLibrary,
+		LeavingSoonOxiCleanarrURL, OxiCleanarrTestAPIKey)
+
+	req, err := http.NewRequest(http.MethodPost, JellyfinURL+"/Plugins/"+LeavingSoonPluginAPIID+"/Configuration",
+		strings.NewReader(configJSON))
+	if err != nil {
+		return fmt.Errorf("failed to create plugin config request: %w", err)
+	}
+	req.Header.Set("X-Emby-Token", apiKey)
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("failed to configure Leaving Soon plugin: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusNoContent {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("configuring Leaving Soon plugin returned %d: %s", resp.StatusCode, string(body))
+	}
+
+	t.Logf("Leaving Soon plugin configuration submitted")
+	return nil
+}
+
+// WaitForLeavingSoonProviderCount polls the plugin status endpoint until at least
+// minProviders are configured (or the timeout elapses). The plugin status endpoint
+// serializes with PascalCase keys.
+func WaitForLeavingSoonProviderCount(t *testing.T, apiKey string, maxWait time.Duration) error {
+	t.Helper()
+	deadline := time.Now().Add(maxWait)
+	for {
+		req, err := http.NewRequest(http.MethodGet, JellyfinURL+"/api/leaving-soon/status", nil)
+		if err != nil {
+			return err
+		}
+		req.Header.Set("X-Emby-Token", apiKey)
+		resp, err := http.DefaultClient.Do(req)
+		if err == nil {
+			var status struct {
+				ProviderCount int `json:"ProviderCount"`
+			}
+			decodeErr := json.NewDecoder(resp.Body).Decode(&status)
+			resp.Body.Close()
+			if decodeErr == nil && status.ProviderCount >= 1 {
+				return nil
+			}
+		}
+		if time.Now().After(deadline) {
+			return fmt.Errorf("Leaving Soon plugin has no providers configured after %v", maxWait)
+		}
+		time.Sleep(2 * time.Second)
+	}
+}
+
+// writeLeavingSoonMetaAndConfig writes the meta.json manifest and config.xml
+// (pointing at OxiCleanarr) into the staged plugin folder.
+func writeLeavingSoonMetaAndConfig(stageDir string) error {
+	// meta.json manifest. Jellyfin loads every DLL in the folder when Assemblies
+	// is empty, but providing the manifest keeps the plugin name/guid explicit.
+	manifest := fmt.Sprintf(`{
+  "Category": "General",
+  "Changelog": "Integration test build",
+  "Description": "Surfaces scheduled-deletion media as symlink-backed leaving-soon libraries in Jellyfin.",
+  "Id": "%s",
+  "Name": "Leaving Soon",
+  "Overview": "Polls provider apps for scheduled-deletion media.",
+  "Owner": "ramonskie",
+  "TargetAbi": "10.11.0.0",
+  "Timestamp": "%s",
+  "Version": "1.0.0.0",
+  "Status": "Active",
+  "AutoUpdate": false,
+  "ImagePath": "",
+  "Assemblies": ["Jellyfin.Plugin.LeavingSoon.dll"]
+}`, LeavingSoonPluginGUID, time.Now().UTC().Format(time.RFC3339))
+
+	if err := os.WriteFile(filepath.Join(stageDir, "meta.json"), []byte(manifest), 0o644); err != nil {
+		return fmt.Errorf("write meta.json: %w", err)
+	}
+
+	// config.xml uses Jellyfin's XmlSerializer: root element is the config type,
+	// properties are elements, List<ProviderConfig> serializes as repeated elements.
+	configXML := fmt.Sprintf(`<?xml version="1.0" encoding="utf-8"?>
+<PluginConfiguration xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema">
+  <BasePath>%s</BasePath>
+  <MoviesLibraryName>%s</MoviesLibraryName>
+  <TvLibraryName>%s</TvLibraryName>
+  <HideWhenEmpty>true</HideWhenEmpty>
+  <SyncIntervalMinutes>1</SyncIntervalMinutes>
+  <ForceEmptyAfterFailureCount>3</ForceEmptyAfterFailureCount>
+  <Providers>
+    <ProviderConfig>
+      <Type>oxicleanarr</Type>
+      <Name>oxicleanarr</Name>
+      <Enabled>true</Enabled>
+      <Url>%s</Url>
+      <ApiKey>%s</ApiKey>
+      <IncludeCollections></IncludeCollections>
+    </ProviderConfig>
+  </Providers>
+</PluginConfiguration>
+`, LeavingSoonBasePath, LeavingSoonMoviesLibrary, LeavingSoonTVLibrary, LeavingSoonOxiCleanarrURL, OxiCleanarrTestAPIKey)
+
+	if err := os.WriteFile(filepath.Join(stageDir, "config.xml"), []byte(configXML), 0o644); err != nil {
+		return fmt.Errorf("write config.xml: %w", err)
+	}
+
+	return nil
 }

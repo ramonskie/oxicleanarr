@@ -40,14 +40,11 @@ func testManualLeavingSoonLifecycle(t *testing.T) {
 	client.Authenticate(AdminUsername, AdminPassword)
 	t.Logf("Authentication successful")
 
-	// Extract Jellyfin API key for symlink verification
-	jellyfinAPIKey := GetJellyfinAPIKey(t, absConfigPath)
-
 	// Sub-Phase 1: Initial Setup - verify baseline state with 7d retention
 	t.Run("SubPhase1_InitialSetup", func(t *testing.T) {
 		t.Logf("=== Sub-Phase 1: Initial Setup (7d retention) ===")
 
-		// Step 1: Set dry_run to false to enable actual symlink creation
+		// Step 1: Set dry_run to false to enable actual scheduling
 		UpdateDryRun(t, absConfigPath, false)
 
 		// Step 2: Update retention policy to 7d
@@ -261,9 +258,6 @@ func testManualLeavingSoonLifecycle(t *testing.T) {
 		if mediaID, err := client.GetMediaByTitle("Fight Club"); err == nil {
 			_ = client.RemoveManualLeavingSoon(mediaID)
 		}
-
-		// Suppress unused variable warning for jellyfinAPIKey
-		_ = jellyfinAPIKey
 
 		// Give the system a moment before the next test
 		time.Sleep(1 * time.Second)

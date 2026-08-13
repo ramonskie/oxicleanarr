@@ -7,10 +7,8 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"net/url"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -161,15 +159,15 @@ func (tc *TestClient) TriggerSync() {
 			require.NoError(tc.t, err)
 
 			var status struct {
-				Running        bool `json:"running"`
-				SyncInProgress bool `json:"sync_in_progress"`
+				Running     bool `json:"running"`
+				InProgress  bool `json:"in_progress"`
 			}
 			err = json.NewDecoder(resp.Body).Decode(&status)
 			resp.Body.Close()
 			require.NoError(tc.t, err)
 
 			// Wait for sync operation to complete (not just scheduler state)
-			if !status.SyncInProgress {
+			if !status.InProgress {
 				elapsed := time.Since(startTime)
 				tc.t.Logf("Sync completed in %v", elapsed.Round(100*time.Millisecond))
 				return
@@ -339,6 +337,36 @@ func UpdateRetentionPolicy(t *testing.T, configPath, retention string) {
 	t.Logf("Retention policy updated successfully")
 }
 
+// UpdateRetentionPolicyBoth updates both movie and TV retention in the config file.
+func UpdateRetentionPolicyBoth(t *testing.T, configPath, movieRetention, tvRetention string) {
+	t.Helper()
+	t.Logf("Updating retention policies to: movie=%s tv=%s", movieRetention, tvRetention)
+
+	content, err := os.ReadFile(configPath)
+	require.NoError(t, err)
+
+	var config map[string]interface{}
+	err = yaml.Unmarshal(content, &config)
+	require.NoError(t, err, "Failed to parse YAML config")
+
+	rules, ok := config["rules"].(map[string]interface{})
+	require.True(t, ok, "rules section not found in config")
+
+	oldMovie := rules["movie_retention"]
+	oldTV := rules["tv_retention"]
+	rules["movie_retention"] = movieRetention
+	rules["tv_retention"] = tvRetention
+	t.Logf("Updated movie_retention %v -> %s, tv_retention %v -> %s", oldMovie, movieRetention, oldTV, tvRetention)
+
+	newContent, err := yaml.Marshal(config)
+	require.NoError(t, err, "Failed to marshal YAML config")
+
+	err = os.WriteFile(configPath, newContent, 0644)
+	require.NoError(t, err)
+
+	t.Logf("Retention policies updated successfully")
+}
+
 // UpdateDryRun modifies the dry_run value in the config file using YAML parsing
 func UpdateDryRun(t *testing.T, configPath string, dryRun bool) {
 	t.Helper()
@@ -399,11 +427,18 @@ func UpdateConfigAPIKeysWithExtras(t *testing.T, configPath, jellyfinKey, radarr
 	jellystatUpdated := false
 	sonarrUpdated := false
 
+	// Track which integration section we're in. The section headers are siblings
+	// under `integrations:`; ANY other key at that indentation (or shallower, e.g.
+	// another integration or a top-level section) ends the current section. Without
+	// this, an indented key like `streamystats:` would keep the previous section's
+	// tracker active and its keys would be misprocessed as that section's.
+	integrationIndent := -1
 	for i, line := range lines {
 		trimmed := strings.TrimSpace(line)
+		indent := len(line) - len(strings.TrimLeft(line, " "))
 
-		// Track which integration section we're in
 		if strings.HasPrefix(trimmed, "jellyfin:") {
+			integrationIndent = indent
 			inJellyfinSection = true
 			inRadarrSection = false
 			inJellyseerrSection = false
@@ -411,40 +446,46 @@ func UpdateConfigAPIKeysWithExtras(t *testing.T, configPath, jellyfinKey, radarr
 			inSonarrSection = false
 			continue
 		} else if strings.HasPrefix(trimmed, "radarr:") {
-			inRadarrSection = true
+			integrationIndent = indent
 			inJellyfinSection = false
+			inRadarrSection = true
 			inJellyseerrSection = false
 			inJellystatSection = false
 			inSonarrSection = false
 			continue
 		} else if strings.HasPrefix(trimmed, "jellyseerr:") {
-			inJellyseerrSection = true
+			integrationIndent = indent
 			inJellyfinSection = false
 			inRadarrSection = false
+			inJellyseerrSection = true
 			inJellystatSection = false
 			inSonarrSection = false
 			continue
 		} else if strings.HasPrefix(trimmed, "jellystat:") {
-			inJellystatSection = true
+			integrationIndent = indent
 			inJellyfinSection = false
 			inRadarrSection = false
 			inJellyseerrSection = false
+			inJellystatSection = true
 			inSonarrSection = false
 			continue
 		} else if strings.HasPrefix(trimmed, "sonarr:") {
-			inSonarrSection = true
+			integrationIndent = indent
 			inJellyfinSection = false
 			inRadarrSection = false
 			inJellyseerrSection = false
 			inJellystatSection = false
+			inSonarrSection = true
 			continue
-		} else if strings.HasSuffix(trimmed, ":") && !strings.HasPrefix(line, " ") {
-			// New top-level section — exit all integration sections
+		} else if strings.HasSuffix(trimmed, ":") && integrationIndent >= 0 && indent <= integrationIndent {
+			// New key at the integration level (or shallower) — ends the current
+			// integration section.
 			inJellyfinSection = false
 			inRadarrSection = false
 			inJellyseerrSection = false
 			inJellystatSection = false
 			inSonarrSection = false
+			continue
 		}
 
 		// Update enabled: false to enabled: true for Jellyfin
@@ -661,146 +702,6 @@ func getNestedValue(data map[string]interface{}, path string) string {
 	return ""
 }
 
-// CheckSymlinks verifies the symlink directory state via Jellyfin plugin API
-func CheckSymlinks(t *testing.T, jellyfinAPIKey string, symlinkDir string, expectedCount int) {
-	movieDir := filepath.Join(symlinkDir, "movies")
-
-	// Query Jellyfin plugin API to list symlinks
-	reqURL := fmt.Sprintf("%s/api/oxicleanarr/symlinks/list?directory=%s&api_key=%s",
-		JellyfinURL, url.QueryEscape(movieDir), jellyfinAPIKey)
-
-	resp, err := http.Get(reqURL)
-	require.NoError(t, err, "Failed to query Jellyfin plugin API")
-	defer resp.Body.Close()
-
-	body, err := io.ReadAll(resp.Body)
-	require.NoError(t, err, "Failed to read plugin response")
-
-	// Response structure based on plugin API spec
-	type SymlinkInfo struct {
-		Path   string `json:"Path"`
-		Target string `json:"Target"`
-		Name   string `json:"Name"`
-	}
-
-	var listResp struct {
-		Success      bool          `json:"Success"`
-		Symlinks     []SymlinkInfo `json:"Symlinks"`
-		Count        int           `json:"Count"`
-		SymlinkNames []string      `json:"SymlinkNames"`
-		Message      string        `json:"Message"`
-		ErrorMessage string        `json:"ErrorMessage"`
-	}
-
-	err = json.Unmarshal(body, &listResp)
-	require.NoError(t, err, "Failed to parse plugin response")
-
-	actualCount := listResp.Count
-
-	if actualCount == expectedCount {
-		t.Logf("Symlink count correct: %d (expected: %d)", actualCount, expectedCount)
-		if actualCount > 0 {
-			t.Logf("Symlinks found:")
-			for _, link := range listResp.SymlinkNames {
-				t.Logf("  %s", link)
-			}
-		}
-		return
-	}
-
-	if actualCount > 0 {
-		t.Logf("Symlinks found:")
-		for _, link := range listResp.SymlinkNames {
-			t.Logf("  %s", link)
-		}
-	}
-
-	require.Failf(t, "Symlink count mismatch", "Symlink count mismatch: %d (expected: %d)", actualCount, expectedCount)
-}
-
-// WaitForSymlinkCount polls the Jellyfin plugin API until the symlink count
-// reaches expectedCount or maxWait elapses. When the count is stuck below the
-// expected value, it triggers a new full sync every retriggerEvery polls so
-// that Jellyfin's eventually-consistent TMDB metadata (e.g. Schindler's List
-// getting its provider ID populated after the initial library scan) can be
-// picked up by OxiCleanarr without waiting for the background ticker.
-func WaitForSymlinkCount(t *testing.T, client *TestClient, jellyfinAPIKey string, symlinkDir string, expectedCount int, maxWait time.Duration) {
-	t.Helper()
-
-	const (
-		pollInterval   = 2 * time.Second
-		retriggerEvery = 3 // trigger a new sync after this many stuck polls
-	)
-
-	movieDir := filepath.Join(symlinkDir, "movies")
-	reqURL := fmt.Sprintf("%s/api/oxicleanarr/symlinks/list?directory=%s&api_key=%s",
-		JellyfinURL, url.QueryEscape(movieDir), jellyfinAPIKey)
-
-	deadline := time.Now().Add(maxWait)
-	attempt := 0
-	stuckPolls := 0
-	lastCount := -1
-
-	for time.Now().Before(deadline) {
-		attempt++
-		resp, err := http.Get(reqURL)
-		if err != nil {
-			t.Logf("WaitForSymlinkCount attempt %d: request error: %v", attempt, err)
-			time.Sleep(pollInterval)
-			continue
-		}
-		body, err := io.ReadAll(resp.Body)
-		resp.Body.Close()
-		if err != nil {
-			t.Logf("WaitForSymlinkCount attempt %d: read error: %v", attempt, err)
-			time.Sleep(pollInterval)
-			continue
-		}
-
-		var listResp struct {
-			Count        int      `json:"Count"`
-			SymlinkNames []string `json:"SymlinkNames"`
-		}
-		if err := json.Unmarshal(body, &listResp); err != nil {
-			t.Logf("WaitForSymlinkCount attempt %d: parse error: %v", attempt, err)
-			time.Sleep(pollInterval)
-			continue
-		}
-
-		t.Logf("WaitForSymlinkCount attempt %d: %d/%d symlinks present", attempt, listResp.Count, expectedCount)
-
-		if listResp.Count == expectedCount {
-			t.Logf("✅ Symlink count reached %d after %d attempt(s)", expectedCount, attempt)
-			for _, name := range listResp.SymlinkNames {
-				t.Logf("  %s", name)
-			}
-			return
-		}
-
-		// Track whether the count is stuck (not progressing toward expected).
-		// Jellyfin's TMDB metadata is eventually-consistent: some items (e.g.
-		// Schindler's List) may not yet have a provider ID on the first sync, so
-		// OxiCleanarr skips them. Triggering another sync gives OxiCleanarr a
-		// second chance once Jellyfin has finished populating metadata.
-		if listResp.Count == lastCount {
-			stuckPolls++
-		} else {
-			stuckPolls = 0
-		}
-		lastCount = listResp.Count
-
-		if stuckPolls > 0 && stuckPolls%retriggerEvery == 0 {
-			t.Logf("WaitForSymlinkCount: count stuck at %d for %d polls, triggering re-sync", lastCount, stuckPolls)
-			client.TriggerSync()
-		}
-
-		time.Sleep(pollInterval)
-	}
-
-	// Final authoritative check (will produce a clear failure message)
-	CheckSymlinks(t, jellyfinAPIKey, symlinkDir, expectedCount)
-}
-
 // CheckJellyfinLibrary verifies Jellyfin virtual folder state
 func CheckJellyfinLibrary(t *testing.T, apiKey string, libraryName string, expectedExists bool) {
 	t.Logf("Checking Jellyfin virtual folders for library: %s", libraryName)
@@ -946,75 +847,6 @@ func GetRadarrAPIKeyFromYAMLConfig(t *testing.T, configPath string) string {
 	return ""
 }
 
-// GetHideWhenEmpty reads the hide_when_empty config value
-func GetHideWhenEmpty(t *testing.T, configPath string) bool {
-	content, err := os.ReadFile(configPath)
-	require.NoError(t, err)
-
-	lines := strings.Split(string(content), "\n")
-	inSymlinkSection := false
-
-	for _, line := range lines {
-		trimmed := strings.TrimSpace(line)
-
-		if strings.HasPrefix(trimmed, "symlink_library:") {
-			inSymlinkSection = true
-			continue
-		}
-
-		if inSymlinkSection && strings.HasPrefix(trimmed, "hide_when_empty:") {
-			parts := strings.Fields(trimmed)
-			if len(parts) >= 2 {
-				return parts[1] == "true"
-			}
-		}
-	}
-
-	// Default to true if not specified
-	return true
-}
-
-// GetMoviesLibraryName extracts the movies_library_name from the config file
-func GetMoviesLibraryName(t *testing.T, configPath string) string {
-	content, err := os.ReadFile(configPath)
-	require.NoError(t, err)
-
-	lines := strings.Split(string(content), "\n")
-	inSymlinkSection := false
-
-	for _, line := range lines {
-		trimmed := strings.TrimSpace(line)
-
-		if strings.HasPrefix(trimmed, "symlink_library:") {
-			inSymlinkSection = true
-			continue
-		}
-
-		if inSymlinkSection && strings.HasPrefix(trimmed, "movies_library_name:") {
-			// Extract value (handles both quoted and unquoted)
-			value := strings.TrimPrefix(trimmed, "movies_library_name:")
-			value = strings.TrimSpace(value)
-
-			// Remove quotes if present
-			if strings.HasPrefix(value, "\"") && strings.HasSuffix(value, "\"") {
-				value = strings.Trim(value, "\"")
-			}
-
-			if value != "" {
-				return value
-			}
-		}
-
-		// Exit section if we hit another sibling key (not nested)
-		if inSymlinkSection && !strings.HasPrefix(line, "      ") && strings.HasSuffix(trimmed, ":") {
-			break
-		}
-	}
-
-	// Default fallback
-	return "Leaving Soon - Movies"
-}
-
 // execCommand executes a shell command
 func execCommand(cmd string) error {
 	parts := strings.Fields(cmd)
@@ -1037,84 +869,6 @@ func execCommand(cmd string) error {
 	}
 
 	return fmt.Errorf("unsupported command: %s", cmd)
-}
-
-// CleanupTestEnvironment removes all test data to ensure fresh start
-func CleanupTestEnvironment(t *testing.T, composeFile string) error {
-	t.Helper()
-	t.Logf("=== Cleaning up test environment ===")
-
-	// Step 1: Stop all containers
-	t.Logf("Stopping all containers...")
-	cmd := exec.Command("docker", "compose", "-f", composeFile, "down")
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		t.Logf("Warning: Failed to stop containers: %v\nOutput: %s", err, string(output))
-	}
-	time.Sleep(2 * time.Second)
-
-	// Step 2: Clean Jellyfin directories completely (config, cache)
-	// These directories are created by Docker containers as root, so we need sudo
-	t.Logf("Cleaning Jellyfin directories...")
-	jellyfinConfigDir := "../../integration-test-OLD/jellyfin-config"
-	jellyfinCacheDir := "../../integration-test-OLD/jellyfin-cache"
-
-	// Try normal removal first, fall back to sudo if permission denied
-	if err := os.RemoveAll(jellyfinConfigDir); err != nil && !os.IsNotExist(err) {
-		t.Logf("Normal removal failed, trying with sudo: %v", err)
-		cmd := exec.Command("sudo", "rm", "-rf", jellyfinConfigDir)
-		if output, sudoErr := cmd.CombinedOutput(); sudoErr != nil {
-			t.Logf("Warning: Failed to remove Jellyfin config directory: %v\nOutput: %s", sudoErr, string(output))
-		}
-	}
-	if err := os.RemoveAll(jellyfinCacheDir); err != nil && !os.IsNotExist(err) {
-		t.Logf("Normal removal failed, trying with sudo: %v", err)
-		cmd := exec.Command("sudo", "rm", "-rf", jellyfinCacheDir)
-		if output, sudoErr := cmd.CombinedOutput(); sudoErr != nil {
-			t.Logf("Warning: Failed to remove Jellyfin cache directory: %v\nOutput: %s", sudoErr, string(output))
-		}
-	}
-
-	// Step 3: Clean OxiCleanarr data files
-	t.Logf("Cleaning OxiCleanarr data files...")
-	oxiDataDir := "../../integration-test-OLD/oxicleanarr-data"
-	oxiFiles, _ := filepath.Glob(filepath.Join(oxiDataDir, "*.json"))
-	for _, file := range oxiFiles {
-		if err := os.Remove(file); err != nil {
-			t.Logf("Warning: Failed to remove %s: %v", file, err)
-		}
-	}
-
-	// Step 4: Clean Radarr config directory completely
-	t.Logf("Cleaning Radarr config directory...")
-	radarrConfigDir := "../../integration-test-OLD/radarr-config"
-
-	if err := os.RemoveAll(radarrConfigDir); err != nil && !os.IsNotExist(err) {
-		t.Logf("Warning: Failed to remove Radarr config directory: %v", err)
-	}
-
-	// Step 5: Clean symlink directory (may be owned by root)
-	t.Logf("Cleaning symlink directory...")
-	symlinkDir := "../../integration-test-OLD/leaving-soon"
-	symlinkMoviesDir := filepath.Join(symlinkDir, "movies")
-	if err := os.RemoveAll(symlinkMoviesDir); err != nil && !os.IsNotExist(err) {
-		t.Logf("Normal removal failed, trying with sudo: %v", err)
-		cmd := exec.Command("sudo", "rm", "-rf", symlinkMoviesDir)
-		if output, sudoErr := cmd.CombinedOutput(); sudoErr != nil {
-			t.Logf("Warning: Failed to clean symlink directory: %v\nOutput: %s", sudoErr, string(output))
-		}
-	}
-
-	// Step 6: Restart containers
-	t.Logf("Starting containers with clean state...")
-	cmd = exec.Command("docker", "compose", "-f", composeFile, "up", "-d")
-	output, err = cmd.CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("failed to start containers: %w\nOutput: %s", err, string(output))
-	}
-
-	t.Logf("=== Cleanup complete, containers restarting ===")
-	return nil
 }
 
 // TriggerJellyfinLibraryScan triggers a library scan for a specific library
@@ -1254,6 +1008,52 @@ func WaitForJellyfinMovies(t *testing.T, jellyfinURL, apiKey string, expectedCou
 	}
 
 	return fmt.Errorf("jellyfin failed to match %d movies within timeout", expectedCount)
+}
+
+// WaitForJellyfinShows waits until Jellyfin has matched the expected number of TV shows
+func WaitForJellyfinShows(t *testing.T, jellyfinURL, apiKey string, expectedCount int, libraryID string) error {
+	t.Helper()
+	t.Logf("Waiting for Jellyfin to match %d TV shows...", expectedCount)
+
+	client := &http.Client{Timeout: 10 * time.Second}
+	maxRetries := 60 // 5 minutes max
+	retryDelay := 5 * time.Second
+
+	for i := 0; i < maxRetries; i++ {
+		url := fmt.Sprintf("%s/Items?ParentId=%s&Recursive=true&IncludeItemTypes=Series", jellyfinURL, libraryID)
+		req, err := http.NewRequest(http.MethodGet, url, nil)
+		if err != nil {
+			time.Sleep(retryDelay)
+			continue
+		}
+		req.Header.Set("X-MediaBrowser-Token", apiKey)
+
+		resp, err := client.Do(req)
+		if err != nil {
+			time.Sleep(retryDelay)
+			continue
+		}
+
+		var result struct {
+			TotalRecordCount int `json:"TotalRecordCount"`
+		}
+		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+			resp.Body.Close()
+			time.Sleep(retryDelay)
+			continue
+		}
+		resp.Body.Close()
+
+		t.Logf("Jellyfin has %d TV shows (expecting %d)", result.TotalRecordCount, expectedCount)
+		if result.TotalRecordCount >= expectedCount {
+			t.Logf("Jellyfin TV show matching complete!")
+			return nil
+		}
+
+		time.Sleep(retryDelay)
+	}
+
+	return fmt.Errorf("jellyfin failed to match %d TV shows within timeout", expectedCount)
 }
 
 // GetRadarrMovieCount queries Radarr's /api/v3/movie endpoint and returns the movie count
@@ -1949,22 +1749,27 @@ func resetConfigAPIKeysToPlaceholders(configPath string) {
 	inRadarrSection := false
 	inSonarrSection := false
 
+	integrationIndent := -1
 	for i, line := range lines {
 		trimmed := strings.TrimSpace(line)
+		indentLevel := len(line) - len(strings.TrimLeft(line, " "))
 
 		// Track which integration section we're in (mirrors UpdateConfigAPIKeysWithExtras logic).
 		switch {
 		case strings.HasPrefix(trimmed, "jellyfin:"):
+			integrationIndent = indentLevel
 			inJellyfinSection, inRadarrSection, inSonarrSection = true, false, false
 			continue
 		case strings.HasPrefix(trimmed, "radarr:"):
+			integrationIndent = indentLevel
 			inJellyfinSection, inRadarrSection, inSonarrSection = false, true, false
 			continue
 		case strings.HasPrefix(trimmed, "sonarr:"):
+			integrationIndent = indentLevel
 			inJellyfinSection, inRadarrSection, inSonarrSection = false, false, true
 			continue
-		case strings.HasSuffix(trimmed, ":") && !strings.HasPrefix(line, " "):
-			// New top-level section — exit all integration sections.
+		case strings.HasSuffix(trimmed, ":") && integrationIndent >= 0 && indentLevel <= integrationIndent:
+			// New key at the integration level (or shallower) — exit all integration sections.
 			inJellyfinSection, inRadarrSection, inSonarrSection = false, false, false
 		}
 
@@ -2080,7 +1885,7 @@ func clientToken(client *TestClient) string {
 	return client.token
 }
 
-// syncRunning reports whether the OxiCleanarr sync engine is currently running.
+// syncRunning reports whether a sync or deletion pass is currently executing.
 func syncRunning(t *testing.T, client *TestClient) bool {
 	resp, err := client.Get("/api/sync/status")
 	require.NoError(t, err)
@@ -2088,10 +1893,10 @@ func syncRunning(t *testing.T, client *TestClient) bool {
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 
 	var status struct {
-		Running bool `json:"running"`
+		InProgress bool `json:"in_progress"`
 	}
 	require.NoError(t, json.NewDecoder(resp.Body).Decode(&status))
-	return status.Running
+	return status.InProgress
 }
 
 // loginToken authenticates via the API and returns the JWT token.

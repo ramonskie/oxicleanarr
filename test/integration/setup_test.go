@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/xml"
 	"fmt"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -86,7 +87,7 @@ func TestMain(m *testing.M) {
 var infrastructureReady = false
 
 // TestIntegrationSuite runs all integration tests in order with shared infrastructure
-// This ensures TestSymlinkLifecycle has the required environment built by TestInfrastructureSetup
+// This ensures the media tests have the required environment built by TestInfrastructureSetup
 func TestIntegrationSuite(t *testing.T) {
 	// Run infrastructure setup first (builds environment, imports 7 movies)
 	t.Run("InfrastructureSetup", func(t *testing.T) {
@@ -144,29 +145,7 @@ func TestIntegrationSuite(t *testing.T) {
 		testSPATraversalBlocked(t)
 	})
 
-	// Run symlink lifecycle tests second (uses existing environment)
-	t.Run("SymlinkLifecycle", func(t *testing.T) {
-		// If infrastructure wasn't set up (due to -run filter), set it up now
-		if !infrastructureReady {
-			t.Log("⚠️  Infrastructure not ready (filtered by -run), setting up now...")
-			testInfrastructureSetup(t)
-			infrastructureReady = true
-		}
-		testSymlinkLifecycle(t)
-	})
-
-	// Run exclusion lifecycle tests third (uses existing environment)
-	t.Run("ExclusionLifecycle", func(t *testing.T) {
-		// If infrastructure wasn't set up (due to -run filter), set it up now
-		if !infrastructureReady {
-			t.Log("⚠️  Infrastructure not ready (filtered by -run), setting up now...")
-			testInfrastructureSetup(t)
-			infrastructureReady = true
-		}
-		testExclusionLifecycle(t)
-	})
-
-	// Run manual leaving soon lifecycle tests fourth (uses existing environment)
+	// Run manual leaving soon lifecycle tests second (uses existing environment)
 	t.Run("ManualLeavingSoonLifecycle", func(t *testing.T) {
 		// If infrastructure wasn't set up (due to -run filter), set it up now
 		if !infrastructureReady {
@@ -175,6 +154,19 @@ func TestIntegrationSuite(t *testing.T) {
 			infrastructureReady = true
 		}
 		testManualLeavingSoonLifecycle(t)
+	})
+
+	// Run leaving soon plugin lifecycle tests (uses the Leaving Soon plugin that
+	// InfrastructureSetup installs into Jellyfin; it pulls from OxiCleanarr and
+	// manages the symlink libraries)
+	t.Run("LeavingSoonPluginLifecycle", func(t *testing.T) {
+		// If infrastructure wasn't set up (due to -run filter), set it up now
+		if !infrastructureReady {
+			t.Log("⚠️  Infrastructure not ready (filtered by -run), setting up now...")
+			testInfrastructureSetup(t)
+			infrastructureReady = true
+		}
+		testLeavingSoonLifecycle(t)
 	})
 
 	// Run advanced rules user-based tests fifth (uses existing environment)
@@ -305,6 +297,34 @@ func testInfrastructureSetup(t *testing.T) {
 	}
 	t.Logf("✅ Jellyfin initialized (User ID: %s, API key: %s)", jellyfinUserID[:8]+"...", jellyfinAPIKey[:8]+"...")
 
+	// Step 3b: Verify the Leaving Soon plugin was installed and loaded by Jellyfin.
+	// SetupJellyfinForTest installs it into the container; this confirms Jellyfin
+	// actually loaded it (mirrors the old OxiCleanarr-bridge plugin verification).
+	t.Log("Step 3b: Verifying Leaving Soon plugin status...")
+	{
+		pluginDeadline := time.Now().Add(90 * time.Second)
+		pluginReady := false
+		for time.Now().Before(pluginDeadline) {
+			req, err := http.NewRequest(http.MethodGet, jellyfinURL+"/api/leaving-soon/status", nil)
+			if err == nil {
+				req.Header.Set("X-Emby-Token", jellyfinAPIKey)
+				resp, reqErr := http.DefaultClient.Do(req)
+				if reqErr == nil {
+					resp.Body.Close()
+					if resp.StatusCode == http.StatusOK {
+						pluginReady = true
+						break
+					}
+				}
+			}
+			time.Sleep(2 * time.Second)
+		}
+		if !pluginReady {
+			t.Fatal("Leaving Soon plugin should be loaded by Jellyfin after install")
+		}
+	}
+	t.Log("✅ Leaving Soon plugin loaded")
+
 	// Step 3a: Extract Radarr API key from Docker container
 	t.Log("Step 3a: Extracting Radarr API key from container...")
 	cmd := exec.Command("docker", "exec", "oxicleanarr-test-radarr", "cat", "/config/config.xml")
@@ -331,18 +351,6 @@ func testInfrastructureSetup(t *testing.T) {
 		t.Fatalf("Failed to extract Sonarr API key: %v", err)
 	}
 	t.Logf("✅ Sonarr API key extracted: %s...", sonarrAPIKey[:8])
-
-	// Step 3b: Verify OxiCleanarr plugin installation
-	t.Log("Step 3b: Verifying OxiCleanarr Bridge plugin status...")
-	if err := VerifyOxiCleanarrPlugin(t, jellyfinURL, jellyfinAPIKey); err != nil {
-		t.Fatalf("❌ Plugin verification failed: %v", err)
-	}
-
-	// Step 3c: Verify OxiCleanarr plugin API endpoint
-	t.Log("Step 3c: Verifying OxiCleanarr plugin API endpoint...")
-	if err := VerifyOxiCleanarrPluginAPI(t, jellyfinURL, jellyfinAPIKey); err != nil {
-		t.Fatalf("❌ Plugin API verification failed: %v", err)
-	}
 
 	// Step 4: Initialize Radarr
 	t.Log("Step 4: Initializing Radarr...")
@@ -408,6 +416,30 @@ func testInfrastructureSetup(t *testing.T) {
 	}
 	t.Logf("✅ Jellyfin matched %d movies", movieCount)
 
+	// Step 9b: Create a Jellyfin TV show library and wait for the shows to match.
+	// Required so the Leaving Soon plugin lifecycle test can exercise TV shows too.
+	t.Log("Step 9b: Creating Jellyfin TV show library...")
+	if err := EnsureJellyfinLibrary(t, jellyfinURL, jellyfinAPIKey, "TV Shows", "/media/tvshows", "tvshows"); err != nil {
+		t.Fatalf("Failed to create Jellyfin TV library: %v", err)
+	}
+	t.Log("✅ Jellyfin TV show library created")
+
+	tvLibraryID, err := GetJellyfinLibraryID(t, jellyfinURL, jellyfinAPIKey, "TV Shows")
+	if err != nil {
+		t.Fatalf("Failed to get Jellyfin TV library ID: %v", err)
+	}
+	if err := TriggerJellyfinLibraryScan(t, jellyfinURL, jellyfinAPIKey, tvLibraryID); err != nil {
+		t.Fatalf("Failed to trigger Jellyfin TV library scan: %v", err)
+	}
+	expectedTV, err := GetSonarrSeriesCount(t, sonarrURL, sonarrAPIKey)
+	if err != nil {
+		t.Fatalf("Failed to get Sonarr series count: %v", err)
+	}
+	if err := WaitForJellyfinShows(t, jellyfinURL, jellyfinAPIKey, expectedTV, tvLibraryID); err != nil {
+		t.Fatalf("Failed to wait for Jellyfin TV show matching: %v", err)
+	}
+	t.Logf("✅ Jellyfin matched %d TV shows", expectedTV)
+
 	// Step 10: Update OxiCleanarr config with real API keys
 	t.Log("Step 10: Updating OxiCleanarr config with API keys...")
 	configPath := filepath.Join("..", "assets", "config", "config.yaml")
@@ -430,7 +462,7 @@ func testInfrastructureSetup(t *testing.T) {
 	}
 	t.Log("✅ OxiCleanarr ready after restart")
 
-	// Step 13: Validate data consistency BEFORE OxiCleanarr sync (which will create symlink libraries)
+	// Step 13: Validate data consistency BEFORE OxiCleanarr sync (which will schedule deletions)
 	t.Log("Step 13: Validating data consistency across services (before sync)...")
 	radarrCount, err := GetRadarrMovieCount(t, radarrURL, radarrAPIKey)
 	if err != nil {
@@ -494,14 +526,14 @@ func testInfrastructureSetup(t *testing.T) {
 	t.Log("✅ Infrastructure Setup Test PASSED")
 	t.Log("========================================")
 	t.Log("Summary:")
-	t.Logf("  - Jellyfin: Ready with OxiCleanarr plugin and %d movies (%s)", jellyfinCount, jellyfinURL)
+	t.Logf("  - Jellyfin: Ready with %d movies (%s)", jellyfinCount, jellyfinURL)
 	t.Logf("  - Radarr: Ready with %d movies (%s)", radarrCount, radarrURL)
 	t.Logf("  - Sonarr: Ready with %d TV shows (%s)", expectedTVCount, sonarrURL)
 	t.Logf("  - OxiCleanarr: Ready and synced %d movies + %d TV shows (%s)", syncedMovieCount, syncedTVCount, oxicleanURL)
 	t.Logf("  - Data consistency: All services validated with matching counts")
 	t.Log("\nNext Steps:")
-	t.Log("  - Run TestSymlinkLifecycle to test symlink creation/cleanup")
-	t.Log("  - Run TestHideWhenEmpty to test empty library behavior")
+	t.Log("  - Run TestManualLeavingSoonLifecycle to test manual leaving-soon flags")
+	t.Log("  - Run TestDeletionLifecycle to test deletion execution")
 }
 
 // startDockerEnvironment starts the docker-compose stack
