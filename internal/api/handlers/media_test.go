@@ -188,24 +188,37 @@ func TestMediaHandler_ListLeavingSoon(t *testing.T) {
 			Type:         models.MediaTypeMovie,
 			Title:        "Leaving in 7 days",
 			DaysUntilDue: 7,
+			JellyfinID:   "jellyfin-guid-1",
 			DeleteAfter:  now.Add(7 * 24 * time.Hour),
 		}
 
-		// Media not leaving (0 or negative days)
+		// Media leaving soon but with no Jellyfin match (should not appear -
+		// a Jellyfin leaving-soon library cannot reference it)
 		engine.GetMediaLibrary()["movie-2"] = models.Media{
 			ID:           "movie-2",
 			Type:         models.MediaTypeMovie,
+			Title:        "Leaving but unmatched",
+			DaysUntilDue: 5,
+			DeleteAfter:  now.Add(5 * 24 * time.Hour),
+		}
+
+		// Media not leaving (0 or negative days)
+		engine.GetMediaLibrary()["movie-3"] = models.Media{
+			ID:           "movie-3",
+			Type:         models.MediaTypeMovie,
 			Title:        "Not leaving",
 			DaysUntilDue: 0,
+			JellyfinID:   "jellyfin-guid-3",
 		}
 
 		// Excluded media (should not appear)
-		engine.GetMediaLibrary()["movie-3"] = models.Media{
-			ID:           "movie-3",
+		engine.GetMediaLibrary()["movie-4"] = models.Media{
+			ID:           "movie-4",
 			Type:         models.MediaTypeMovie,
 			Title:        "Excluded but leaving",
 			DaysUntilDue: 5,
 			IsExcluded:   true,
+			JellyfinID:   "jellyfin-guid-4",
 		}
 
 		req := httptest.NewRequest(http.MethodGet, "/api/media/leaving-soon", nil)
@@ -215,13 +228,15 @@ func TestMediaHandler_ListLeavingSoon(t *testing.T) {
 
 		assert.Equal(t, http.StatusOK, w.Code)
 
-		var response map[string]interface{}
+		var response models.LeavingSoonResponse
 		err := json.NewDecoder(w.Body).Decode(&response)
 		require.NoError(t, err)
 
-		assert.Equal(t, float64(1), response["total"])
-		media := response["items"].([]interface{})
-		assert.Len(t, media, 1)
+		assert.Len(t, response.Items, 1)
+		require.NotEmpty(t, response.Items)
+		assert.Equal(t, "jellyfin-guid-1", response.Items[0].MediaServerID)
+		assert.Equal(t, "movie", response.Items[0].Type)
+		assert.Equal(t, "Leaving in 7 days", response.Items[0].Title)
 	})
 
 	t.Run("respects leaving_soon_days threshold", func(t *testing.T) {
@@ -229,9 +244,12 @@ func TestMediaHandler_ListLeavingSoon(t *testing.T) {
 		handler := NewMediaHandler(engine)
 
 		// Set leaving_soon_days to 14 days
-		cfg := config.Get()
+		origCfg := config.Get()
+		cfg := *origCfg
 		cfg.App.LeavingSoonDays = 14
-		config.SetTestConfig(cfg)
+		config.SetTestConfig(&cfg)
+		// Restore the original config so other tests aren't affected.
+		t.Cleanup(func() { config.SetTestConfig(origCfg) })
 
 		now := time.Now()
 
@@ -241,6 +259,7 @@ func TestMediaHandler_ListLeavingSoon(t *testing.T) {
 			Type:         models.MediaTypeMovie,
 			Title:        "Leaving in 5 days",
 			DaysUntilDue: 5,
+			JellyfinID:   "jellyfin-guid-1",
 			DeleteAfter:  now.Add(5 * 24 * time.Hour),
 		}
 
@@ -250,6 +269,7 @@ func TestMediaHandler_ListLeavingSoon(t *testing.T) {
 			Type:         models.MediaTypeMovie,
 			Title:        "Leaving in 14 days",
 			DaysUntilDue: 14,
+			JellyfinID:   "jellyfin-guid-2",
 			DeleteAfter:  now.Add(14 * 24 * time.Hour),
 		}
 
@@ -259,6 +279,7 @@ func TestMediaHandler_ListLeavingSoon(t *testing.T) {
 			Type:         models.MediaTypeMovie,
 			Title:        "Leaving in 29 days",
 			DaysUntilDue: 29,
+			JellyfinID:   "jellyfin-guid-3",
 			DeleteAfter:  now.Add(29 * 24 * time.Hour),
 		}
 
@@ -268,6 +289,7 @@ func TestMediaHandler_ListLeavingSoon(t *testing.T) {
 			Type:         models.MediaTypeMovie,
 			Title:        "Leaving in 30 days",
 			DaysUntilDue: 30,
+			JellyfinID:   "jellyfin-guid-4",
 			DeleteAfter:  now.Add(30 * 24 * time.Hour),
 		}
 
@@ -277,6 +299,16 @@ func TestMediaHandler_ListLeavingSoon(t *testing.T) {
 			Type:         models.MediaTypeMovie,
 			Title:        "Not scheduled for deletion",
 			DaysUntilDue: 0,
+			JellyfinID:   "jellyfin-guid-5",
+		}
+
+		// Media within threshold but with no Jellyfin match (should NOT appear)
+		engine.GetMediaLibrary()["movie-6"] = models.Media{
+			ID:           "movie-6",
+			Type:         models.MediaTypeMovie,
+			Title:        "Leaving but unmatched",
+			DaysUntilDue: 3,
+			DeleteAfter:  now.Add(3 * 24 * time.Hour),
 		}
 
 		req := httptest.NewRequest(http.MethodGet, "/api/media/leaving-soon", nil)
@@ -286,26 +318,90 @@ func TestMediaHandler_ListLeavingSoon(t *testing.T) {
 
 		assert.Equal(t, http.StatusOK, w.Code)
 
-		var response map[string]interface{}
+		var response models.LeavingSoonResponse
 		err := json.NewDecoder(w.Body).Decode(&response)
 		require.NoError(t, err)
 
 		// Should only return items with 5 and 14 days (2 items)
-		assert.Equal(t, float64(2), response["total"])
-		items := response["items"].([]interface{})
-		assert.Len(t, items, 2)
+		assert.Len(t, response.Items, 2)
 
-		// Verify the correct items are returned (by checking DaysUntilDue)
+		// Verify the correct items are returned (by deletion date)
 		returnedDays := make(map[int]bool)
-		for _, item := range items {
-			itemMap := item.(map[string]interface{})
-			days := int(itemMap["days_until_deletion"].(float64))
-			returnedDays[days] = true
+		for _, item := range response.Items {
+			returnedDays[int(item.DeletionDate.Sub(now).Hours()/24)] = true
 		}
 		assert.True(t, returnedDays[5], "Item with 5 days should be returned")
 		assert.True(t, returnedDays[14], "Item with 14 days should be returned")
 		assert.False(t, returnedDays[29], "Item with 29 days should NOT be returned")
 		assert.False(t, returnedDays[30], "Item with 30 days should NOT be returned")
+		assert.False(t, returnedDays[3], "Unmatched item should NOT be returned")
+	})
+}
+
+func TestMediaHandler_ListLeavingSoonMedia(t *testing.T) {
+	t.Run("returns rich media items for the UI", func(t *testing.T) {
+		engine := newTestSyncEngineForAPI(t)
+		handler := NewMediaHandler(engine)
+
+		now := time.Now()
+
+		// In window, matched
+		engine.GetMediaLibrary()["movie-1"] = models.Media{
+			ID:           "movie-1",
+			Type:         models.MediaTypeMovie,
+			Title:        "Leaving in 7 days",
+			DaysUntilDue: 7,
+			JellyfinID:   "jellyfin-guid-1",
+			DeleteAfter:  now.Add(7 * 24 * time.Hour),
+		}
+
+		// In window, unmatched (UI still shows it - only the plugin contract drops it)
+		engine.GetMediaLibrary()["movie-2"] = models.Media{
+			ID:           "movie-2",
+			Type:         models.MediaTypeMovie,
+			Title:        "Leaving but unmatched",
+			DaysUntilDue: 5,
+			DeleteAfter:  now.Add(5 * 24 * time.Hour),
+		}
+
+		// Excluded (should not appear)
+		engine.GetMediaLibrary()["movie-3"] = models.Media{
+			ID:           "movie-3",
+			Type:         models.MediaTypeMovie,
+			Title:        "Excluded",
+			DaysUntilDue: 5,
+			IsExcluded:   true,
+			DeleteAfter:  now.Add(5 * 24 * time.Hour),
+		}
+
+		// Not leaving (should not appear)
+		engine.GetMediaLibrary()["movie-4"] = models.Media{
+			ID:           "movie-4",
+			Type:         models.MediaTypeMovie,
+			Title:        "Not leaving",
+			DaysUntilDue: 0,
+		}
+
+		req := httptest.NewRequest(http.MethodGet, "/api/media/leaving-soon/list", nil)
+		w := httptest.NewRecorder()
+
+		handler.ListLeavingSoonMedia(w, req)
+
+		assert.Equal(t, http.StatusOK, w.Code)
+
+		var response struct {
+			Items []models.Media `json:"items"`
+			Total int            `json:"total"`
+		}
+		err := json.NewDecoder(w.Body).Decode(&response)
+		require.NoError(t, err)
+
+		assert.Equal(t, 2, response.Total)
+		assert.Len(t, response.Items, 2)
+
+		// Sorted by deletion date (earliest first): movie-2 (5d) before movie-1 (7d)
+		assert.Equal(t, "movie-2", response.Items[0].ID)
+		assert.Equal(t, "movie-1", response.Items[1].ID)
 	})
 }
 

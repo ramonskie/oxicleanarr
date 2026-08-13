@@ -95,7 +95,7 @@ class ApiClient {
     const query = new URLSearchParams();
     if (params?.limit) query.set('limit', params.limit.toString());
     if (params?.offset) query.set('offset', params.offset.toString());
-    const response = await this.request<MediaListResponse>(`/media/leaving-soon?${query}`);
+    const response = await this.request<MediaListResponse>(`/media/leaving-soon/list?${query}`);
     return {
       items: response.items || [],
       total: response.total || 0,

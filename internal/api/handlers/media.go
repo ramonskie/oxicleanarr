@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -96,10 +97,72 @@ func (h *MediaHandler) ListShows(w http.ResponseWriter, r *http.Request) {
 }
 
 // ListLeavingSoon handles GET /api/media/leaving-soon
+// Returns the normalized leaving-soon contract consumed by
+// jellyfin-plugin-leaving-soon (see models.LeavingSoonItem).
 func (h *MediaHandler) ListLeavingSoon(w http.ResponseWriter, r *http.Request) {
 	media := h.syncEngine.GetMediaList()
 
 	// Get leaving_soon_days threshold from config
+	cfg := config.Get()
+	leavingSoonDays := cfg.App.LeavingSoonDays
+
+	// Filter leaving soon items (items within the leaving_soon_days threshold)
+	// and map to the normalized contract. Items without a Jellyfin id cannot be
+	// shown in a Jellyfin leaving-soon library, so they are dropped here.
+	var leavingSoon []models.LeavingSoonItem
+	for _, item := range media {
+		if item.DaysUntilDue <= 0 || item.DaysUntilDue > leavingSoonDays || item.IsExcluded {
+			continue
+		}
+		if item.JellyfinID == "" {
+			continue
+		}
+
+		itemType := "movie"
+		if item.Type == models.MediaTypeTVShow {
+			itemType = "show"
+		}
+
+		deletionDate := item.DeleteAfter
+		leavingSoon = append(leavingSoon, models.LeavingSoonItem{
+			MediaServerID: item.JellyfinID,
+			Type:          itemType,
+			Title:         item.Title,
+			DeletionDate:  &deletionDate,
+			SourcePath:    item.FilePath,
+		})
+	}
+
+	// Sort by deletion date (earliest first, nil dates last), with a title
+	// tiebreaker so equal dates have a deterministic order.
+	sort.Slice(leavingSoon, func(i, j int) bool {
+		if leavingSoon[i].DeletionDate == nil {
+			return false
+		}
+		if leavingSoon[j].DeletionDate == nil {
+			return true
+		}
+		if !leavingSoon[i].DeletionDate.Equal(*leavingSoon[j].DeletionDate) {
+			return leavingSoon[i].DeletionDate.Before(*leavingSoon[j].DeletionDate)
+		}
+		return leavingSoon[i].Title < leavingSoon[j].Title
+	})
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(models.LeavingSoonResponse{
+		Version: 1,
+		Items:   leavingSoon,
+	})
+}
+
+// ListLeavingSoonMedia handles GET /api/media/leaving-soon/list
+// Returns the rich Media list (poster ids, watch data, deletion reasons) for the
+// web UI. Intentionally separate from ListLeavingSoon, which serves the normalized
+// plugin contract to machine clients.
+func (h *MediaHandler) ListLeavingSoonMedia(w http.ResponseWriter, r *http.Request) {
+	media := h.syncEngine.GetMediaList()
+
 	cfg := config.Get()
 	leavingSoonDays := cfg.App.LeavingSoonDays
 

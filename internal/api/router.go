@@ -74,7 +74,7 @@ func NewRouter(deps *RouterDependencies) *chi.Mux {
 		r.Post("/auth/logout", authHandler.Logout)
 		r.Get("/auth/me", authHandler.Me)
 
-		// Protected API routes
+		// Protected API routes (JWT or the static admin.api_key)
 		r.Group(func(r chi.Router) {
 			r.Use(mw.Auth)
 
@@ -83,6 +83,7 @@ func NewRouter(deps *RouterDependencies) *chi.Mux {
 				r.Get("/movies", mediaHandler.ListMovies)
 				r.Get("/shows", mediaHandler.ListShows)
 				r.Get("/leaving-soon", mediaHandler.ListLeavingSoon)
+				r.Get("/leaving-soon/list", mediaHandler.ListLeavingSoonMedia)
 				r.Get("/unmatched", mediaHandler.ListUnmatched)
 
 				// Parameterized routes must come last

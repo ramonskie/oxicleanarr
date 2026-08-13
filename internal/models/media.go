@@ -94,6 +94,30 @@ type DeletionTimeline struct {
 	LeavingSoon    []Media            `json:"leaving_soon"`
 }
 
+// LeavingSoonItem is the normalized leaving-soon contract shared with external
+// consumers (e.g. jellyfin-plugin-leaving-soon). Every provider emits the same
+// shape so the plugin has one consumer path.
+type LeavingSoonItem struct {
+	// MediaServerID is the id Jellyfin knows for the item (a Jellyfin item GUID).
+	// Empty when OxiCleanarr has no Jellyfin match yet - consumers skip those.
+	MediaServerID string `json:"mediaServerId"`
+	// Type is "movie" or "show" (already normalized, unlike models.Media.Type).
+	Type string `json:"type"`
+	// Title is informational only; consumers may prefer Jellyfin's own title.
+	Title string `json:"title,omitempty"`
+	// DeletionDate is when the item is scheduled for deletion (RFC3339).
+	DeletionDate *time.Time `json:"deletionDate,omitempty"`
+	// SourcePath is optional; consumers resolve paths from Jellyfin themselves.
+	SourcePath string `json:"sourcePath,omitempty"`
+}
+
+// LeavingSoonResponse is the envelope for GET /api/media/leaving-soon.
+type LeavingSoonResponse struct {
+	// Version lets consumers detect contract changes without parsing fields.
+	Version int               `json:"version"`
+	Items   []LeavingSoonItem `json:"items"`
+}
+
 // MarshalJSON customizes the JSON output for Media to match frontend expectations
 func (m Media) MarshalJSON() ([]byte, error) {
 	// Convert type for frontend compatibility
