@@ -2,10 +2,13 @@ package clients
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/ramonskie/oxicleanarr/internal/config"
@@ -18,6 +21,11 @@ type JellyfinClient struct {
 	apiKey  string
 	client  *http.Client
 }
+
+// ErrImageNotFound is returned by GetItemImage when the item has no image of
+// the requested type (Jellyfin responds 404). Callers can treat it as "nothing
+// to draw on" rather than an infrastructure failure.
+var ErrImageNotFound = errors.New("image not found")
 
 // NewJellyfinClient creates a new Jellyfin client
 func NewJellyfinClient(cfg config.JellyfinConfig) *JellyfinClient {
@@ -250,4 +258,81 @@ func (c *JellyfinClient) ProxyImage(ctx context.Context, itemID, imageType strin
 	}
 
 	return limitedBody, contentType, nil
+}
+
+// GetItemImage downloads the full bytes of an item image (e.g. "Primary").
+// Requests the JPG format so callers can rely on a known content type; returns
+// the image bytes and the response content type. Errors when the image cannot
+// be fetched (404 included).
+func (c *JellyfinClient) GetItemImage(ctx context.Context, itemID, imageType string) ([]byte, string, error) {
+	imgURL := fmt.Sprintf("%s/Items/%s/Images/%s?format=Jpg", c.baseURL, itemID, imageType)
+
+	req, err := http.NewRequestWithContext(ctx, "GET", imgURL, nil)
+	if err != nil {
+		return nil, "", fmt.Errorf("creating image request: %w", err)
+	}
+
+	req.Header.Set("X-Emby-Token", c.apiKey)
+
+	resp, err := c.client.Do(req)
+	if err != nil {
+		return nil, "", fmt.Errorf("fetching image: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == http.StatusNotFound {
+		return nil, "", ErrImageNotFound
+	}
+	if resp.StatusCode != http.StatusOK {
+		return nil, "", fmt.Errorf("image not found (status %d)", resp.StatusCode)
+	}
+
+	const maxImageSize = 10 << 20 // 10MB
+	if resp.ContentLength > maxImageSize {
+		return nil, "", fmt.Errorf("image too large (%d bytes, limit %d)", resp.ContentLength, maxImageSize)
+	}
+	data, err := io.ReadAll(io.LimitReader(resp.Body, maxImageSize))
+	if err != nil {
+		return nil, "", fmt.Errorf("reading image body: %w", err)
+	}
+
+	contentType := resp.Header.Get("Content-Type")
+	if contentType == "" {
+		contentType = "image/jpeg"
+	}
+
+	return data, contentType, nil
+}
+
+// SetItemImage uploads a new image of the given type for an item.
+//
+// The body is sent base64-encoded: the Jellyfin server rejects raw binary
+// payloads on this endpoint with a 500, despite the OpenAPI description hinting
+// at image/* binary. Base64 is the empirically-verified working path (see
+// jellyfin/jellyfin#12447), used by Maintainerr's overlay feature.
+func (c *JellyfinClient) SetItemImage(ctx context.Context, itemID, imageType string, data []byte, contentType string) error {
+	imgURL := fmt.Sprintf("%s/Items/%s/Images/%s", c.baseURL, itemID, imageType)
+
+	body := base64.StdEncoding.EncodeToString(data)
+
+	req, err := http.NewRequestWithContext(ctx, "POST", imgURL, strings.NewReader(body))
+	if err != nil {
+		return fmt.Errorf("creating image request: %w", err)
+	}
+
+	req.Header.Set("X-Emby-Token", c.apiKey)
+	req.Header.Set("Content-Type", contentType)
+
+	resp, err := c.client.Do(req)
+	if err != nil {
+		return fmt.Errorf("uploading image: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusNoContent {
+		return fmt.Errorf("upload failed (status %d)", resp.StatusCode)
+	}
+
+	log.Info().Str("item_id", itemID).Str("image_type", imageType).Msg("Set item image")
+	return nil
 }

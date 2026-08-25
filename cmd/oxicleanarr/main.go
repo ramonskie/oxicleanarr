@@ -15,6 +15,7 @@ import (
 	"github.com/ramonskie/oxicleanarr/internal/cache"
 	"github.com/ramonskie/oxicleanarr/internal/config"
 	"github.com/ramonskie/oxicleanarr/internal/services"
+	"github.com/ramonskie/oxicleanarr/internal/services/overlay"
 	"github.com/ramonskie/oxicleanarr/internal/services/rules"
 	"github.com/ramonskie/oxicleanarr/internal/storage"
 	"github.com/ramonskie/oxicleanarr/internal/utils"
@@ -86,6 +87,12 @@ func main() {
 	}
 	log.Info().Int("jobs", len(jobsFile.GetAll())).Msg("Jobs loaded")
 
+	overlayStateFile, err := storage.NewOverlayStateFile(dataPath)
+	if err != nil {
+		log.Fatal().Err(err).Msg("Failed to initialize overlay state storage")
+	}
+	log.Info().Int("overlay_tracked", len(overlayStateFile.GetAll())).Msg("Overlay state loaded")
+
 	// Initialize cache
 	appCache := cache.New()
 	log.Info().Msg("Cache initialized")
@@ -108,6 +115,19 @@ func main() {
 	}
 	log.Info().Msg("Sync engine started")
 
+	// Initialize the deletion overlay service (poster banners). The scheduler
+	// only runs when the overlay feature is enabled in config.
+	overlayService := overlay.NewService(
+		cfg,
+		overlayStateFile,
+		syncEngine.GetJellyfinClient(),
+		syncEngine,
+		dataPath,
+	)
+	if err := overlayService.Start(); err != nil {
+		log.Fatal().Err(err).Msg("Failed to start overlay service")
+	}
+
 	// Initialize SPA handler for serving frontend
 	distPath := getEnv("FRONTEND_DIST_PATH", "./web/dist")
 	spaHandler, err := handlers.NewSPAHandler(distPath)
@@ -120,11 +140,12 @@ func main() {
 
 	// Create router with dependencies
 	router := api.NewRouter(&api.RouterDependencies{
-		AuthService: authService,
-		SyncEngine:  syncEngine,
-		JobsFile:    jobsFile,
-		ShutdownCh:  shutdownCh,
-		SPAHandler:  spaHandler,
+		AuthService:    authService,
+		SyncEngine:     syncEngine,
+		JobsFile:       jobsFile,
+		OverlayService: overlayService,
+		ShutdownCh:     shutdownCh,
+		SPAHandler:     spaHandler,
 	})
 	log.Info().Msg("Router initialized")
 
@@ -176,6 +197,10 @@ func main() {
 	// Stop sync engine
 	syncEngine.Stop()
 	log.Info().Msg("Sync engine stopped")
+
+	// Stop overlay scheduler
+	overlayService.Stop()
+	log.Info().Msg("Overlay scheduler stopped")
 
 	// Graceful shutdown
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)

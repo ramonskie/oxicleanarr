@@ -11,16 +11,18 @@ import (
 	mw "github.com/ramonskie/oxicleanarr/internal/api/middleware"
 	"github.com/ramonskie/oxicleanarr/internal/config"
 	"github.com/ramonskie/oxicleanarr/internal/services"
+	"github.com/ramonskie/oxicleanarr/internal/services/overlay"
 	"github.com/ramonskie/oxicleanarr/internal/storage"
 )
 
 // RouterDependencies holds dependencies for the router
 type RouterDependencies struct {
-	AuthService *services.AuthService
-	SyncEngine  *services.SyncEngine
-	JobsFile    *storage.JobsFile
-	ShutdownCh  chan struct{} // Channel for signaling graceful shutdown
-	SPAHandler  http.Handler  // Optional: handler for serving the SPA frontend
+	AuthService    *services.AuthService
+	SyncEngine     *services.SyncEngine
+	JobsFile       *storage.JobsFile
+	OverlayService *overlay.Service
+	ShutdownCh     chan struct{} // Channel for signaling graceful shutdown
+	SPAHandler     http.Handler  // Optional: handler for serving the SPA frontend
 }
 
 // NewRouter creates and configures the HTTP router
@@ -103,6 +105,15 @@ func NewRouter(deps *RouterDependencies) *chi.Mux {
 
 			// Deletion routes
 			r.Post("/deletions/execute", syncHandler.ExecuteDeletions)
+
+			// Overlay routes (deletion banner on Jellyfin posters). Registered
+			// only when the service is wired (e.g. tests omit it).
+			if deps.OverlayService != nil {
+				overlayHandler := handlers.NewOverlayHandler(deps.OverlayService)
+				r.Post("/overlay/run", overlayHandler.Run)
+				r.Post("/overlay/reset", overlayHandler.Reset)
+				r.Get("/overlay/status", overlayHandler.Status)
+			}
 
 			// Jobs routes
 			r.Get("/jobs", jobsHandler.ListJobs)

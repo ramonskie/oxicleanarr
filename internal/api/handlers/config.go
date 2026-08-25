@@ -32,6 +32,7 @@ type SanitizedConfig struct {
 	Rules         config.RulesConfig          `json:"rules"`
 	Server        config.ServerConfig         `json:"server"`
 	Integrations  SanitizedIntegrationsConfig `json:"integrations"`
+	Overlay       config.OverlayConfig        `json:"overlay"`
 	AdvancedRules []config.AdvancedRule       `json:"advanced_rules"`
 }
 
@@ -101,6 +102,7 @@ func (h *ConfigHandler) GetConfig(w http.ResponseWriter, r *http.Request) {
 		Sync:          cfg.Sync,
 		Rules:         cfg.Rules,
 		Server:        cfg.Server,
+		Overlay:       cfg.Overlay,
 		AdvancedRules: cfg.AdvancedRules,
 		Integrations: SanitizedIntegrationsConfig{
 			Jellyfin: SanitizedJellyfinConfig{
@@ -157,6 +159,7 @@ type UpdateConfigRequest struct {
 	Rules         *config.RulesConfig       `json:"rules,omitempty"`
 	Server        *config.ServerConfig      `json:"server,omitempty"`
 	Integrations  *UpdateIntegrationsConfig `json:"integrations,omitempty"`
+	Overlay       *config.OverlayConfig     `json:"overlay,omitempty"`
 	AdvancedRules *[]config.AdvancedRule    `json:"advanced_rules,omitempty"`
 }
 
@@ -268,6 +271,10 @@ func (h *ConfigHandler) UpdateConfig(w http.ResponseWriter, r *http.Request) {
 
 	if req.Server != nil {
 		newCfg.Server = *req.Server
+	}
+
+	if req.Overlay != nil {
+		newCfg.Overlay = *req.Overlay
 	}
 
 	if req.Integrations != nil {

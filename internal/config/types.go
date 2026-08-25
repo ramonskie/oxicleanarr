@@ -8,6 +8,7 @@ type Config struct {
 	Rules         RulesConfig        `mapstructure:"rules" yaml:"rules" json:"rules"`
 	Server        ServerConfig       `mapstructure:"server" yaml:"server" json:"server"`
 	Integrations  IntegrationsConfig `mapstructure:"integrations" yaml:"integrations" json:"integrations"`
+	Overlay       OverlayConfig      `mapstructure:"overlay" yaml:"overlay" json:"overlay"`
 	AdvancedRules []AdvancedRule     `mapstructure:"advanced_rules" yaml:"advanced_rules,omitempty" json:"advanced_rules,omitempty"`
 }
 
@@ -42,6 +43,30 @@ type SyncConfig struct {
 	FullInterval        int  `mapstructure:"full_interval" yaml:"full_interval" json:"full_interval"`
 	IncrementalInterval int  `mapstructure:"incremental_interval" yaml:"incremental_interval" json:"incremental_interval"`
 	AutoStart           bool `mapstructure:"auto_start" yaml:"auto_start" json:"auto_start"`
+}
+
+// OverlayConfig holds the deletion-overlay (poster banner) settings.
+// When enabled, scheduled-deletion media get a "X days until deletion" banner
+// rendered onto their Jellyfin Primary image (Maintainerr-style).
+type OverlayConfig struct {
+	Enabled bool `mapstructure:"enabled" yaml:"enabled" json:"enabled"`
+	// IntervalHours is how often the banner pass runs (0 = default 24h).
+	IntervalHours int `mapstructure:"interval_hours" yaml:"interval_hours" json:"interval_hours"`
+	// TextTemplate renders the banner for 2+ days; "{days}" is replaced with the
+	// number. Day 0 always renders "today" and day 1 "in 1 day".
+	TextTemplate string `mapstructure:"text_template" yaml:"text_template" json:"text_template"`
+	// FontSizePercent is the font size as a percentage of the poster's short side.
+	FontSizePercent float64 `mapstructure:"font_size_percent" yaml:"font_size_percent" json:"font_size_percent"`
+	// FontColor is the banner text color (#RRGGBB, #RRGGBBAA, rgba(), or a name).
+	FontColor string `mapstructure:"font_color" yaml:"font_color" json:"font_color"`
+	// BackgroundColor is the banner pill color; "transparent"/"none" draws no pill.
+	BackgroundColor string `mapstructure:"background_color" yaml:"background_color" json:"background_color"`
+	// PaddingPercent is the pill padding as a percentage of the short side.
+	PaddingPercent float64 `mapstructure:"padding_percent" yaml:"padding_percent" json:"padding_percent"`
+	// CornerRadiusPercent is the pill corner radius as a percentage of the short side.
+	CornerRadiusPercent float64 `mapstructure:"corner_radius_percent" yaml:"corner_radius_percent" json:"corner_radius_percent"`
+	// FontPath optionally loads a TTF/OTF font from disk; empty uses the bundled font.
+	FontPath string `mapstructure:"font_path" yaml:"font_path,omitempty" json:"font_path,omitempty"`
 }
 
 // RulesConfig holds simple retention rules

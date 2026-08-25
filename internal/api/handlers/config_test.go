@@ -98,6 +98,39 @@ func TestConfigHandler_UpdateConfig(t *testing.T) {
 	})
 }
 
+func TestConfigHandler_OverlayRoundTrip(t *testing.T) {
+	loadTestConfig(t)
+	handler := NewConfigHandler(nil)
+
+	// GET must expose overlay settings (no secrets in this section).
+	req := httptest.NewRequest(http.MethodGet, "/api/config", nil)
+	rec := httptest.NewRecorder()
+	handler.GetConfig(rec, req)
+	require.Equal(t, http.StatusOK, rec.Code)
+
+	var body map[string]interface{}
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
+	overlay, ok := body["overlay"].(map[string]interface{})
+	require.True(t, ok, "overlay section must be present in the sanitized config")
+	assert.Equal(t, false, overlay["enabled"])
+	assert.Equal(t, "in {days} days", overlay["text_template"])
+
+	// PUT must persist overlay updates.
+	update := `{"overlay":{"enabled":true,"interval_hours":6,"text_template":"Leaving in {days} days"}}`
+	req = httptest.NewRequest(http.MethodPut, "/api/config", strings.NewReader(update))
+	req.Header.Set("Content-Type", "application/json")
+	rec = httptest.NewRecorder()
+
+	handler.UpdateConfig(rec, req)
+	require.Equal(t, http.StatusOK, rec.Code)
+
+	cfg := config.Get()
+	require.NotNil(t, cfg)
+	assert.True(t, cfg.Overlay.Enabled, "overlay.enabled must be persisted after reload")
+	assert.Equal(t, 6, cfg.Overlay.IntervalHours)
+	assert.Equal(t, "Leaving in {days} days", cfg.Overlay.TextTemplate)
+}
+
 func TestConfigHandler_UpdateConfig_ConfigNil(t *testing.T) {
 	config.SetTestConfig(nil)
 	handler := NewConfigHandler(nil)

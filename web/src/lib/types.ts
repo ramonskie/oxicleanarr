@@ -118,6 +118,7 @@ export interface Config {
   rules: RulesConfig;
   server: ServerConfig;
   integrations: IntegrationsConfig;
+  overlay: OverlayConfig;
   advanced_rules: AdvancedRule[];
 }
 
@@ -154,6 +155,19 @@ export interface SyncConfig {
   full_interval: number;
   incremental_interval: number;
   auto_start: boolean;
+}
+
+// OverlayConfig holds the deletion-overlay (poster banner) settings.
+export interface OverlayConfig {
+  enabled: boolean;
+  interval_hours: number;
+  text_template: string;
+  font_size_percent: number;
+  font_color: string;
+  background_color: string;
+  padding_percent: number;
+  corner_radius_percent: number;
+  font_path?: string;
 }
 
 export interface RulesConfig {
@@ -228,6 +242,7 @@ export interface UpdateConfigRequest {
     jellystat?: Partial<BaseIntegration & { api_key?: string }>;
     streamystats?: Partial<StreamystatsIntegration & { api_key?: string }>;
   }>;
+  overlay?: Partial<OverlayConfig>;
   advanced_rules?: AdvancedRule[];
 }
 

@@ -181,6 +181,7 @@ export default function ConfigurationPage() {
           ...(apiKeys.streamystats ? { api_key: apiKeys.streamystats } : {}),
         },
       },
+      overlay: formData.overlay,
     };
     
     updateConfigMutation.mutate(updateReq);
@@ -652,6 +653,153 @@ export default function ConfigurationPage() {
                   </p>
                 </div>
               )}
+            </CardContent>
+          </Card>
+
+          {/* Deletion Overlay (poster banner) */}
+          <Card>
+            <CardHeader>
+              <CardTitle>Deletion Overlay</CardTitle>
+              <CardDescription>
+                Draw a "X days until deletion" banner onto the Jellyfin poster of every scheduled-deletion
+                item (Maintainerr-style). Originals are backed up and restored when an item leaves the
+                schedule.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="grid gap-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <label className="text-sm font-medium">Enable Deletion Overlay</label>
+                    <p className="text-sm text-gray-500">
+                      Draw banners on scheduled-deletion item posters. Turning this on starts the daily
+                      scheduled pass on the next application restart; a manual pass can be triggered
+                      immediately via POST /api/overlay/run. Banners already applied stay until the
+                      item leaves the schedule or you restore originals via POST /api/overlay/reset.
+                    </p>
+                  </div>
+                  <input
+                    type="checkbox"
+                    checked={formData.overlay?.enabled || false}
+                    onChange={(e) => handleInputChange('overlay', 'enabled', e.target.checked)}
+                    className="h-4 w-4"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-sm font-medium">Interval (hours)</label>
+                  <p className="text-sm text-gray-500 mb-2">
+                    How often the banner pass runs (also re-renders banners when the day count changes)
+                  </p>
+                  <Input
+                    type="number"
+                    value={formData.overlay?.interval_hours || 24}
+                    onChange={(e) => handleInputChange('overlay', 'interval_hours', parseInt(e.target.value))}
+                    min="1"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-sm font-medium">Text Template</label>
+                  <p className="text-sm text-gray-500 mb-2">
+                    Banner text for 2+ days; {"{days}"} is replaced with the number. Day 0 renders
+                    "today" and day 1 "in 1 day".
+                  </p>
+                  <Input
+                    type="text"
+                    value={formData.overlay?.text_template || 'in {days} days'}
+                    onChange={(e) => handleInputChange('overlay', 'text_template', e.target.value)}
+                    placeholder="in {days} days"
+                  />
+                </div>
+
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <div>
+                    <label className="text-sm font-medium">Font Size (%)</label>
+                    <p className="text-sm text-gray-500 mb-2">
+                      Font size as a percentage of the poster's short side (2–10)
+                    </p>
+                    <Input
+                      type="number"
+                      value={formData.overlay?.font_size_percent || 5}
+                      onChange={(e) => handleInputChange('overlay', 'font_size_percent', parseFloat(e.target.value))}
+                      min="2"
+                      max="10"
+                      step="0.5"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="text-sm font-medium">Padding (%)</label>
+                    <p className="text-sm text-gray-500 mb-2">
+                      Pill padding as a percentage of the short side
+                    </p>
+                    <Input
+                      type="number"
+                      value={formData.overlay?.padding_percent || 2}
+                      onChange={(e) => handleInputChange('overlay', 'padding_percent', parseFloat(e.target.value))}
+                      min="0"
+                      step="0.5"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="text-sm font-medium">Corner Radius (%)</label>
+                    <p className="text-sm text-gray-500 mb-2">
+                      Pill corner radius as a percentage of the short side (50 = pill)
+                    </p>
+                    <Input
+                      type="number"
+                      value={formData.overlay?.corner_radius_percent || 50}
+                      onChange={(e) => handleInputChange('overlay', 'corner_radius_percent', parseFloat(e.target.value))}
+                      min="0"
+                      max="50"
+                      step="5"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <div>
+                    <label className="text-sm font-medium">Font Color</label>
+                    <p className="text-sm text-gray-500 mb-2">
+                      e.g. #ffffff or rgba(255,255,255,0.9)
+                    </p>
+                    <Input
+                      type="text"
+                      value={formData.overlay?.font_color || '#ffffff'}
+                      onChange={(e) => handleInputChange('overlay', 'font_color', e.target.value)}
+                      placeholder="#ffffff"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="text-sm font-medium">Background Color</label>
+                    <p className="text-sm text-gray-500 mb-2">
+                      Pill background; "transparent" or "none" draws no pill
+                    </p>
+                    <Input
+                      type="text"
+                      value={formData.overlay?.background_color || 'rgba(0,0,0,0.75)'}
+                      onChange={(e) => handleInputChange('overlay', 'background_color', e.target.value)}
+                      placeholder="rgba(0,0,0,0.75)"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="text-sm font-medium">Custom Font Path (optional)</label>
+                  <p className="text-sm text-gray-500 mb-2">
+                    Path to a TTF/OTF font file on the server. Empty uses the bundled font.
+                  </p>
+                  <Input
+                    type="text"
+                    value={formData.overlay?.font_path || ''}
+                    onChange={(e) => handleInputChange('overlay', 'font_path', e.target.value || undefined)}
+                    placeholder="/app/data/overlays/fonts/Inter.ttf"
+                  />
+                </div>
+              </div>
             </CardContent>
           </Card>
           </div>

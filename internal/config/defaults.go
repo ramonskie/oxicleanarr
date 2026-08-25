@@ -13,6 +13,16 @@ func DefaultConfig() *Config {
 			IncrementalInterval: 15, // 15 minutes
 			AutoStart:           true,
 		},
+		Overlay: OverlayConfig{
+			Enabled:             false,
+			IntervalHours:       24,
+			TextTemplate:        "in {days} days",
+			FontSizePercent:     5,
+			FontColor:           "#ffffff",
+			BackgroundColor:     "rgba(0,0,0,0.75)",
+			PaddingPercent:      2,
+			CornerRadiusPercent: 50,
+		},
 		Rules: RulesConfig{
 			MovieRetention: "90d",
 			TVRetention:    "120d",
@@ -39,6 +49,29 @@ func SetDefaults(cfg *Config) {
 	}
 	if cfg.Sync.IncrementalInterval == 0 {
 		cfg.Sync.IncrementalInterval = defaults.Sync.IncrementalInterval
+	}
+
+	// Overlay defaults
+	if cfg.Overlay.IntervalHours == 0 {
+		cfg.Overlay.IntervalHours = defaults.Overlay.IntervalHours
+	}
+	if cfg.Overlay.TextTemplate == "" {
+		cfg.Overlay.TextTemplate = defaults.Overlay.TextTemplate
+	}
+	if cfg.Overlay.FontSizePercent == 0 {
+		cfg.Overlay.FontSizePercent = defaults.Overlay.FontSizePercent
+	}
+	if cfg.Overlay.FontColor == "" {
+		cfg.Overlay.FontColor = defaults.Overlay.FontColor
+	}
+	if cfg.Overlay.BackgroundColor == "" {
+		cfg.Overlay.BackgroundColor = defaults.Overlay.BackgroundColor
+	}
+	if cfg.Overlay.PaddingPercent == 0 {
+		cfg.Overlay.PaddingPercent = defaults.Overlay.PaddingPercent
+	}
+	if cfg.Overlay.CornerRadiusPercent == 0 {
+		cfg.Overlay.CornerRadiusPercent = defaults.Overlay.CornerRadiusPercent
 	}
 
 	// Rules defaults
