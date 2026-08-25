@@ -95,11 +95,60 @@ jobs:
         with:
           fetch-depth: 0
 
+      # This repo commits directly (no PRs), so GitHub's PR-based auto-generated
+      # notes come out empty. Build notes from the conventional-commit log
+      # between the previous version tag and this one instead.
+      - name: Generate release notes from commits
+        run: |
+          TAG="${{ github.ref_name }}"
+          PREV=$(git tag --sort=-v:refname | sed -n '2p')
+          if [ -n "$PREV" ]; then
+            RANGE="${PREV}..${TAG}"
+            COMPARE="${PREV}...${TAG}"
+          else
+            RANGE="${TAG}"
+            COMPARE="${TAG}"
+          fi
+
+          {
+            echo "## What's Changed"
+            echo ""
+            git log --no-merges --pretty=format:'%s' "$RANGE" | awk '
+              function esc(s) { gsub(/_/, "\\_", s); return s }
+              /^feat/     { f = f "  - " esc($0) "\n"; next }
+              /^fix/      { x = x "  - " esc($0) "\n"; next }
+              /^perf/     { p = p "  - " esc($0) "\n"; next }
+              /^docs/     { d = d "  - " esc($0) "\n"; next }
+              /^refactor/ { r = r "  - " esc($0) "\n"; next }
+              /^test/     { t = t "  - " esc($0) "\n"; next }
+              /^ci/       { c = c "  - " esc($0) "\n"; next }
+              { o = o "  - " esc($0) "\n" }
+              END {
+                if (f) print "### Features\n" f
+                if (x) print "### Bug Fixes\n" x
+                if (p) print "### Performance\n" p
+                if (d) print "### Documentation\n" d
+                if (r) print "### Refactors\n" r
+                if (t) print "### Tests\n" t
+                if (c) print "### CI\n" c
+                if (o) print "### Other\n" o
+              }'
+            echo ""
+            echo "## Container Images"
+            echo ""
+            echo '```'
+            echo "docker pull ghcr.io/${{ github.repository }}:${TAG}"
+            echo "docker pull ghcr.io/${{ github.repository }}:latest"
+            echo '```'
+            echo ""
+            echo "**Full Changelog**: https://github.com/${{ github.repository }}/compare/${COMPARE}"
+          } > release_body.md
+
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.ref_name }}
           name: ${{ github.ref_name }}
-          generate_release_notes: true
+          body_path: release_body.md
           draft: false
           prerelease: false
