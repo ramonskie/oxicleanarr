@@ -73,9 +73,27 @@ func RenderBanner(poster []byte, style BannerStyle) ([]byte, error) {
 	dc := gg.NewContextForImage(src)
 	dc.SetFontFace(face)
 
+	// Measure the TIGHT glyph bounds, not the font's line height: the pill
+	// should hug the text, with padding adding the space around it. Line
+	// height (ascent+descent) is ~1.4x the em and makes the pill look half
+	// empty above and below the text.
+	measure := func() (float64, float64) {
+		bounds, _ := font.BoundString(face, style.Text)
+		tw := float64(bounds.Max.X-bounds.Min.X) / 64.0
+		th := float64(bounds.Max.Y-bounds.Min.Y) / 64.0
+		if tw <= 0 {
+			tw = fontSize
+		}
+		if th <= 0 {
+			th = fontSize
+		}
+		return tw, th
+	}
+
+	textW, textH := measure()
+
 	// Shrink-to-fit so the banner never exceeds the poster width budget.
 	for {
-		textW, _ := dc.MeasureString(style.Text)
 		if textW <= float64(w)*widthBudget || fontSize <= minSize {
 			break
 		}
@@ -85,9 +103,8 @@ func RenderBanner(poster []byte, style BannerStyle) ([]byte, error) {
 			return nil, fmt.Errorf("load font: %w", err)
 		}
 		dc.SetFontFace(face)
+		textW, textH = measure()
 	}
-
-	textW, textH := dc.MeasureString(style.Text)
 
 	pad := short * clamp(style.PaddingPercent, 0, 10) / 100
 	pillW := textW + 2*pad
@@ -109,7 +126,12 @@ func RenderBanner(poster []byte, style BannerStyle) ([]byte, error) {
 		fg = c
 	}
 	dc.SetColor(fg)
-	dc.DrawStringAnchored(style.Text, x+pillW/2, y+pillH/2, 0.5, 0.5)
+
+	// Draw the text with the baseline placed so the tight glyph box (not the
+	// line-height metrics) is vertically centered inside the pill.
+	gb, _ := font.BoundString(face, style.Text)
+	baselineY := y + pad + textH/2 - float64(gb.Min.Y+gb.Max.Y)/128.0
+	dc.DrawString(style.Text, x+pad, baselineY)
 
 	var buf bytes.Buffer
 	if err := jpeg.Encode(&buf, dc.Image(), &jpeg.Options{Quality: 92}); err != nil {
