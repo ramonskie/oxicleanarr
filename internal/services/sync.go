@@ -989,6 +989,12 @@ func (e *SyncEngine) applyRetentionRules(ctx context.Context) {
 func (e *SyncEngine) ReapplyRetentionRules() {
 	log.Info().Msg("Reapplying retention rules after config change")
 	e.applyRetentionRules(context.Background())
+	// Manual leaving-soon overrides must be re-applied AFTER the retention
+	// rules: applyRetentionRules overwrites DeleteAfter for every item, which
+	// would otherwise wipe the fixed dates of manually-flagged items until the
+	// next full sync. Mirrors the FullSync ordering (applyRetentionRules then
+	// applyManualLeavingSoon).
+	e.applyManualLeavingSoon()
 	log.Info().Msg("Retention rules reapplied successfully")
 }
 
