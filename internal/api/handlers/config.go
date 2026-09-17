@@ -199,7 +199,7 @@ type UpdateStreamystatsConfig struct {
 }
 
 // UpdateJellyfinConfig holds updatable Jellyfin config.
-// Jellyfin is authenticated with an API key (X-Emby-Token); there are no
+// Jellyfin is authenticated with an API key (Authorization: MediaBrowser Token="..."); there are no
 // username/password fields on JellyfinConfig, so none are accepted here.
 type UpdateJellyfinConfig struct {
 	Enabled *bool   `json:"enabled,omitempty"`

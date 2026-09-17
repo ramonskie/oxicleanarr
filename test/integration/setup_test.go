@@ -307,7 +307,7 @@ func testInfrastructureSetup(t *testing.T) {
 		for time.Now().Before(pluginDeadline) {
 			req, err := http.NewRequest(http.MethodGet, jellyfinURL+"/api/leaving-soon/status", nil)
 			if err == nil {
-				req.Header.Set("X-Emby-Token", jellyfinAPIKey)
+				setJellyfinToken(req, jellyfinAPIKey)
 				resp, reqErr := http.DefaultClient.Do(req)
 				if reqErr == nil {
 					resp.Body.Close()

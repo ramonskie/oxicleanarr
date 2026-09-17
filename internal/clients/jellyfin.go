@@ -45,6 +45,15 @@ func NewJellyfinClient(cfg config.JellyfinConfig) *JellyfinClient {
 	}
 }
 
+// setAuth applies Jellyfin's supported authentication scheme to a request.
+// The MediaBrowser Authorization header is the only form honored across
+// Jellyfin 10.9–12.x. Legacy headers (X-Emby-Token, X-MediaBrowser-Token,
+// X-Emby-Authorization) are ignored once EnableLegacyAuthorization is off,
+// which is the default in Jellyfin 12, and surface as HTTP 401.
+func (c *JellyfinClient) setAuth(req *http.Request) {
+	req.Header.Set("Authorization", `MediaBrowser Token="`+c.apiKey+`"`)
+}
+
 // GetMovies fetches all movies from Jellyfin
 func (c *JellyfinClient) GetMovies(ctx context.Context) ([]JellyfinItem, error) {
 	return c.getItems(ctx, "Movie")
@@ -65,7 +74,7 @@ func (c *JellyfinClient) getItems(ctx context.Context, itemType string) ([]Jelly
 		return nil, fmt.Errorf("creating request: %w", err)
 	}
 
-	req.Header.Set("X-Emby-Token", c.apiKey)
+	c.setAuth(req)
 	req.Header.Set("Accept", "application/json")
 
 	resp, err := c.client.Do(req)
@@ -101,7 +110,7 @@ func (c *JellyfinClient) GetUserData(ctx context.Context, userID, itemID string)
 		return nil, fmt.Errorf("creating request: %w", err)
 	}
 
-	req.Header.Set("X-Emby-Token", c.apiKey)
+	c.setAuth(req)
 	req.Header.Set("Accept", "application/json")
 
 	resp, err := c.client.Do(req)
@@ -131,7 +140,7 @@ func (c *JellyfinClient) DeleteItem(ctx context.Context, itemID string) error {
 		return fmt.Errorf("creating request: %w", err)
 	}
 
-	req.Header.Set("X-Emby-Token", c.apiKey)
+	c.setAuth(req)
 
 	resp, err := c.client.Do(req)
 	if err != nil {
@@ -156,7 +165,7 @@ func (c *JellyfinClient) Ping(ctx context.Context) error {
 		return fmt.Errorf("creating request: %w", err)
 	}
 
-	req.Header.Set("X-Emby-Token", c.apiKey)
+	c.setAuth(req)
 
 	resp, err := c.client.Do(req)
 	if err != nil {
@@ -187,7 +196,7 @@ func (c *JellyfinClient) RefreshLibrary(ctx context.Context, dryRun bool) error 
 		return fmt.Errorf("creating request: %w", err)
 	}
 
-	req.Header.Set("X-Emby-Token", c.apiKey)
+	c.setAuth(req)
 
 	log.Debug().Msg("Triggering library refresh in Jellyfin")
 
@@ -230,7 +239,7 @@ func (c *JellyfinClient) ProxyImage(ctx context.Context, itemID, imageType strin
 		return nil, "", fmt.Errorf("creating image request: %w", err)
 	}
 
-	req.Header.Set("X-Emby-Token", c.apiKey)
+	c.setAuth(req)
 
 	resp, err := c.client.Do(req)
 	if err != nil {
@@ -272,7 +281,7 @@ func (c *JellyfinClient) GetItemImage(ctx context.Context, itemID, imageType str
 		return nil, "", fmt.Errorf("creating image request: %w", err)
 	}
 
-	req.Header.Set("X-Emby-Token", c.apiKey)
+	c.setAuth(req)
 
 	resp, err := c.client.Do(req)
 	if err != nil {
@@ -320,7 +329,7 @@ func (c *JellyfinClient) SetItemImage(ctx context.Context, itemID, imageType str
 		return fmt.Errorf("creating image request: %w", err)
 	}
 
-	req.Header.Set("X-Emby-Token", c.apiKey)
+	c.setAuth(req)
 	req.Header.Set("Content-Type", contentType)
 
 	resp, err := c.client.Do(req)

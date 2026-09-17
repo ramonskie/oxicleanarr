@@ -51,7 +51,7 @@ func testLeavingSoonLifecycle(t *testing.T) {
 		if err != nil {
 			return false
 		}
-		req.Header.Set("X-Emby-Token", jellyfinAPIKey)
+		setJellyfinToken(req, jellyfinAPIKey)
 		resp, err := http.DefaultClient.Do(req)
 		if err != nil {
 			return false
@@ -214,7 +214,7 @@ func TriggerLeavingSoonPluginSync(t *testing.T, jellyfinAPIKey string) {
 	t.Helper()
 	req, err := http.NewRequest(http.MethodPost, JellyfinURL+"/api/leaving-soon/sync", nil)
 	require.NoError(t, err, "Failed to create plugin sync request")
-	req.Header.Set("X-Emby-Token", jellyfinAPIKey)
+	setJellyfinToken(req, jellyfinAPIKey)
 
 	resp, err := http.DefaultClient.Do(req)
 	require.NoError(t, err, "Failed to trigger plugin sync")

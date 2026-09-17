@@ -215,7 +215,7 @@ func (js *JellyfinSetup) Authenticate() (string, string, error) {
 	}
 
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("X-Emby-Authorization", `MediaBrowser Client="OxiCleanarr-Setup", Device="IntegrationTest", DeviceId="setup-test", Version="1.0.0"`)
+	req.Header.Set("Authorization", `MediaBrowser Client="OxiCleanarr-Setup", Device="IntegrationTest", DeviceId="setup-test", Version="1.0.0"`)
 
 	resp, err := js.client.Do(req)
 	if err != nil {
@@ -256,7 +256,7 @@ func (js *JellyfinSetup) CreateAPIKey(accessToken string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	req.Header.Set("X-Emby-Token", accessToken)
+	setJellyfinToken(req, accessToken)
 
 	resp, err := js.client.Do(req)
 	if err != nil {
@@ -287,7 +287,7 @@ func (js *JellyfinSetup) CreateAPIKey(accessToken string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	req.Header.Set("X-Emby-Token", accessToken)
+	setJellyfinToken(req, accessToken)
 
 	resp, err = js.client.Do(req)
 	if err != nil {
@@ -303,7 +303,7 @@ func (js *JellyfinSetup) CreateAPIKey(accessToken string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	req.Header.Set("X-Emby-Token", accessToken)
+	setJellyfinToken(req, accessToken)
 
 	resp, err = js.client.Do(req)
 	if err != nil {
@@ -367,7 +367,7 @@ func (js *JellyfinSetup) AddMediaLibrary(accessToken, name, path, contentType st
 	}
 
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("X-Emby-Token", accessToken)
+	setJellyfinToken(req, accessToken)
 
 	resp, err := js.client.Do(req)
 	if err != nil {
@@ -480,7 +480,7 @@ func EnsureJellyfinLibrary(t *testing.T, jellyfinURL, apiKey, name, path, conten
 	if err != nil {
 		return err
 	}
-	req.Header.Set("X-MediaBrowser-Token", apiKey)
+	setJellyfinToken(req, apiKey)
 
 	resp, err := client.Do(req)
 	if err != nil {
@@ -750,7 +750,7 @@ func ConfigureLeavingSoonPlugin(t *testing.T, apiKey string) error {
 	if err != nil {
 		return fmt.Errorf("failed to create plugin config request: %w", err)
 	}
-	req.Header.Set("X-Emby-Token", apiKey)
+	setJellyfinToken(req, apiKey)
 	req.Header.Set("Content-Type", "application/json")
 
 	resp, err := http.DefaultClient.Do(req)
@@ -778,7 +778,7 @@ func WaitForLeavingSoonProviderCount(t *testing.T, apiKey string, maxWait time.D
 		if err != nil {
 			return err
 		}
-		req.Header.Set("X-Emby-Token", apiKey)
+		setJellyfinToken(req, apiKey)
 		resp, err := http.DefaultClient.Do(req)
 		if err == nil {
 			var status struct {

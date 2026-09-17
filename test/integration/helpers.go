@@ -33,6 +33,14 @@ const (
 	PollInterval = 1 * time.Second
 )
 
+// setJellyfinToken authenticates a direct Jellyfin API request. The MediaBrowser
+// Authorization header is the only form honored across Jellyfin 10.9–12.x;
+// legacy headers (X-Emby-Token, X-MediaBrowser-Token) are ignored when
+// EnableLegacyAuthorization is off, which is the default in Jellyfin 12.
+func setJellyfinToken(req *http.Request, token string) {
+	req.Header.Set("Authorization", `MediaBrowser Token="`+token+`"`)
+}
+
 // TestClient wraps HTTP operations for integration tests
 type TestClient struct {
 	baseURL string
@@ -159,8 +167,8 @@ func (tc *TestClient) TriggerSync() {
 			require.NoError(tc.t, err)
 
 			var status struct {
-				Running     bool `json:"running"`
-				InProgress  bool `json:"in_progress"`
+				Running    bool `json:"running"`
+				InProgress bool `json:"in_progress"`
 			}
 			err = json.NewDecoder(resp.Body).Decode(&status)
 			resp.Body.Close()
@@ -710,7 +718,7 @@ func CheckJellyfinLibrary(t *testing.T, apiKey string, libraryName string, expec
 	req, err := http.NewRequest(http.MethodGet, JellyfinURL+"/Library/VirtualFolders", nil)
 	require.NoError(t, err)
 
-	req.Header.Set("X-MediaBrowser-Token", apiKey)
+	setJellyfinToken(req, apiKey)
 
 	resp, err := client.Do(req)
 	require.NoError(t, err)
@@ -744,7 +752,7 @@ func CheckJellyfinLibrary(t *testing.T, apiKey string, libraryName string, expec
 		if libraryID != "" {
 			req, err := http.NewRequest(http.MethodGet, fmt.Sprintf("%s/Items?ParentId=%s&Recursive=true", JellyfinURL, libraryID), nil)
 			require.NoError(t, err)
-			req.Header.Set("X-MediaBrowser-Token", apiKey)
+			setJellyfinToken(req, apiKey)
 
 			resp, err := client.Do(req)
 			if err == nil && resp.StatusCode == http.StatusOK {
@@ -884,7 +892,7 @@ func TriggerJellyfinLibraryScan(t *testing.T, jellyfinURL, apiKey, libraryID str
 		return fmt.Errorf("failed to create scan request: %w", err)
 	}
 
-	req.Header.Set("X-MediaBrowser-Token", apiKey)
+	setJellyfinToken(req, apiKey)
 
 	resp, err := client.Do(req)
 	if err != nil {
@@ -920,7 +928,7 @@ func GetJellyfinLibraryID(t *testing.T, jellyfinURL, apiKey, libraryName string)
 			return "", err
 		}
 
-		req.Header.Set("X-MediaBrowser-Token", apiKey)
+		setJellyfinToken(req, apiKey)
 
 		resp, err := client.Do(req)
 		if err != nil {
@@ -974,7 +982,7 @@ func WaitForJellyfinMovies(t *testing.T, jellyfinURL, apiKey string, expectedCou
 			continue
 		}
 
-		req.Header.Set("X-MediaBrowser-Token", apiKey)
+		setJellyfinToken(req, apiKey)
 
 		resp, err := client.Do(req)
 		if err != nil {
@@ -1026,7 +1034,7 @@ func WaitForJellyfinShows(t *testing.T, jellyfinURL, apiKey string, expectedCoun
 			time.Sleep(retryDelay)
 			continue
 		}
-		req.Header.Set("X-MediaBrowser-Token", apiKey)
+		setJellyfinToken(req, apiKey)
 
 		resp, err := client.Do(req)
 		if err != nil {
@@ -1097,7 +1105,7 @@ func GetJellyfinMovieCount(t *testing.T, jellyfinURL, apiKey, libraryID string) 
 		return 0, fmt.Errorf("failed to create request: %w", err)
 	}
 
-	req.Header.Set("X-MediaBrowser-Token", apiKey)
+	setJellyfinToken(req, apiKey)
 
 	resp, err := client.Do(req)
 	if err != nil {
@@ -1129,7 +1137,7 @@ func GetJellyfinUserID(t *testing.T, jellyfinURL, apiKey string) (string, error)
 		return "", fmt.Errorf("failed to create request: %w", err)
 	}
 
-	req.Header.Set("X-MediaBrowser-Token", apiKey)
+	setJellyfinToken(req, apiKey)
 
 	resp, err := client.Do(req)
 	if err != nil {
@@ -1186,7 +1194,7 @@ func CheckJellyfinUserViews(t *testing.T, jellyfinURL, apiKey, libraryName strin
 		req, err := http.NewRequest(http.MethodGet, url, nil)
 		require.NoError(t, err)
 
-		req.Header.Set("X-MediaBrowser-Token", apiKey)
+		setJellyfinToken(req, apiKey)
 
 		resp, err := client.Do(req)
 		require.NoError(t, err)

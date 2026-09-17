@@ -2,6 +2,8 @@ package clients
 
 import (
 	"context"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"testing"
 	"time"
@@ -319,4 +321,65 @@ func TestJellyfinClient_Unit(t *testing.T) {
 
 		assert.Equal(t, 45*time.Second, client.client.Timeout, "Should use custom timeout")
 	})
+}
+
+// TestJellyfinClientAuthHeader verifies every Jellyfin request authenticates
+// with the MediaBrowser Authorization scheme. Jellyfin 12.x ignores the legacy
+// X-Emby-Token/X-MediaBrowser-Token headers when EnableLegacyAuthorization is
+// off (the 12.x default), which surfaces as HTTP 401.
+func TestJellyfinClientAuthHeader(t *testing.T) {
+	const apiKey = "test-api-key-123"
+
+	type receivedHeaders struct {
+		auth      string
+		xEmby     string
+		xMediaBro string
+	}
+
+	var got receivedHeaders
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		got = receivedHeaders{
+			auth:      r.Header.Get("Authorization"),
+			xEmby:     r.Header.Get("X-Emby-Token"),
+			xMediaBro: r.Header.Get("X-MediaBrowser-Token"),
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"Items":[]}`))
+	}))
+	defer srv.Close()
+
+	client := NewJellyfinClient(config.JellyfinConfig{
+		BaseIntegrationConfig: config.BaseIntegrationConfig{
+			URL:    srv.URL,
+			APIKey: apiKey,
+		},
+	})
+	ctx := context.Background()
+
+	calls := []struct {
+		name string
+		call func() error
+	}{
+		{"Ping", func() error { return client.Ping(ctx) }},
+		{"GetMovies", func() error { _, err := client.GetMovies(ctx); return err }},
+		{"GetTVShows", func() error { _, err := client.GetTVShows(ctx); return err }},
+		{"GetUserData", func() error { _, err := client.GetUserData(ctx, "user-1", "item-1"); return err }},
+		{"DeleteItem", func() error { return client.DeleteItem(ctx, "item-1") }},
+		{"RefreshLibrary", func() error { return client.RefreshLibrary(ctx, false) }},
+	}
+
+	for _, tc := range calls {
+		t.Run(tc.name, func(t *testing.T) {
+			// Reset captured headers so each subtest proves its own request.
+			got = receivedHeaders{}
+
+			require.NoError(t, tc.call())
+
+			assert.Equal(t, `MediaBrowser Token="`+apiKey+`"`, got.auth)
+			assert.Empty(t, got.xEmby, "must not send legacy X-Emby-Token")
+			assert.Empty(t, got.xMediaBro, "must not send legacy X-MediaBrowser-Token")
+		})
+	}
 }
