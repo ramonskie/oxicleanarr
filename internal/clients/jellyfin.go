@@ -64,9 +64,14 @@ func (c *JellyfinClient) GetTVShows(ctx context.Context) ([]JellyfinItem, error)
 	return c.getItems(ctx, "Series")
 }
 
-// getItems fetches items of a specific type
+// getItems fetches items of a specific type.
+//
+// CollapseBoxSetItems=false is required: Jellyfin defaults this to true for
+// movie queries when unset, which hides every movie that belongs to a
+// collection/box set. Those items then fail to match and are reported as
+// unmatched (observed on the live Jellyfin 12.1.0 server: 314 vs 372 movies).
 func (c *JellyfinClient) getItems(ctx context.Context, itemType string) ([]JellyfinItem, error) {
-	url := fmt.Sprintf("%s/Items?IncludeItemTypes=%s&Recursive=true&Fields=Path,DateCreated,ProviderIds",
+	url := fmt.Sprintf("%s/Items?IncludeItemTypes=%s&Recursive=true&CollapseBoxSetItems=false&Fields=Path,DateCreated,ProviderIds",
 		c.baseURL, itemType)
 
 	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)

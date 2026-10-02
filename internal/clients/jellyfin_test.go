@@ -4,7 +4,9 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -381,5 +383,53 @@ func TestJellyfinClientAuthHeader(t *testing.T) {
 			assert.Empty(t, got.xEmby, "must not send legacy X-Emby-Token")
 			assert.Empty(t, got.xMediaBro, "must not send legacy X-MediaBrowser-Token")
 		})
+	}
+}
+
+// TestJellyfinClientGetItemsNoBoxSetCollapse verifies GetMovies/GetTVShows
+// request the library with CollapseBoxSetItems=false. Jellyfin defaults this to
+// true for movie queries when unset, hiding every movie that belongs to a
+// collection/box set; those items then fail to match and show as unmatched.
+// The test also pins the rest of the query shape so a dropped field is caught.
+func TestJellyfinClientGetItemsNoBoxSetCollapse(t *testing.T) {
+	type request struct {
+		path  string
+		query url.Values
+	}
+	var requests []request
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests = append(requests, request{path: r.URL.Path, query: r.URL.Query()})
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"Items":[]}`))
+	}))
+	defer srv.Close()
+
+	client := NewJellyfinClient(config.JellyfinConfig{
+		BaseIntegrationConfig: config.BaseIntegrationConfig{
+			URL:    srv.URL,
+			APIKey: "test-api-key",
+		},
+	})
+	ctx := context.Background()
+
+	_, err := client.GetMovies(ctx)
+	require.NoError(t, err)
+	_, err = client.GetTVShows(ctx)
+	require.NoError(t, err)
+
+	require.Len(t, requests, 2, "expected one request per media type")
+	assert.Equal(t, "/Items", requests[0].path)
+	assert.Equal(t, "/Items", requests[1].path)
+
+	wantTypes := []string{"Movie", "Series"}
+	for i, req := range requests {
+		assert.Equal(t, wantTypes[i], req.query.Get("IncludeItemTypes"))
+		assert.Equal(t, "true", req.query.Get("Recursive"))
+		assert.Equal(t, "false", req.query.Get("CollapseBoxSetItems"),
+			"library query must not collapse box-set members: %s", req.query.Encode())
+		assert.ElementsMatch(t, []string{"Path", "DateCreated", "ProviderIds"},
+			strings.Split(req.query.Get("Fields"), ","))
 	}
 }
