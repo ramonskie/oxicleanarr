@@ -93,6 +93,7 @@ type IntegrationsConfig struct {
 	Jellyseerr   JellyseerrConfig   `mapstructure:"jellyseerr" yaml:"jellyseerr" json:"jellyseerr"`
 	Jellystat    JellystatConfig    `mapstructure:"jellystat" yaml:"jellystat" json:"jellystat"`
 	Streamystats StreamystatsConfig `mapstructure:"streamystats" yaml:"streamystats" json:"streamystats"`
+	Tracearr     TracearrConfig     `mapstructure:"tracearr" yaml:"tracearr" json:"tracearr"`
 }
 
 // BaseIntegrationConfig holds common integration settings
@@ -133,6 +134,14 @@ type JellystatConfig struct {
 // APIKey should be set to the Jellyfin API key — Streamystats validates it
 // live against the Jellyfin /System/Info endpoint.
 type StreamystatsConfig struct {
+	BaseIntegrationConfig `mapstructure:",squash" yaml:",inline" json:",inline"`
+	ServerID              string `mapstructure:"server_id" yaml:"server_id" json:"server_id"`
+}
+
+// TracearrConfig holds Tracearr integration settings.
+// ServerID is the Tracearr media-server UUID (required when enabled).
+// APIKey should be set to the Tracearr public API key (trr_pub_...).
+type TracearrConfig struct {
 	BaseIntegrationConfig `mapstructure:",squash" yaml:",inline" json:",inline"`
 	ServerID              string `mapstructure:"server_id" yaml:"server_id" json:"server_id"`
 }

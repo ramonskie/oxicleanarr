@@ -17,6 +17,7 @@ func TestSanitizePingErrorScrubsHosts(t *testing.T) {
 		{"dns lookup", errWith("dial tcp: lookup internal-jellyfin.lan on 127.0.0.11:53: no such host"), "host could not be resolved"},
 		{"timeout", errWith("Get \"http://10.0.0.5:8096/System/Info\": context deadline exceeded (Client.Timeout exceeded while awaiting headers)"), "request timed out"},
 		{"url embedded in client wrap", errWith("making request to http://jellyfin.internal:8096: dial tcp 10.0.0.5:8096: connect: connection refused"), "connection refused"},
+		{"tracearr client wrap", errWith("tracearr: making request to http://tracearr.internal:8265: dial tcp 10.0.0.9:8265: connect: connection refused"), "connection refused"},
 		{"bare hostname in dial error", errWith("dial tcp mynas.lan:7878: connect: network is unreachable"), "network is unreachable"},
 		{"single-label host in write error", errWith("write tcp jellyfin:8096->10.0.0.5:443: broken pipe"), "write tcp endpoint->endpoint: broken pipe"},
 		{"zone-qualified ipv6", errWith("write tcp [fe80::1%eth0]:8096->[fe80::2%eth0]:443: broken pipe"), "write tcp endpoint->endpoint: broken pipe"},

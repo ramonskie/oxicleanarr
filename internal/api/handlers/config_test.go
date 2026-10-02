@@ -47,6 +47,65 @@ func TestConfigHandler_GetConfig(t *testing.T) {
 	assert.Equal(t, true, jf["has_api_key"], "has_api_key should reflect a configured key")
 }
 
+func TestConfigHandler_GetConfig_TracearrMasking(t *testing.T) {
+	t.Run("masks api key and reports presence flags", func(t *testing.T) {
+		cfg := &config.Config{}
+		cfg.Integrations.Tracearr.Enabled = true
+		cfg.Integrations.Tracearr.URL = "http://tracearr:8265"
+		cfg.Integrations.Tracearr.APIKey = "trr_pub_supersecret"
+		cfg.Integrations.Tracearr.ServerID = "tracearr-server-uuid"
+		config.SetTestConfig(cfg)
+		defer config.SetTestConfig(nil)
+
+		handler := NewConfigHandler(nil)
+		req := httptest.NewRequest(http.MethodGet, "/api/config", nil)
+		rec := httptest.NewRecorder()
+		handler.GetConfig(rec, req)
+		require.Equal(t, http.StatusOK, rec.Code)
+
+		var body map[string]interface{}
+		require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
+
+		integrations, ok := body["integrations"].(map[string]interface{})
+		require.True(t, ok)
+		tracearr, ok := integrations["tracearr"].(map[string]interface{})
+		require.True(t, ok, "tracearr section must be present in the sanitized config")
+
+		// The raw key must never be returned, and the secret must not leak anywhere.
+		_, hasRawKey := tracearr["api_key"]
+		assert.False(t, hasRawKey, "raw tracearr api_key must be sanitized out")
+		assert.NotContains(t, rec.Body.String(), "trr_pub_supersecret", "tracearr api key must never appear in the response")
+
+		// Presence flags and the non-secret server_id are exposed.
+		assert.Equal(t, true, tracearr["has_api_key"])
+		assert.Equal(t, true, tracearr["has_server_id"])
+		assert.Equal(t, "tracearr-server-uuid", tracearr["server_id"])
+		assert.Equal(t, true, tracearr["enabled"])
+		assert.Equal(t, "http://tracearr:8265", tracearr["url"])
+	})
+
+	t.Run("reports absent flags when unconfigured", func(t *testing.T) {
+		config.SetTestConfig(&config.Config{})
+		defer config.SetTestConfig(nil)
+
+		handler := NewConfigHandler(nil)
+		req := httptest.NewRequest(http.MethodGet, "/api/config", nil)
+		rec := httptest.NewRecorder()
+		handler.GetConfig(rec, req)
+		require.Equal(t, http.StatusOK, rec.Code)
+
+		var body map[string]interface{}
+		require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
+
+		integrations, ok := body["integrations"].(map[string]interface{})
+		require.True(t, ok)
+		tracearr, ok := integrations["tracearr"].(map[string]interface{})
+		require.True(t, ok, "tracearr section must be present even when unconfigured")
+		assert.Equal(t, false, tracearr["has_api_key"])
+		assert.Equal(t, false, tracearr["has_server_id"])
+	})
+}
+
 func TestConfigHandler_GetConfig_ConfigNil(t *testing.T) {
 	config.SetTestConfig(nil)
 	handler := NewConfigHandler(nil)

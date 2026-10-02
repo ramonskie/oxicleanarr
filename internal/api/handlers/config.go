@@ -52,6 +52,7 @@ type SanitizedIntegrationsConfig struct {
 	Jellyseerr   SanitizedBaseIntegrationConfig `json:"jellyseerr"`
 	Jellystat    SanitizedBaseIntegrationConfig `json:"jellystat"`
 	Streamystats SanitizedStreamystatsConfig    `json:"streamystats"`
+	Tracearr     SanitizedTracearrConfig        `json:"tracearr"`
 }
 
 // SanitizedBaseIntegrationConfig holds sanitized base integration config
@@ -64,6 +65,16 @@ type SanitizedBaseIntegrationConfig struct {
 
 // SanitizedStreamystatsConfig holds sanitized Streamystats config (base + server_id)
 type SanitizedStreamystatsConfig struct {
+	Enabled     bool   `json:"enabled"`
+	URL         string `json:"url"`
+	HasAPIKey   bool   `json:"has_api_key"`
+	Timeout     string `json:"timeout"`
+	HasServerID bool   `json:"has_server_id"`
+	ServerID    string `json:"server_id"`
+}
+
+// SanitizedTracearrConfig holds sanitized Tracearr config (base + server_id)
+type SanitizedTracearrConfig struct {
 	Enabled     bool   `json:"enabled"`
 	URL         string `json:"url"`
 	HasAPIKey   bool   `json:"has_api_key"`
@@ -143,6 +154,14 @@ func (h *ConfigHandler) GetConfig(w http.ResponseWriter, r *http.Request) {
 				HasServerID: cfg.Integrations.Streamystats.ServerID != "",
 				ServerID:    cfg.Integrations.Streamystats.ServerID,
 			},
+			Tracearr: SanitizedTracearrConfig{
+				Enabled:     cfg.Integrations.Tracearr.Enabled,
+				URL:         cfg.Integrations.Tracearr.URL,
+				HasAPIKey:   cfg.Integrations.Tracearr.APIKey != "",
+				Timeout:     cfg.Integrations.Tracearr.Timeout,
+				HasServerID: cfg.Integrations.Tracearr.ServerID != "",
+				ServerID:    cfg.Integrations.Tracearr.ServerID,
+			},
 		},
 	}
 
@@ -179,6 +198,7 @@ type UpdateIntegrationsConfig struct {
 	Jellyseerr   *UpdateBaseIntegrationConfig `json:"jellyseerr,omitempty"`
 	Jellystat    *UpdateBaseIntegrationConfig `json:"jellystat,omitempty"`
 	Streamystats *UpdateStreamystatsConfig    `json:"streamystats,omitempty"`
+	Tracearr     *UpdateTracearrConfig        `json:"tracearr,omitempty"`
 }
 
 // UpdateBaseIntegrationConfig holds updatable base integration config
@@ -191,6 +211,15 @@ type UpdateBaseIntegrationConfig struct {
 
 // UpdateStreamystatsConfig holds updatable Streamystats config (base + server_id)
 type UpdateStreamystatsConfig struct {
+	Enabled  *bool   `json:"enabled,omitempty"`
+	URL      *string `json:"url,omitempty"`
+	APIKey   *string `json:"api_key,omitempty"`
+	Timeout  *string `json:"timeout,omitempty"`
+	ServerID *string `json:"server_id,omitempty"`
+}
+
+// UpdateTracearrConfig holds updatable Tracearr config (base + server_id)
+type UpdateTracearrConfig struct {
 	Enabled  *bool   `json:"enabled,omitempty"`
 	URL      *string `json:"url,omitempty"`
 	APIKey   *string `json:"api_key,omitempty"`
@@ -368,6 +397,24 @@ func (h *ConfigHandler) UpdateConfig(w http.ResponseWriter, r *http.Request) {
 			}
 			if req.Integrations.Streamystats.ServerID != nil {
 				newCfg.Integrations.Streamystats.ServerID = *req.Integrations.Streamystats.ServerID
+			}
+		}
+
+		if req.Integrations.Tracearr != nil {
+			if req.Integrations.Tracearr.Enabled != nil {
+				newCfg.Integrations.Tracearr.Enabled = *req.Integrations.Tracearr.Enabled
+			}
+			if req.Integrations.Tracearr.URL != nil {
+				newCfg.Integrations.Tracearr.URL = *req.Integrations.Tracearr.URL
+			}
+			if req.Integrations.Tracearr.APIKey != nil {
+				newCfg.Integrations.Tracearr.APIKey = *req.Integrations.Tracearr.APIKey
+			}
+			if req.Integrations.Tracearr.Timeout != nil {
+				newCfg.Integrations.Tracearr.Timeout = *req.Integrations.Tracearr.Timeout
+			}
+			if req.Integrations.Tracearr.ServerID != nil {
+				newCfg.Integrations.Tracearr.ServerID = *req.Integrations.Tracearr.ServerID
 			}
 		}
 	}

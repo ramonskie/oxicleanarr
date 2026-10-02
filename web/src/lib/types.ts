@@ -190,6 +190,7 @@ export interface IntegrationsConfig {
   jellyseerr: BaseIntegration;
   jellystat: BaseIntegration;
   streamystats: StreamystatsIntegration;
+  tracearr: TracearrIntegration;
 }
 
 export interface BaseIntegration {
@@ -202,6 +203,11 @@ export interface BaseIntegration {
 export interface JellyfinIntegration extends BaseIntegration {}
 
 export interface StreamystatsIntegration extends BaseIntegration {
+  has_server_id: boolean;
+  server_id: string;
+}
+
+export interface TracearrIntegration extends BaseIntegration {
   has_server_id: boolean;
   server_id: string;
 }
@@ -241,6 +247,7 @@ export interface UpdateConfigRequest {
     jellyseerr?: Partial<BaseIntegration & { api_key?: string }>;
     jellystat?: Partial<BaseIntegration & { api_key?: string }>;
     streamystats?: Partial<StreamystatsIntegration & { api_key?: string }>;
+    tracearr?: Partial<TracearrIntegration & { api_key?: string }>;
   }>;
   overlay?: Partial<OverlayConfig>;
   advanced_rules?: AdvancedRule[];

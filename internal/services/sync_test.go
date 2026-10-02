@@ -120,6 +120,96 @@ func TestNewSyncEngine(t *testing.T) {
 	})
 }
 
+// newStatsTestEngine builds a SyncEngine with the given integrations, mirroring
+// the manual construction used by the other tests in this file.
+func newStatsTestEngine(t *testing.T, integrations config.IntegrationsConfig) *SyncEngine {
+	t.Helper()
+
+	tmpDir := t.TempDir()
+
+	cfg := &config.Config{
+		Sync: config.SyncConfig{
+			FullInterval:        60,
+			IncrementalInterval: 5,
+		},
+		Rules: config.RulesConfig{
+			MovieRetention: "90d",
+			TVRetention:    "120d",
+		},
+		Integrations: integrations,
+	}
+	config.SetTestConfig(cfg)
+
+	cacheInstance := cache.New()
+	jobs, err := storage.NewJobsFile(tmpDir, 50)
+	require.NoError(t, err)
+
+	exclusions, err := storage.NewExclusionsFile(tmpDir)
+	require.NoError(t, err)
+
+	manualLS, err := storage.NewManualLeavingSoonFile(tmpDir)
+	require.NoError(t, err)
+
+	rulesEngine := rules.NewRulesEngine(exclusions, nil)
+
+	return NewSyncEngine(cfg, cacheInstance, jobs, exclusions, manualLS, rulesEngine)
+}
+
+func TestNewSyncEngine_StatsProviderSelection(t *testing.T) {
+	t.Run("selects Tracearr client when only Tracearr is enabled", func(t *testing.T) {
+		engine := newStatsTestEngine(t, config.IntegrationsConfig{
+			Tracearr: config.TracearrConfig{
+				BaseIntegrationConfig: config.BaseIntegrationConfig{
+					Enabled: true,
+					URL:     "http://localhost:8080",
+					APIKey:  "trr_pub_test",
+				},
+				ServerID: "tracearr-server-uuid",
+			},
+		})
+
+		require.NotNil(t, engine.statsClient)
+		assert.IsType(t, &clients.TracearrClient{}, engine.statsClient)
+	})
+
+	t.Run("selects Jellystat client when only Jellystat is enabled", func(t *testing.T) {
+		engine := newStatsTestEngine(t, config.IntegrationsConfig{
+			Jellystat: config.JellystatConfig{
+				BaseIntegrationConfig: config.BaseIntegrationConfig{
+					Enabled: true,
+					URL:     "http://localhost:8081",
+					APIKey:  "jellystat-key",
+				},
+			},
+		})
+
+		require.NotNil(t, engine.statsClient)
+		assert.IsType(t, &clients.JellystatClient{}, engine.statsClient)
+	})
+
+	t.Run("selects Streamystats client when only Streamystats is enabled", func(t *testing.T) {
+		engine := newStatsTestEngine(t, config.IntegrationsConfig{
+			Streamystats: config.StreamystatsConfig{
+				BaseIntegrationConfig: config.BaseIntegrationConfig{
+					Enabled: true,
+					URL:     "http://localhost:8082",
+					APIKey:  "jellyfin-key",
+				},
+				ServerID: "streamystats-server-uuid",
+			},
+		})
+
+		require.NotNil(t, engine.statsClient)
+		assert.IsType(t, &clients.StreamystatsClient{}, engine.statsClient)
+	})
+
+	t.Run("selects no stats client when no provider is enabled", func(t *testing.T) {
+		engine := newStatsTestEngine(t, config.IntegrationsConfig{})
+
+		assert.Nil(t, engine.statsClient)
+	})
+}
+
 func TestSyncEngine_StartStop(t *testing.T) {
 	t.Run("starts and stops successfully", func(t *testing.T) {
 		engine, _, _ := newTestSyncEngine(t)

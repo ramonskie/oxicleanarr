@@ -57,7 +57,8 @@ func Validate(cfg *Config) error {
 		cfg.Integrations.Sonarr.Enabled ||
 		cfg.Integrations.Jellyseerr.Enabled ||
 		cfg.Integrations.Jellystat.Enabled ||
-		cfg.Integrations.Streamystats.Enabled
+		cfg.Integrations.Streamystats.Enabled ||
+		cfg.Integrations.Tracearr.Enabled
 
 	if !hasIntegration {
 		errors = append(errors, ValidationError{
@@ -66,11 +67,21 @@ func Validate(cfg *Config) error {
 		})
 	}
 
-	// Enforce mutual exclusivity: only one stats provider may be enabled at a time
-	if cfg.Integrations.Jellystat.Enabled && cfg.Integrations.Streamystats.Enabled {
+	// Enforce mutual exclusivity: at most one stats provider may be enabled at a time
+	statsProvidersEnabled := 0
+	for _, enabled := range []bool{
+		cfg.Integrations.Jellystat.Enabled,
+		cfg.Integrations.Streamystats.Enabled,
+		cfg.Integrations.Tracearr.Enabled,
+	} {
+		if enabled {
+			statsProvidersEnabled++
+		}
+	}
+	if statsProvidersEnabled > 1 {
 		errors = append(errors, ValidationError{
 			Field:   "integrations",
-			Message: "jellystat and streamystats are mutually exclusive — only one may be enabled at a time",
+			Message: "only one stats provider may be enabled at a time (jellystat, streamystats, tracearr)",
 		})
 	}
 
@@ -105,6 +116,17 @@ func Validate(cfg *Config) error {
 		if cfg.Integrations.Streamystats.ServerID == "" {
 			errors = append(errors, ValidationError{
 				Field:   "integrations.streamystats.server_id",
+				Message: "required when enabled=true",
+			})
+		}
+	}
+
+	// Validate Tracearr
+	if cfg.Integrations.Tracearr.Enabled {
+		errors = validateIntegration(errors, "integrations.tracearr", cfg.Integrations.Tracearr.URL, cfg.Integrations.Tracearr.APIKey)
+		if cfg.Integrations.Tracearr.ServerID == "" {
+			errors = append(errors, ValidationError{
+				Field:   "integrations.tracearr.server_id",
 				Message: "required when enabled=true",
 			})
 		}
@@ -247,11 +269,11 @@ func Validate(cfg *Config) error {
 				}
 
 				// Validate require_watched setting
-				hasStatsProvider := cfg.Integrations.Jellystat.Enabled || cfg.Integrations.Streamystats.Enabled
+				hasStatsProvider := cfg.Integrations.Jellystat.Enabled || cfg.Integrations.Streamystats.Enabled || cfg.Integrations.Tracearr.Enabled
 				if rule.RequireWatched && !hasStatsProvider {
 					errors = append(errors, ValidationError{
 						Field:   fmt.Sprintf("%s.require_watched", prefix),
-						Message: "require_watched=true requires a stats provider (jellystat or streamystats) to be enabled",
+						Message: "require_watched=true requires a stats provider (jellystat, streamystats, or tracearr) to be enabled",
 					})
 				}
 			}

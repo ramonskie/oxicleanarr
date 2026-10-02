@@ -3,22 +3,34 @@ package integration
 import (
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 	"gopkg.in/yaml.v3"
 )
 
-// testAdvancedRulesWatched tests watched-based retention rules with mock Jellystat
+// testAdvancedRulesWatched runs the watched-based retention scenarios against
+// every stats provider (Jellystat, Tracearr).
 func testAdvancedRulesWatched(t *testing.T) {
+	for _, factory := range statsProviderFactories() {
+		factory := factory
+		t.Run(factory.Name, func(t *testing.T) {
+			// Build the mock inside the closure so a filtered-out provider never
+			// starts (and therefore never leaks) a server.
+			provider := factory.NewMock()
+			defer provider.Close()
+			runAdvancedRulesWatched(t, provider)
+		})
+	}
+}
+
+// runAdvancedRulesWatched tests watched-based retention rules with the given
+// stats-provider mock.
+func runAdvancedRulesWatched(t *testing.T, provider StatsProviderMock) {
 	t.Logf("=== Advanced Rules: Watched-Based Retention Test ===")
 
-	// Start mock Jellystat server
-	mockJellystat := NewMockJellystatServer()
-	defer mockJellystat.Close()
-	jellystatURL := mockJellystat.URL()
-	t.Logf("Started mock Jellystat server at: %s", jellystatURL)
+	// Start mock stats provider server
+	t.Logf("Started mock %s server at: %s", provider.Name(), provider.URL())
 
 	// Get config path
 	absConfigPath, err := filepath.Abs(ConfigPath)
@@ -28,7 +40,7 @@ func testAdvancedRulesWatched(t *testing.T) {
 	absComposeFile, err := filepath.Abs(ComposeFile)
 	require.NoError(t, err)
 
-	t.Logf("Using mock Jellystat at: %s", jellystatURL)
+	t.Logf("Using mock %s at: %s", provider.Name(), provider.URL())
 
 	// Get actual movies from OxiCleanarr to verify test data
 	client := NewTestClient(t, OxiCleanarrURL)
@@ -52,14 +64,14 @@ func testAdvancedRulesWatched(t *testing.T) {
 	t.Logf("Extracted %d movie IDs from OxiCleanarr", len(movieIDs))
 
 	// Configure mock server with real Jellyfin IDs
-	mockJellystat.SetMovieIDs(movieIDs)
+	provider.SetMovieIDs(movieIDs)
 
 	// Note: Watch history was added during infrastructure setup in setup_test.go
 	// The setup added watch history for test movies at different timestamps
 	t.Logf("Using watch history from infrastructure setup")
 
-	// Update config with Jellystat URL and watched-based rules
-	UpdateConfigForWatchedRulesTest(t, absConfigPath, jellystatURL)
+	// Update config with the provider URL and watched-based rules
+	UpdateConfigForWatchedRulesTest(t, absConfigPath, provider)
 
 	// Restart OxiCleanarr to load new config
 	RestartOxiCleanarr(t, absComposeFile)
@@ -67,8 +79,8 @@ func testAdvancedRulesWatched(t *testing.T) {
 	// Re-authenticate after restart
 	client.Authenticate(AdminUsername, AdminPassword)
 
-	// Trigger full sync to fetch from mock Jellystat
-	t.Logf("Triggering sync to fetch mock Jellystat data...")
+	// Trigger full sync to fetch from the stats provider
+	t.Logf("Triggering sync to fetch %s data...", provider.Name())
 	client.TriggerSync()
 
 	// Test Scenario 1: Watched content with appropriate retention
@@ -89,14 +101,14 @@ func testAdvancedRulesWatched(t *testing.T) {
 		t.Logf("Testing require_watched flag with unwatched content...")
 
 		// Update config to enable require_watched
-		UpdateConfigForRequireWatchedWatchedTest(t, absConfigPath, jellystatURL)
+		UpdateConfigForRequireWatchedWatchedTest(t, absConfigPath, provider)
 		RestartOxiCleanarr(t, absComposeFile)
 		client.Authenticate(AdminUsername, AdminPassword)
 
 		// Trigger sync
 		client.TriggerSync()
 
-		// With require_watched=true, unwatched movies (no entry in Jellystat)
+		// With require_watched=true, unwatched movies (no entry in the stats provider)
 		// should be protected from deletion regardless of age
 		scheduledCount := client.GetScheduledCount()
 		t.Logf("Items in leaving soon with require_watched=true: %d", scheduledCount)
@@ -111,7 +123,7 @@ func testAdvancedRulesWatched(t *testing.T) {
 		t.Logf("Testing watch timestamp impact on deletion timing...")
 
 		// Update config with short retention (e.g., 14d after last watch)
-		UpdateConfigForShortWatchedRetention(t, absConfigPath, jellystatURL)
+		UpdateConfigForShortWatchedRetention(t, absConfigPath, provider)
 		RestartOxiCleanarr(t, absComposeFile)
 		client.Authenticate(AdminUsername, AdminPassword)
 
@@ -140,7 +152,7 @@ func testAdvancedRulesWatched(t *testing.T) {
 	// Cleanup (must run BEFORE test completes, not in t.Cleanup, to ensure next test has clean state)
 	t.Logf("Cleaning up watched rules test...")
 	RemoveAdvancedRules(t, absConfigPath)
-	RestoreJellystatConfig(t, absConfigPath)
+	RestoreStatsProviderConfig(t, absConfigPath, provider)
 	RestartOxiCleanarr(t, absComposeFile)
 
 	// Re-sync to reload movies for next test
@@ -152,15 +164,9 @@ func testAdvancedRulesWatched(t *testing.T) {
 	t.Logf("=== Advanced Rules: Watched-Based Retention Test Complete ===")
 }
 
-// convertMockURLForDocker converts a localhost mock server URL to be reachable from Docker
-func convertMockURLForDocker(mockURL string) string {
-	// Convert http://127.0.0.1:PORT to http://host.docker.internal:PORT
-	// This allows Docker containers to reach the host machine's mock servers
-	return strings.Replace(mockURL, "127.0.0.1", "host.docker.internal", 1)
-}
-
-// UpdateConfigForWatchedRulesTest updates config with real Jellystat and watched-based rules
-func UpdateConfigForWatchedRulesTest(t *testing.T, configPath, jellystatURL string) {
+// UpdateConfigForWatchedRulesTest updates config with the stats provider under
+// test and watched-based rules
+func UpdateConfigForWatchedRulesTest(t *testing.T, configPath string, provider StatsProviderMock) {
 	t.Helper()
 	t.Logf("Updating config for watched rules test...")
 
@@ -171,23 +177,13 @@ func UpdateConfigForWatchedRulesTest(t *testing.T, configPath, jellystatURL stri
 	err = yaml.Unmarshal(content, &config)
 	require.NoError(t, err)
 
-	// Enable Jellystat integration with real service
-	integrations, ok := config["integrations"].(map[string]interface{})
-	require.True(t, ok, "integrations section not found")
-
-	jellystat, ok := integrations["jellystat"].(map[string]interface{})
-	if !ok {
-		jellystat = make(map[string]interface{})
-		integrations["jellystat"] = jellystat
-	}
+	// Enable the stats provider under test, disabling the other stats providers
+	// so the exactly-one-provider validation rule is satisfied.
+	provider.Enable(config)
 
 	// Convert mock URL to be reachable from Docker container
-	dockerURL := convertMockURLForDocker(jellystatURL)
-	t.Logf("Converting Jellystat URL from %s to %s for Docker", jellystatURL, dockerURL)
-
-	jellystat["enabled"] = true
-	jellystat["url"] = dockerURL
-	// Keep existing API key (set during infrastructure setup)
+	t.Logf("Converting %s URL from %s to %s for Docker",
+		provider.Name(), provider.URL(), convertMockURLForDocker(provider.URL()))
 
 	// Add watched-based retention rules
 	advancedRules := []map[string]interface{}{
@@ -208,13 +204,13 @@ func UpdateConfigForWatchedRulesTest(t *testing.T, configPath, jellystatURL stri
 	err = os.WriteFile(configPath, newContent, 0644)
 	require.NoError(t, err)
 
-	t.Logf("Config updated with Jellystat and watched rules")
+	t.Logf("Config updated with %s and watched rules", provider.Name())
 }
 
-// UpdateConfigForRequireWatchedWatchedTest updates config to test require_watched with Jellystat
-func UpdateConfigForRequireWatchedWatchedTest(t *testing.T, configPath, jellystatURL string) {
+// UpdateConfigForRequireWatchedWatchedTest updates config to test require_watched with the stats provider under test
+func UpdateConfigForRequireWatchedWatchedTest(t *testing.T, configPath string, provider StatsProviderMock) {
 	t.Helper()
-	t.Logf("Updating config for require_watched test with Jellystat...")
+	t.Logf("Updating config for require_watched test with %s...", provider.Name())
 
 	content, err := os.ReadFile(configPath)
 	require.NoError(t, err)
@@ -223,20 +219,10 @@ func UpdateConfigForRequireWatchedWatchedTest(t *testing.T, configPath, jellysta
 	err = yaml.Unmarshal(content, &config)
 	require.NoError(t, err)
 
-	// Ensure Jellystat URL is set with Docker-compatible URL
-	integrations, ok := config["integrations"].(map[string]interface{})
-	require.True(t, ok, "integrations section not found")
-
-	jellystat, ok := integrations["jellystat"].(map[string]interface{})
-	if !ok {
-		jellystat = make(map[string]interface{})
-		integrations["jellystat"] = jellystat
-	}
-
-	dockerURL := convertMockURLForDocker(jellystatURL)
-	t.Logf("Setting Jellystat URL to %s for Docker", dockerURL)
-	jellystat["enabled"] = true
-	jellystat["url"] = dockerURL
+	// Enable the stats provider under test, disabling the other stats providers
+	// so the exactly-one-provider validation rule is satisfied.
+	provider.Enable(config)
+	t.Logf("Setting %s URL to %s for Docker", provider.Name(), convertMockURLForDocker(provider.URL()))
 
 	// Update advanced rules to add require_watched
 	advancedRules := []map[string]interface{}{
@@ -262,7 +248,7 @@ func UpdateConfigForRequireWatchedWatchedTest(t *testing.T, configPath, jellysta
 }
 
 // UpdateConfigForShortWatchedRetention updates config with short watched retention period
-func UpdateConfigForShortWatchedRetention(t *testing.T, configPath, jellystatURL string) {
+func UpdateConfigForShortWatchedRetention(t *testing.T, configPath string, provider StatsProviderMock) {
 	t.Helper()
 	t.Logf("Updating config for short watched retention test...")
 
@@ -273,20 +259,10 @@ func UpdateConfigForShortWatchedRetention(t *testing.T, configPath, jellystatURL
 	err = yaml.Unmarshal(content, &config)
 	require.NoError(t, err)
 
-	// Ensure Jellystat URL is set with Docker-compatible URL
-	integrations, ok := config["integrations"].(map[string]interface{})
-	require.True(t, ok, "integrations section not found")
-
-	jellystat, ok := integrations["jellystat"].(map[string]interface{})
-	if !ok {
-		jellystat = make(map[string]interface{})
-		integrations["jellystat"] = jellystat
-	}
-
-	dockerURL := convertMockURLForDocker(jellystatURL)
-	t.Logf("Setting Jellystat URL to %s for Docker", dockerURL)
-	jellystat["enabled"] = true
-	jellystat["url"] = dockerURL
+	// Enable the stats provider under test, disabling the other stats providers
+	// so the exactly-one-provider validation rule is satisfied.
+	provider.Enable(config)
+	t.Logf("Setting %s URL to %s for Docker", provider.Name(), convertMockURLForDocker(provider.URL()))
 
 	// Update advanced rules with short retention (14d)
 	advancedRules := []map[string]interface{}{
@@ -308,35 +284,4 @@ func UpdateConfigForShortWatchedRetention(t *testing.T, configPath, jellystatURL
 	require.NoError(t, err)
 
 	t.Logf("Config updated with 14d watched retention")
-}
-
-// RestoreJellystatConfig disables Jellystat integration
-func RestoreJellystatConfig(t *testing.T, configPath string) {
-	t.Helper()
-	t.Logf("Restoring Jellystat config to disabled state...")
-
-	content, err := os.ReadFile(configPath)
-	require.NoError(t, err)
-
-	var config map[string]interface{}
-	err = yaml.Unmarshal(content, &config)
-	require.NoError(t, err)
-
-	// Disable Jellystat
-	integrations, ok := config["integrations"].(map[string]interface{})
-	if ok {
-		jellystat, ok := integrations["jellystat"].(map[string]interface{})
-		if ok {
-			jellystat["enabled"] = false
-		}
-	}
-
-	// Marshal and write
-	newContent, err := yaml.Marshal(config)
-	require.NoError(t, err)
-
-	err = os.WriteFile(configPath, newContent, 0644)
-	require.NoError(t, err)
-
-	t.Logf("Jellystat config restored")
 }

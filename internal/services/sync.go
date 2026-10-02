@@ -90,6 +90,9 @@ func NewSyncEngine(
 	if cfg.Integrations.Streamystats.Enabled {
 		engine.statsClient = clients.NewStreamystatsClient(cfg.Integrations.Streamystats)
 	}
+	if cfg.Integrations.Tracearr.Enabled {
+		engine.statsClient = clients.NewTracearrClient(cfg.Integrations.Tracearr)
+	}
 
 	// Initialize disk monitor if disk threshold feature is enabled.
 	// Inject it into the rules engine so that Evaluate() can gate on real disk status.
@@ -314,7 +317,7 @@ func (e *SyncEngine) FullSync(ctx context.Context) error {
 		}
 	}
 
-	// Sync detailed watch history from the active stats provider (Jellystat or Streamystats)
+	// Sync detailed watch history from the active stats provider (Jellystat, Streamystats, or Tracearr)
 	if e.statsClient != nil {
 		if err := e.syncStats(ctx); err != nil {
 			syncErrs = append(syncErrs, err)
@@ -853,7 +856,7 @@ func (e *SyncEngine) syncJellyseerr(ctx context.Context) error {
 	return nil
 }
 
-// syncStats syncs detailed watch history from the active stats provider (Jellystat or Streamystats).
+// syncStats syncs detailed watch history from the active stats provider (Jellystat, Streamystats, or Tracearr).
 func (e *SyncEngine) syncStats(ctx context.Context) error {
 	// Collect Jellyfin IDs of all known media items so that item-scoped providers
 	// (e.g. Streamystats) can query only the relevant items.
@@ -1207,7 +1210,7 @@ func (e *SyncEngine) CalculateDeletionInfo() (int, []map[string]interface{}) {
 
 // ExecuteDeletions performs actual deletion of overdue media items.
 // Before each whole-item deletion, a pre-deletion safety check refreshes the watch state
-// from Jellystat to catch any watch activity that occurred after the last evaluation.
+// from the active stats provider to catch any watch activity that occurred after the last evaluation.
 // If the item was watched since evaluation, deletion is skipped (fail-safe).
 // Episode-level deletions skip the safety check — count/age-based cleanup is not
 // affected by recent show-level watch activity.
@@ -1308,8 +1311,8 @@ func (e *SyncEngine) ExecuteDeletions(ctx context.Context, candidates []map[stri
 		}
 
 		// Standard whole-item deletion with watch-state safety check.
-		// Pre-deletion safety check: refresh watch state from Jellystat to catch
-		// any watch activity that occurred between evaluation and deletion.
+		// Pre-deletion safety check: refresh watch state from the active stats
+		// provider to catch any watch activity that occurred between evaluation and deletion.
 		if watchStateMap != nil && media.JellyfinID != "" {
 			latestWatched := watchStateMap[media.JellyfinID]
 
@@ -1392,7 +1395,7 @@ func (e *SyncEngine) ExecuteDeletionsLocked(ctx context.Context, candidates []ma
 // buildWatchStateMap fetches watch history from the configured stats provider once and returns
 // a map of jellyfinID → latest watch timestamp. This avoids repeated full-history
 // fetches when checking multiple deletion candidates.
-// jellyfinIDs is passed to support per-item providers (e.g. Streamystats); bulk providers (e.g. Jellystat) ignore it.
+// jellyfinIDs is passed to support per-item providers (e.g. Streamystats); bulk providers (e.g. Jellystat, Tracearr) ignore it.
 func (e *SyncEngine) buildWatchStateMap(ctx context.Context, jellyfinIDs []string) (map[string]time.Time, error) {
 	history, err := e.statsClient.GetHistory(ctx, jellyfinIDs)
 	if err != nil {

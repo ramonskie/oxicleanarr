@@ -42,6 +42,7 @@ export default function ConfigurationPage() {
     jellyseerr: false,
     jellystat: false,
     streamystats: false,
+    tracearr: false,
   });
 
   // Track API keys being updated (not sent from backend for security)
@@ -52,6 +53,7 @@ export default function ConfigurationPage() {
     jellyseerr: '',
     jellystat: '',
     streamystats: '',
+    tracearr: '',
   });
 
   // Track password change
@@ -87,6 +89,7 @@ export default function ConfigurationPage() {
         jellyseerr: '',
         jellystat: '',
         streamystats: '',
+        tracearr: '',
       });
       setNewPassword('');
       setConfirmPassword('');
@@ -179,6 +182,10 @@ export default function ConfigurationPage() {
         streamystats: {
           ...formData.integrations?.streamystats,
           ...(apiKeys.streamystats ? { api_key: apiKeys.streamystats } : {}),
+        },
+        tracearr: {
+          ...formData.integrations?.tracearr,
+          ...(apiKeys.tracearr ? { api_key: apiKeys.tracearr } : {}),
         },
       },
       overlay: formData.overlay,
@@ -326,6 +333,13 @@ export default function ConfigurationPage() {
       </CardContent>
     </Card>
   );
+
+  // Stats providers are mutually exclusive: at most one may be enabled.
+  const enabledStatsProviders = [
+    formData.integrations?.jellystat?.enabled ? 'Jellystat' : null,
+    formData.integrations?.streamystats?.enabled ? 'Streamystats' : null,
+    formData.integrations?.tracearr?.enabled ? 'Tracearr' : null,
+  ].filter((name): name is string => name !== null);
 
   return (
     <AppLayout>
@@ -830,9 +844,9 @@ export default function ConfigurationPage() {
           {renderIntegrationSection('Jellystat', 'jellystat', formData.integrations?.jellystat)}
 
           {/* Mutual exclusivity warning */}
-          {formData.integrations?.jellystat?.enabled && formData.integrations?.streamystats?.enabled && (
+          {enabledStatsProviders.length > 1 && (
             <div className="rounded-md border border-yellow-400 bg-yellow-50 dark:bg-yellow-950 p-4 text-sm text-yellow-800 dark:text-yellow-200">
-              <strong>Warning:</strong> Both Jellystat and Streamystats are enabled. Only one stats provider can be active at a time. Disable one before saving.
+              <strong>Warning:</strong> More than one stats provider is enabled ({enabledStatsProviders.join(', ')}). Only one stats provider can be active at a time (Jellystat, Streamystats, or Tracearr). Disable all but one before saving.
             </div>
           )}
 
@@ -914,6 +928,90 @@ export default function ConfigurationPage() {
                   type="text"
                   value={formData.integrations?.streamystats?.timeout || '30s'}
                   onChange={(e) => handleIntegrationChange('streamystats', 'timeout', e.target.value)}
+                  placeholder="30s"
+                />
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Tracearr Integration */}
+          <Card>
+            <CardHeader>
+              <CardTitle>Tracearr</CardTitle>
+              <CardDescription>Configure Tracearr integration settings</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <label className="text-sm font-medium">Enabled</label>
+                  <p className="text-sm text-gray-500">Enable Tracearr integration</p>
+                </div>
+                <input
+                  type="checkbox"
+                  checked={formData.integrations?.tracearr?.enabled || false}
+                  onChange={(e) => handleIntegrationChange('tracearr', 'enabled', e.target.checked)}
+                  className="h-4 w-4"
+                />
+              </div>
+
+              <div>
+                <label className="text-sm font-medium">URL</label>
+                <p className="text-sm text-gray-500 mb-2">Base URL for Tracearr API</p>
+                <Input
+                  type="text"
+                  value={formData.integrations?.tracearr?.url || ''}
+                  onChange={(e) => handleIntegrationChange('tracearr', 'url', e.target.value)}
+                  placeholder="https://tracearr.example.com"
+                />
+              </div>
+
+              <div>
+                <label className="text-sm font-medium">API Key</label>
+                <p className="text-sm text-gray-500 mb-2">
+                  {formData.integrations?.tracearr?.has_api_key
+                    ? 'API key is configured (leave blank to keep current)'
+                    : 'No API key configured'}
+                </p>
+                <div className="flex gap-2">
+                  <Input
+                    type={showApiKeys.tracearr ? 'text' : 'password'}
+                    value={apiKeys.tracearr}
+                    onChange={(e) => setApiKeys(prev => ({ ...prev, tracearr: e.target.value }))}
+                    placeholder={formData.integrations?.tracearr?.has_api_key ? '••••••••••••••••' : 'Enter Tracearr API key'}
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="icon"
+                    onClick={() => toggleApiKeyVisibility('tracearr')}
+                  >
+                    {showApiKeys.tracearr ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                  </Button>
+                </div>
+              </div>
+
+              <div>
+                <label className="text-sm font-medium">Server ID</label>
+                <p className="text-sm text-gray-500 mb-2">
+                  {formData.integrations?.tracearr?.has_server_id
+                    ? 'Server ID is configured'
+                    : 'Tracearr media-server UUID (required; NOT the Jellyfin server id)'}
+                </p>
+                <Input
+                  type="text"
+                  value={formData.integrations?.tracearr?.server_id || ''}
+                  onChange={(e) => handleIntegrationChange('tracearr', 'server_id', e.target.value)}
+                  placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+                />
+              </div>
+
+              <div>
+                <label className="text-sm font-medium">Timeout</label>
+                <p className="text-sm text-gray-500 mb-2">Request timeout (e.g., "30s", "1m")</p>
+                <Input
+                  type="text"
+                  value={formData.integrations?.tracearr?.timeout || '30s'}
+                  onChange={(e) => handleIntegrationChange('tracearr', 'timeout', e.target.value)}
                   placeholder="30s"
                 />
               </div>

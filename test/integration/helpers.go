@@ -1739,9 +1739,11 @@ func UpdateDiskThreshold(t *testing.T, configPath string, enabled bool, freeSpac
 	t.Logf("disk_threshold config updated")
 }
 
-// resetConfigAPIKeysToPlaceholders resets all service API keys in the config file back to
-// safe placeholder values. This is called from TestMain (which has no *testing.T) so it
-// uses log.Fatal on error rather than require/t.Fatal.
+// resetConfigAPIKeysToPlaceholders resets all service API keys in the config file
+// back to safe values. Jellyfin/Radarr/Sonarr get placeholder strings; the
+// stats providers (jellystat, streamystats, tracearr) get reset to an empty
+// api_key. This is called from TestMain (which has no *testing.T) so it uses
+// log.Fatal on error rather than require/t.Fatal.
 //
 // It uses the same line-based parser as UpdateConfigAPIKeysWithExtras so that the file
 // format is preserved exactly (no YAML round-trip reformatting).
@@ -1756,6 +1758,9 @@ func resetConfigAPIKeysToPlaceholders(configPath string) {
 	inJellyfinSection := false
 	inRadarrSection := false
 	inSonarrSection := false
+	inJellystatSection := false
+	inStreamystatsSection := false
+	inTracearrSection := false
 
 	integrationIndent := -1
 	for i, line := range lines {
@@ -1766,19 +1771,31 @@ func resetConfigAPIKeysToPlaceholders(configPath string) {
 		switch {
 		case strings.HasPrefix(trimmed, "jellyfin:"):
 			integrationIndent = indentLevel
-			inJellyfinSection, inRadarrSection, inSonarrSection = true, false, false
+			inJellyfinSection, inRadarrSection, inSonarrSection, inJellystatSection, inStreamystatsSection, inTracearrSection = true, false, false, false, false, false
 			continue
 		case strings.HasPrefix(trimmed, "radarr:"):
 			integrationIndent = indentLevel
-			inJellyfinSection, inRadarrSection, inSonarrSection = false, true, false
+			inJellyfinSection, inRadarrSection, inSonarrSection, inJellystatSection, inStreamystatsSection, inTracearrSection = false, true, false, false, false, false
 			continue
 		case strings.HasPrefix(trimmed, "sonarr:"):
 			integrationIndent = indentLevel
-			inJellyfinSection, inRadarrSection, inSonarrSection = false, false, true
+			inJellyfinSection, inRadarrSection, inSonarrSection, inJellystatSection, inStreamystatsSection, inTracearrSection = false, false, true, false, false, false
+			continue
+		case strings.HasPrefix(trimmed, "jellystat:"):
+			integrationIndent = indentLevel
+			inJellyfinSection, inRadarrSection, inSonarrSection, inJellystatSection, inStreamystatsSection, inTracearrSection = false, false, false, true, false, false
+			continue
+		case strings.HasPrefix(trimmed, "streamystats:"):
+			integrationIndent = indentLevel
+			inJellyfinSection, inRadarrSection, inSonarrSection, inJellystatSection, inStreamystatsSection, inTracearrSection = false, false, false, false, true, false
+			continue
+		case strings.HasPrefix(trimmed, "tracearr:"):
+			integrationIndent = indentLevel
+			inJellyfinSection, inRadarrSection, inSonarrSection, inJellystatSection, inStreamystatsSection, inTracearrSection = false, false, false, false, false, true
 			continue
 		case strings.HasSuffix(trimmed, ":") && integrationIndent >= 0 && indentLevel <= integrationIndent:
 			// New key at the integration level (or shallower) — exit all integration sections.
-			inJellyfinSection, inRadarrSection, inSonarrSection = false, false, false
+			inJellyfinSection, inRadarrSection, inSonarrSection, inJellystatSection, inStreamystatsSection, inTracearrSection = false, false, false, false, false, false
 		}
 
 		indent := strings.Repeat(" ", len(line)-len(strings.TrimLeft(line, " ")))
@@ -1797,6 +1814,10 @@ func resetConfigAPIKeysToPlaceholders(configPath string) {
 			if strings.HasPrefix(trimmed, "enabled:") && strings.Contains(trimmed, "true") {
 				lines[i] = strings.Replace(line, "true", "false", 1)
 			}
+		}
+		// Stats providers have no auth in the mocks; reset any leaked key.
+		if (inJellystatSection || inStreamystatsSection || inTracearrSection) && strings.HasPrefix(trimmed, "api_key:") {
+			lines[i] = indent + `api_key: ""`
 		}
 	}
 

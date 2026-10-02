@@ -61,6 +61,7 @@ func (h *ServiceStatusHandler) buildChecks(cfg *config.Config) []serviceCheck {
 		{name: "Jellyseerr", enabled: cfg.Integrations.Jellyseerr.Enabled, pinger: clients.NewJellyseerrClient(cfg.Integrations.Jellyseerr).Ping},
 		{name: "Jellystat", enabled: cfg.Integrations.Jellystat.Enabled, pinger: clients.NewJellystatClient(cfg.Integrations.Jellystat).Ping},
 		{name: "Streamystats", enabled: cfg.Integrations.Streamystats.Enabled, pinger: clients.NewStreamystatsClient(cfg.Integrations.Streamystats).Ping},
+		{name: "Tracearr", enabled: cfg.Integrations.Tracearr.Enabled, pinger: clients.NewTracearrClient(cfg.Integrations.Tracearr).Ping},
 	}
 }
 

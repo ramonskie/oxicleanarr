@@ -11,10 +11,25 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// testRetentionBaseLifecycle tests all retention_base and unwatched_behavior modes
-// end-to-end against a real OxiCleanarr instance with a mock Jellystat server.
+// testRetentionBaseLifecycle runs the retention_base lifecycle scenarios against
+// every stats provider (Jellystat, Tracearr).
+func testRetentionBaseLifecycle(t *testing.T) {
+	for _, factory := range statsProviderFactories() {
+		factory := factory
+		t.Run(factory.Name, func(t *testing.T) {
+			// Build the mock inside the closure so a filtered-out provider never
+			// starts (and therefore never leaks) a server.
+			provider := factory.NewMock()
+			defer provider.Close()
+			runRetentionBaseLifecycle(t, provider)
+		})
+	}
+}
+
+// runRetentionBaseLifecycle tests all retention_base and unwatched_behavior modes
+// end-to-end against a real OxiCleanarr instance with the given stats-provider mock.
 //
-// Test movies available (from radarr_setup_test.go / mock_jellystat.go):
+// Test movies available (from radarr_setup_test.go / the stats-provider mock):
 //   - Fight Club        — watched 10 days ago
 //   - Pulp Fiction      — watched 60 days ago
 //   - Inception         — watched 5 days ago
@@ -22,13 +37,10 @@ import (
 //   - Interstellar      — watched 45 days ago
 //   - Forrest Gump      — watched 90 days ago
 //   - Schindler's List  — never watched
-func testRetentionBaseLifecycle(t *testing.T) {
+func runRetentionBaseLifecycle(t *testing.T, provider StatsProviderMock) {
 	t.Logf("=== Retention Base Lifecycle Test ===")
 
-	mockJellystat := NewMockJellystatServer()
-	defer mockJellystat.Close()
-	jellystatURL := mockJellystat.URL()
-	t.Logf("Started mock Jellystat server at: %s", jellystatURL)
+	t.Logf("Started mock %s server at: %s", provider.Name(), provider.URL())
 
 	absConfigPath, err := filepath.Abs(ConfigPath)
 	require.NoError(t, err)
@@ -50,8 +62,8 @@ func testRetentionBaseLifecycle(t *testing.T) {
 			movieIDs[title] = jellyfinID
 		}
 	}
-	mockJellystat.SetMovieIDs(movieIDs)
-	t.Logf("Mapped %d movie IDs into mock Jellystat", len(movieIDs))
+	provider.SetMovieIDs(movieIDs)
+	t.Logf("Mapped %d movie IDs into mock %s", len(movieIDs), provider.Name())
 
 	// ── Scenario 1: Default mode (last_watched_or_added) — backward compat ──────
 	t.Run("DefaultMode_LastWatchedOrAdded", func(t *testing.T) {
@@ -71,7 +83,7 @@ func testRetentionBaseLifecycle(t *testing.T) {
 		// NOTE: overdue items have DaysUntilDue <= 0 and do NOT appear in /api/media/leaving-soon.
 		// We use the job summary's scheduled_deletions count instead.
 
-		UpdateConfigForRetentionBaseTest(t, absConfigPath, jellystatURL, "", "", "")
+		UpdateConfigForRetentionBaseTest(t, absConfigPath, provider, "", "", "")
 		RestartOxiCleanarr(t, absComposeFile)
 		client.Authenticate(AdminUsername, AdminPassword)
 
@@ -96,7 +108,7 @@ func testRetentionBaseLifecycle(t *testing.T) {
 		//
 		// NOTE: overdue items are not in /api/media/leaving-soon; use job summary instead.
 
-		UpdateConfigForRetentionBaseTest(t, absConfigPath, jellystatURL, "last_watched", "never", "")
+		UpdateConfigForRetentionBaseTest(t, absConfigPath, provider, "last_watched", "never", "")
 		RestartOxiCleanarr(t, absComposeFile)
 		client.Authenticate(AdminUsername, AdminPassword)
 
@@ -128,13 +140,17 @@ func testRetentionBaseLifecycle(t *testing.T) {
 		//
 		// NOTE: overdue items are not in /api/media/leaving-soon; use job summary instead.
 
-		UpdateConfigForRetentionBaseTest(t, absConfigPath, jellystatURL, "last_watched", "added", "180d")
+		UpdateConfigForRetentionBaseTest(t, absConfigPath, provider, "last_watched", "added", "180d")
 		RestartOxiCleanarr(t, absComposeFile)
 		client.Authenticate(AdminUsername, AdminPassword)
 
 		// GetJobWouldDelete triggers sync and returns the would_delete list from the job summary
 		scheduledItems := client.GetJobWouldDelete()
 		t.Logf("Scheduled items with unwatched_retention=180d: %d", len(scheduledItems))
+
+		// Pulp Fiction (60d) and Forrest Gump (90d) are both past the 30d retention.
+		require.GreaterOrEqual(t, len(scheduledItems), 2,
+			"Expected at least 2 overdue watched items (Pulp Fiction 60d, Forrest Gump 90d overdue)")
 
 		// Schindler's List should NOT be scheduled (added recently in test setup, well under 180d)
 		for _, item := range scheduledItems {
@@ -152,7 +168,7 @@ func testRetentionBaseLifecycle(t *testing.T) {
 		// With retention_base=added and 30d retention, none should be overdue.
 		// This verifies that the "added" mode uses AddedAt, not LastWatched.
 
-		UpdateConfigForRetentionBaseTest(t, absConfigPath, jellystatURL, "added", "", "")
+		UpdateConfigForRetentionBaseTest(t, absConfigPath, provider, "added", "", "")
 		RestartOxiCleanarr(t, absComposeFile)
 		client.Authenticate(AdminUsername, AdminPassword)
 
@@ -178,7 +194,7 @@ func testRetentionBaseLifecycle(t *testing.T) {
 		//   Tagged+watched movie (90d ago) → scheduled by tag rule
 		// Since our test movies don't have the "oxitest" tag, none should be scheduled.
 
-		UpdateConfigForRetentionBaseTagRuleTest(t, absConfigPath, jellystatURL)
+		UpdateConfigForRetentionBaseTagRuleTest(t, absConfigPath, provider)
 		RestartOxiCleanarr(t, absComposeFile)
 		client.Authenticate(AdminUsername, AdminPassword)
 
@@ -199,7 +215,7 @@ func testRetentionBaseLifecycle(t *testing.T) {
 
 		// Step 1: Set up with Pulp Fiction watched 60d ago → overdue with 30d retention.
 		// NOTE: overdue items are not in /api/media/leaving-soon; use job summary instead.
-		UpdateConfigForRetentionBaseTest(t, absConfigPath, jellystatURL, "", "", "")
+		UpdateConfigForRetentionBaseTest(t, absConfigPath, provider, "", "", "")
 		RestartOxiCleanarr(t, absComposeFile)
 		client.Authenticate(AdminUsername, AdminPassword)
 
@@ -209,7 +225,7 @@ func testRetentionBaseLifecycle(t *testing.T) {
 		require.Greater(t, initialScheduled, 0, "Expected at least one overdue item before TTL reset")
 
 		// Step 2: Update mock to show Pulp Fiction watched 1 day ago (simulates re-watch)
-		mockJellystat.SetWatchTimestamp("Pulp Fiction", time.Now().Add(-1*24*time.Hour))
+		provider.SetWatchTimestamp("Pulp Fiction", time.Now().Add(-1*24*time.Hour))
 		t.Logf("Step 2 — Updated Pulp Fiction last watched to 1 day ago")
 
 		// Step 3: Trigger sync to pick up new watch data; read job summary
@@ -225,14 +241,14 @@ func testRetentionBaseLifecycle(t *testing.T) {
 		}
 
 		// Reset mock back to original timestamps for cleanup
-		mockJellystat.SetWatchTimestamp("Pulp Fiction", time.Now().Add(-60*24*time.Hour))
+		provider.SetWatchTimestamp("Pulp Fiction", time.Now().Add(-60*24*time.Hour))
 	})
 
 	// ── Cleanup ──────────────────────────────────────────────────────────────────
 	t.Logf("Cleaning up retention base lifecycle test...")
 	RemoveAdvancedRules(t, absConfigPath)
 	RestoreRetentionBaseConfig(t, absConfigPath)
-	RestoreJellystatConfig(t, absConfigPath)
+	RestoreStatsProviderConfig(t, absConfigPath, provider)
 	RestartOxiCleanarr(t, absComposeFile)
 
 	cleanupClient := NewTestClient(t, OxiCleanarrURL)
@@ -246,9 +262,10 @@ func testRetentionBaseLifecycle(t *testing.T) {
 // ── Config helper functions ───────────────────────────────────────────────────
 
 // UpdateConfigForRetentionBaseTest sets retention_base, unwatched_behavior, and
-// unwatched_retention on the global rules section, and enables the mock Jellystat.
-// Pass empty string to omit a field (server will use its default).
-func UpdateConfigForRetentionBaseTest(t *testing.T, configPath, jellystatURL, retentionBase, unwatchedBehavior, unwatchedRetention string) {
+// unwatched_retention on the global rules section, and enables the stats
+// provider under test. Pass empty string to omit a field (server will use its
+// default).
+func UpdateConfigForRetentionBaseTest(t *testing.T, configPath string, provider StatsProviderMock, retentionBase, unwatchedBehavior, unwatchedRetention string) {
 	t.Helper()
 	t.Logf("Updating config: retention_base=%q unwatched_behavior=%q unwatched_retention=%q",
 		retentionBase, unwatchedBehavior, unwatchedRetention)
@@ -260,19 +277,9 @@ func UpdateConfigForRetentionBaseTest(t *testing.T, configPath, jellystatURL, re
 	err = yaml.Unmarshal(content, &cfg)
 	require.NoError(t, err)
 
-	// Enable mock Jellystat
-	if jellystatURL != "" {
-		integrations, ok := cfg["integrations"].(map[string]interface{})
-		require.True(t, ok, "integrations section not found")
-		jellystat, ok := integrations["jellystat"].(map[string]interface{})
-		if !ok {
-			jellystat = make(map[string]interface{})
-			integrations["jellystat"] = jellystat
-		}
-		dockerURL := convertMockURLForDocker(jellystatURL)
-		jellystat["enabled"] = true
-		jellystat["url"] = dockerURL
-	}
+	// Enable the stats provider under test, disabling the other stats providers
+	// so the exactly-one-provider validation rule is satisfied.
+	provider.Enable(cfg)
 
 	// Set retention_base fields on rules section
 	rules, ok := cfg["rules"].(map[string]interface{})
@@ -308,7 +315,7 @@ func UpdateConfigForRetentionBaseTest(t *testing.T, configPath, jellystatURL, re
 
 // UpdateConfigForRetentionBaseTagRuleTest sets a global retention_base=added config
 // plus a tag-based advanced rule with retention_base=last_watched, unwatched_behavior=never.
-func UpdateConfigForRetentionBaseTagRuleTest(t *testing.T, configPath, jellystatURL string) {
+func UpdateConfigForRetentionBaseTagRuleTest(t *testing.T, configPath string, provider StatsProviderMock) {
 	t.Helper()
 	t.Logf("Updating config for per-rule tag retention_base override test")
 
@@ -319,17 +326,9 @@ func UpdateConfigForRetentionBaseTagRuleTest(t *testing.T, configPath, jellystat
 	err = yaml.Unmarshal(content, &cfg)
 	require.NoError(t, err)
 
-	// Enable mock Jellystat
-	integrations, ok := cfg["integrations"].(map[string]interface{})
-	require.True(t, ok, "integrations section not found")
-	jellystat, ok := integrations["jellystat"].(map[string]interface{})
-	if !ok {
-		jellystat = make(map[string]interface{})
-		integrations["jellystat"] = jellystat
-	}
-	dockerURL := convertMockURLForDocker(jellystatURL)
-	jellystat["enabled"] = true
-	jellystat["url"] = dockerURL
+	// Enable the stats provider under test, disabling the other stats providers
+	// so the exactly-one-provider validation rule is satisfied.
+	provider.Enable(cfg)
 
 	// Global: retention_base=added (pure age-based)
 	rules, ok := cfg["rules"].(map[string]interface{})

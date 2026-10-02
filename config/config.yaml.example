@@ -47,10 +47,24 @@ integrations:
     url: http://jellyseerr:5055
     api_key: ""
   
+  # Stats providers — jellystat, streamystats, and tracearr are mutually
+  # exclusive: enable at most one (each supplies watch history).
   jellystat:
     enabled: false
     url: http://jellystat:3000
     api_key: ""
+
+  streamystats:
+    enabled: false
+    url: http://streamystats:3000
+    api_key: ""        # Your Jellyfin API key (Streamystats validates it against Jellyfin)
+    server_id: ""      # Streamystats server UUID (find it in Streamystats → Servers)
+
+  tracearr:
+    enabled: false
+    url: http://tracearr:3000
+    api_key: ""        # Tracearr v2 Public API key (trr_pub_...; Tracearr Settings → General)
+    server_id: ""      # Tracearr media-server UUID (required; NOT the Jellyfin server id)
 
 # Optional settings with defaults (uncomment to override)
 # app:

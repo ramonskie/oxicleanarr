@@ -1,9 +1,234 @@
 package config
 
 import (
+	"errors"
 	"strings"
 	"testing"
 )
+
+// validTracearrConfig returns a tracearr integration that passes validation on its own.
+func validTracearrConfig() TracearrConfig {
+	return TracearrConfig{
+		BaseIntegrationConfig: BaseIntegrationConfig{
+			Enabled: true,
+			URL:     "http://tracearr:3000",
+			APIKey:  "trr_pub_test",
+		},
+		ServerID: "server-uuid-123",
+	}
+}
+
+// validStatsBaseConfig returns a minimal config with only Jellyfin enabled so each
+// test can layer stats providers on top without tripping unrelated validation.
+func validStatsBaseConfig() *Config {
+	return &Config{
+		Admin:  AdminConfig{Username: "admin", Password: "pass"},
+		Rules:  RulesConfig{MovieRetention: "90d", TVRetention: "120d"},
+		Server: ServerConfig{Host: "0.0.0.0", Port: 9709},
+		Integrations: IntegrationsConfig{
+			Jellyfin: JellyfinConfig{
+				BaseIntegrationConfig: BaseIntegrationConfig{
+					Enabled: true,
+					URL:     "http://jellyfin:8096",
+					APIKey:  "test-key",
+				},
+			},
+		},
+	}
+}
+
+// hasValidationField reports whether err carries a ValidationError for field.
+func hasValidationField(err error, field string) bool {
+	var verrs ValidationErrors
+	if errors.As(err, &verrs) {
+		for _, e := range verrs {
+			if e.Field == field {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func TestValidate_TracearrConfig(t *testing.T) {
+	validStreamystats := StreamystatsConfig{
+		BaseIntegrationConfig: BaseIntegrationConfig{Enabled: true, URL: "http://streamystats:3000", APIKey: "key"},
+		ServerID:              "streamystats-uuid",
+	}
+	validJellystat := JellystatConfig{
+		BaseIntegrationConfig: BaseIntegrationConfig{Enabled: true, URL: "http://jellystat:3000", APIKey: "key"},
+	}
+
+	tests := []struct {
+		name         string
+		configure    func(*Config)
+		wantErr      bool
+		wantField    string
+		wantContains string
+	}{
+		{
+			name:      "tracearr enabled with url api_key server_id valid",
+			configure: func(c *Config) { c.Integrations.Tracearr = validTracearrConfig() },
+			wantErr:   false,
+		},
+		{
+			name: "tracearr enabled missing server_id",
+			configure: func(c *Config) {
+				tr := validTracearrConfig()
+				tr.ServerID = ""
+				c.Integrations.Tracearr = tr
+			},
+			wantErr:   true,
+			wantField: "integrations.tracearr.server_id",
+		},
+		{
+			name: "tracearr enabled missing url",
+			configure: func(c *Config) {
+				tr := validTracearrConfig()
+				tr.URL = ""
+				c.Integrations.Tracearr = tr
+			},
+			wantErr:   true,
+			wantField: "integrations.tracearr.url",
+		},
+		{
+			name: "tracearr enabled missing api_key",
+			configure: func(c *Config) {
+				tr := validTracearrConfig()
+				tr.APIKey = ""
+				c.Integrations.Tracearr = tr
+			},
+			wantErr:   true,
+			wantField: "integrations.tracearr.api_key",
+		},
+		{
+			name: "tracearr and jellystat mutually exclusive",
+			configure: func(c *Config) {
+				c.Integrations.Tracearr = validTracearrConfig()
+				c.Integrations.Jellystat = validJellystat
+			},
+			wantErr:      true,
+			wantField:    "integrations",
+			wantContains: "only one stats provider may be enabled at a time (jellystat, streamystats, tracearr)",
+		},
+		{
+			name: "tracearr and streamystats mutually exclusive",
+			configure: func(c *Config) {
+				c.Integrations.Tracearr = validTracearrConfig()
+				c.Integrations.Streamystats = validStreamystats
+			},
+			wantErr:      true,
+			wantField:    "integrations",
+			wantContains: "only one stats provider may be enabled at a time (jellystat, streamystats, tracearr)",
+		},
+		{
+			name: "streamystats and jellystat mutually exclusive",
+			configure: func(c *Config) {
+				c.Integrations.Streamystats = validStreamystats
+				c.Integrations.Jellystat = validJellystat
+			},
+			wantErr:      true,
+			wantField:    "integrations",
+			wantContains: "only one stats provider may be enabled at a time (jellystat, streamystats, tracearr)",
+		},
+		{
+			name: "all three stats providers mutually exclusive",
+			configure: func(c *Config) {
+				c.Integrations.Tracearr = validTracearrConfig()
+				c.Integrations.Streamystats = validStreamystats
+				c.Integrations.Jellystat = validJellystat
+			},
+			wantErr:      true,
+			wantField:    "integrations",
+			wantContains: "only one stats provider may be enabled at a time (jellystat, streamystats, tracearr)",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := validStatsBaseConfig()
+			tt.configure(cfg)
+
+			err := Validate(cfg)
+			if tt.wantErr && err == nil {
+				t.Fatalf("expected validation error but got none")
+			}
+			if !tt.wantErr && err != nil {
+				t.Fatalf("unexpected validation error: %v", err)
+			}
+			if tt.wantField != "" && !hasValidationField(err, tt.wantField) {
+				t.Errorf("expected error on field %q, got: %v", tt.wantField, err)
+			}
+			if tt.wantContains != "" && !strings.Contains(err.Error(), tt.wantContains) {
+				t.Errorf("expected error containing %q, got: %v", tt.wantContains, err)
+			}
+		})
+	}
+}
+
+func TestValidate_HasIntegration_TracearrOnly(t *testing.T) {
+	// Only Tracearr enabled (no Jellyfin): hasIntegration must still return true,
+	// so the "at least one integration" error must not fire.
+	cfg := &Config{
+		Admin:  AdminConfig{Username: "admin", Password: "pass"},
+		Rules:  RulesConfig{MovieRetention: "90d", TVRetention: "120d"},
+		Server: ServerConfig{Host: "0.0.0.0", Port: 9709},
+		Integrations: IntegrationsConfig{
+			Tracearr: validTracearrConfig(),
+		},
+	}
+
+	if err := Validate(cfg); err != nil {
+		t.Fatalf("tracearr-only config should be a valid integration set, got: %v", err)
+	}
+}
+
+func TestValidate_RequireWatched_SatisfiedByTracearr(t *testing.T) {
+	userID := 123
+	cfg := validStatsBaseConfig()
+	cfg.Integrations.Tracearr = validTracearrConfig()
+	cfg.AdvancedRules = []AdvancedRule{
+		{
+			Name:           "Tracearr user rule",
+			Type:           "user",
+			Enabled:        true,
+			RequireWatched: true,
+			Users: []UserRule{
+				{UserID: &userID, Retention: "30d"},
+			},
+		},
+	}
+
+	if err := Validate(cfg); err != nil {
+		t.Fatalf("require_watched should be satisfied with only Tracearr enabled, got: %v", err)
+	}
+}
+
+func TestValidate_RequireWatched_ErrorNamesAllStatsProviders(t *testing.T) {
+	userID := 123
+	cfg := validStatsBaseConfig() // Jellyfin only — no stats provider
+	cfg.AdvancedRules = []AdvancedRule{
+		{
+			Name:           "No stats user rule",
+			Type:           "user",
+			Enabled:        true,
+			RequireWatched: true,
+			Users: []UserRule{
+				{UserID: &userID, Retention: "30d"},
+			},
+		},
+	}
+
+	err := Validate(cfg)
+	if err == nil {
+		t.Fatalf("expected require_watched error when no stats provider enabled")
+	}
+	for _, provider := range []string{"jellystat", "streamystats", "tracearr"} {
+		if !strings.Contains(err.Error(), provider) {
+			t.Errorf("require_watched error should name %q, got: %v", provider, err)
+		}
+	}
+}
 
 func TestValidate_UserRules_RequiresAtLeastOneIdentifier(t *testing.T) {
 	userID := 123
