@@ -27,9 +27,11 @@ type StatsProviderMock interface {
 	Disable(cfg map[string]interface{})
 }
 
-// tracearrTestServerID is a fixed media-server UUID written into the Tracearr
-// integration config. Validation requires a non-empty server_id when the
-// provider is enabled, and the Tracearr client fails fast without one.
+// tracearrTestServerID is the media-server UUID the mock Tracearr health
+// endpoint advertises as its jellyfin server. Integration tests deliberately
+// write NO server_id into the Tracearr config so the suite exercises zero-config
+// auto-detection: the client discovers this id from the health response and
+// scopes the history request with it.
 const tracearrTestServerID = "00000000-0000-0000-0000-0000000000aa"
 
 // statsProviderKeys lists every mutually-exclusive stats provider config key.
@@ -93,8 +95,10 @@ func (tracearrProviderMock) ConfigKey() string { return "tracearr" }
 // Tracearr integration config so OxiCleanarr authenticates successfully.
 func (t tracearrProviderMock) APIKey() string { return t.MockTracearrServer.APIKey() }
 
+// Enable writes the Tracearr config with NO server_id so the integration suite
+// exercises zero-config auto-detection through the mock health endpoint.
 func (t tracearrProviderMock) Enable(cfg map[string]interface{}) {
-	enableStatsProvider(cfg, t.ConfigKey(), t.URL(), t.APIKey(), tracearrTestServerID)
+	enableStatsProvider(cfg, t.ConfigKey(), t.URL(), t.APIKey(), "")
 }
 
 func (t tracearrProviderMock) Disable(cfg map[string]interface{}) {
@@ -133,6 +137,10 @@ func enableStatsProvider(cfg map[string]interface{}, key, rawURL, apiKey, server
 	}
 	if serverID != "" {
 		entry["server_id"] = serverID
+	} else {
+		// Remove any stale server_id left from a previous scenario so it
+		// cannot silently skip (or mis-scope) auto-detection.
+		delete(entry, "server_id")
 	}
 }
 

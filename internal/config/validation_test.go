@@ -72,14 +72,13 @@ func TestValidate_TracearrConfig(t *testing.T) {
 			wantErr:   false,
 		},
 		{
-			name: "tracearr enabled missing server_id",
+			name: "tracearr enabled missing server_id is accepted (auto-detect)",
 			configure: func(c *Config) {
 				tr := validTracearrConfig()
 				tr.ServerID = ""
 				c.Integrations.Tracearr = tr
 			},
-			wantErr:   true,
-			wantField: "integrations.tracearr.server_id",
+			wantErr: false,
 		},
 		{
 			name: "tracearr enabled missing url",
@@ -100,6 +99,37 @@ func TestValidate_TracearrConfig(t *testing.T) {
 			},
 			wantErr:   true,
 			wantField: "integrations.tracearr.api_key",
+		},
+		{
+			name: "tracearr enabled missing server_id and url still errors on url",
+			configure: func(c *Config) {
+				tr := validTracearrConfig()
+				tr.ServerID = ""
+				tr.URL = ""
+				c.Integrations.Tracearr = tr
+			},
+			wantErr:   true,
+			wantField: "integrations.tracearr.url",
+		},
+		{
+			name: "tracearr enabled missing server_id and api_key still errors on api_key",
+			configure: func(c *Config) {
+				tr := validTracearrConfig()
+				tr.ServerID = ""
+				tr.APIKey = ""
+				c.Integrations.Tracearr = tr
+			},
+			wantErr:   true,
+			wantField: "integrations.tracearr.api_key",
+		},
+		{
+			name: "tracearr enabled missing server_id with valid url and api_key passes",
+			configure: func(c *Config) {
+				tr := validTracearrConfig()
+				tr.ServerID = ""
+				c.Integrations.Tracearr = tr
+			},
+			wantErr: false,
 		},
 		{
 			name: "tracearr and jellystat mutually exclusive",

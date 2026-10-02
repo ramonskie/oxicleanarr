@@ -61,15 +61,28 @@ type tracearrHistoryResponse struct {
 	Meta tracearrHistoryMeta     `json:"meta"`
 }
 
-// tracearrHealthResponse simulates GET /api/v2/public/health.
-type tracearrHealthResponse struct {
-	Status  string   `json:"status"`
-	Version string   `json:"version"`
-	Servers []string `json:"servers"`
+// tracearrHealthServer is one media-server entry in the v1 health response.
+// ID is the media-server UUID that the client uses as serverId/server_id.
+type tracearrHealthServer struct {
+	ID            string `json:"id"`
+	Name          string `json:"name"`
+	Type          string `json:"type"`
+	Online        bool   `json:"online"`
+	Historical    bool   `json:"historical"`
+	ActiveStreams int    `json:"activeStreams"`
 }
 
-// MockTracearrServer creates a mock HTTP server that simulates the Tracearr v2
-// public API. It serves GET /api/v2/public/health and
+// tracearrHealthResponse simulates GET /api/v1/public/health. Health is a v1
+// endpoint; the v2 public API has no health route.
+type tracearrHealthResponse struct {
+	Status    string                 `json:"status"`
+	Version   string                 `json:"version"`
+	Timestamp string                 `json:"timestamp"`
+	Servers   []tracearrHealthServer `json:"servers"`
+}
+
+// MockTracearrServer creates a mock HTTP server that simulates the Tracearr
+// public API. It serves GET /api/v1/public/health and
 // GET /api/v2/public/history?pageSize=&cursor= (bearer-keyed, cursor-paginated).
 type MockTracearrServer struct {
 	Server         *httptest.Server
@@ -95,7 +108,7 @@ func NewMockTracearrServer() *MockTracearrServer {
 	}
 
 	mux := http.NewServeMux()
-	mux.HandleFunc("/api/v2/public/health", mock.handleHealth)
+	mux.HandleFunc("/api/v1/public/health", mock.handleHealth)
 	mux.HandleFunc("/api/v2/public/history", mock.handleHistory)
 
 	listener, err := net.Listen("tcp", "0.0.0.0:0")
@@ -188,8 +201,10 @@ func (m *MockTracearrServer) URL() string {
 	return m.Server.URL
 }
 
-// handleHealth responds to GET /api/v2/public/health with a 200 JSON body.
-// A missing or wrong bearer key yields 401.
+// handleHealth responds to GET /api/v1/public/health with a 200 JSON body
+// listing the mock media servers. The single jellyfin entry carries
+// tracearrTestServerID so zero-config auto-detection resolves to it. A missing
+// or wrong bearer key yields 401.
 func (m *MockTracearrServer) handleHealth(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
@@ -202,9 +217,27 @@ func (m *MockTracearrServer) handleHealth(w http.ResponseWriter, r *http.Request
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(tracearrHealthResponse{
-		Status:  "ok",
-		Version: "2.0.0-mock",
-		Servers: []string{tracearrTestServerID, "mock-plex-1"},
+		Status:    "ok",
+		Version:   "2.0.0-mock",
+		Timestamp: time.Now().UTC().Format(time.RFC3339),
+		Servers: []tracearrHealthServer{
+			{
+				ID:            tracearrTestServerID,
+				Name:          "Mock Jellyfin",
+				Type:          "jellyfin",
+				Online:        true,
+				Historical:    true,
+				ActiveStreams: 0,
+			},
+			{
+				ID:            "mock-plex-1",
+				Name:          "Mock Plex",
+				Type:          "plex",
+				Online:        true,
+				Historical:    true,
+				ActiveStreams: 0,
+			},
+		},
 	})
 }
 
@@ -232,6 +265,19 @@ func (m *MockTracearrServer) handleHistory(w http.ResponseWriter, r *http.Reques
 	cursor := r.URL.Query().Get("cursor")
 	records := append([]TracearrHistoryRecord(nil), m.records...)
 	m.historyMu.RUnlock()
+
+	// Enforce media-server scoping. Real Tracearr scopes history to the
+	// serverId query param; a client that omits or mis-scopes it must receive
+	// no history rather than another server's rows. Respond 200 with an empty
+	// data array so the client sees a valid, empty page.
+	if r.URL.Query().Get("serverId") != tracearrTestServerID {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(tracearrHistoryResponse{
+			Data: []TracearrHistoryRecord{},
+			Meta: tracearrHistoryMeta{Total: 0, PageSize: effectivePageSize},
+		})
+		return
+	}
 
 	start, err := decodeTracearrCursor(cursor)
 	if err != nil {
@@ -282,7 +328,7 @@ func DefaultTracearrHistoryRecords() []TracearrHistoryRecord {
 	return []TracearrHistoryRecord{
 		{
 			RatingKey:  "jellyfin-fight-club-id",
-			ServerID:   "mock-jellyfin-1",
+			ServerID:   tracearrTestServerID,
 			ServerType: "jellyfin",
 			MediaType:  "movie",
 			StartedAt:  now.Add(-10 * 24 * time.Hour),
@@ -295,7 +341,7 @@ func DefaultTracearrHistoryRecords() []TracearrHistoryRecord {
 		},
 		{
 			RatingKey:  "jellyfin-pulp-fiction-id",
-			ServerID:   "mock-jellyfin-1",
+			ServerID:   tracearrTestServerID,
 			ServerType: "jellyfin",
 			MediaType:  "movie",
 			StartedAt:  now.Add(-60 * 24 * time.Hour),
@@ -308,7 +354,7 @@ func DefaultTracearrHistoryRecords() []TracearrHistoryRecord {
 		},
 		{
 			RatingKey:  "jellyfin-inception-id",
-			ServerID:   "mock-jellyfin-1",
+			ServerID:   tracearrTestServerID,
 			ServerType: "jellyfin",
 			MediaType:  "movie",
 			StartedAt:  now.Add(-5 * 24 * time.Hour),
@@ -335,7 +381,7 @@ func DefaultTracearrHistoryRecords() []TracearrHistoryRecord {
 		{
 			// Missing rating_key: the client must skip this row.
 			RatingKey:  "",
-			ServerID:   "mock-jellyfin-1",
+			ServerID:   tracearrTestServerID,
 			ServerType: "jellyfin",
 			MediaType:  "movie",
 			StartedAt:  now.Add(-20 * 24 * time.Hour),
@@ -347,7 +393,7 @@ func DefaultTracearrHistoryRecords() []TracearrHistoryRecord {
 		},
 		{
 			RatingKey:  "jellyfin-dark-knight-id",
-			ServerID:   "mock-jellyfin-1",
+			ServerID:   tracearrTestServerID,
 			ServerType: "jellyfin",
 			MediaType:  "movie",
 			StartedAt:  now.Add(-30 * 24 * time.Hour),
@@ -360,7 +406,7 @@ func DefaultTracearrHistoryRecords() []TracearrHistoryRecord {
 		},
 		{
 			RatingKey:  "jellyfin-interstellar-id",
-			ServerID:   "mock-jellyfin-1",
+			ServerID:   tracearrTestServerID,
 			ServerType: "jellyfin",
 			MediaType:  "movie",
 			StartedAt:  now.Add(-45 * 24 * time.Hour),

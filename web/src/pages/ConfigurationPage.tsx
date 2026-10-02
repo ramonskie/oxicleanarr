@@ -994,14 +994,14 @@ export default function ConfigurationPage() {
                 <label className="text-sm font-medium">Server ID</label>
                 <p className="text-sm text-gray-500 mb-2">
                   {formData.integrations?.tracearr?.has_server_id
-                    ? 'Server ID is configured'
-                    : 'Tracearr media-server UUID (required; NOT the Jellyfin server id)'}
+                    ? 'Server ID is configured (auto-detection disabled)'
+                    : 'Leave blank to auto-detect the Jellyfin server'}
                 </p>
                 <Input
                   type="text"
                   value={formData.integrations?.tracearr?.server_id || ''}
                   onChange={(e) => handleIntegrationChange('tracearr', 'server_id', e.target.value)}
-                  placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+                  placeholder="Optional — auto-detected when blank"
                 />
               </div>
 

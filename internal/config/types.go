@@ -139,7 +139,8 @@ type StreamystatsConfig struct {
 }
 
 // TracearrConfig holds Tracearr integration settings.
-// ServerID is the Tracearr media-server UUID (required when enabled).
+// ServerID is the Tracearr media-server UUID. It is optional: when blank the
+// client auto-detects the sole Jellyfin server from Tracearr's health endpoint.
 // APIKey should be set to the Tracearr public API key (trr_pub_...).
 type TracearrConfig struct {
 	BaseIntegrationConfig `mapstructure:",squash" yaml:",inline" json:",inline"`

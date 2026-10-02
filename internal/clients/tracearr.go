@@ -7,6 +7,8 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
+	"strings"
+	"sync"
 	"time"
 
 	"github.com/ramonskie/oxicleanarr/internal/config"
@@ -21,14 +23,23 @@ const tracearrHistoryPageSize = 100
 // non-advancing (or self-referencing) cursor cannot loop forever.
 const tracearrMaxPages = 1000
 
-// TracearrClient handles communication with the Tracearr v2 Public API.
+// TracearrClient handles communication with the Tracearr public API.
 // Auth: Authorization: Bearer trr_pub_<base64url>.
+// Health/discovery: GET /api/v1/public/health
 // History: GET /api/v2/public/history?pageSize=100&cursor=<opaque>&serverId=<uuid>
+//
+// serverID may be left empty (zero-config). On first GetHistory the client
+// auto-detects the sole Jellyfin media server from the health endpoint and
+// caches the resolved UUID for its lifetime. An explicit serverID skips
+// discovery entirely.
 type TracearrClient struct {
 	baseURL  string
 	apiKey   string
 	serverID string
 	client   *http.Client
+
+	mu               sync.Mutex // guards resolvedServerID
+	resolvedServerID string     // cached auto-detected media-server UUID
 }
 
 // Compile-time assertion that TracearrClient satisfies the shared StatsProvider
@@ -47,17 +58,108 @@ func NewTracearrClient(cfg config.TracearrConfig) *TracearrClient {
 	return &TracearrClient{
 		baseURL:  cfg.URL,
 		apiKey:   cfg.APIKey,
-		serverID: cfg.ServerID,
+		serverID: strings.TrimSpace(cfg.ServerID),
 		client: &http.Client{
 			Timeout: timeout,
 		},
 	}
 }
 
+// resolveServerID returns the media-server UUID to scope history to. A
+// configured server_id is used as-is and never triggers discovery. Otherwise
+// the v1 health endpoint is queried once, the sole Jellyfin server is selected,
+// cached, and reused on later calls. The mutex serialises concurrent first
+// calls so discovery happens at most once.
+func (c *TracearrClient) resolveServerID(ctx context.Context) (string, error) {
+	if c.serverID != "" {
+		return c.serverID, nil
+	}
+
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	if c.resolvedServerID != "" {
+		return c.resolvedServerID, nil
+	}
+
+	discovered, err := c.discoverJellyfinServer(ctx)
+	if err != nil {
+		return "", err
+	}
+	c.resolvedServerID = discovered
+	return discovered, nil
+}
+
+// discoverJellyfinServer queries the v1 health endpoint and returns the UUID of
+// the single Jellyfin server. Zero or multiple Jellyfin servers are an error
+// because either would make watch-history scoping ambiguous.
+func (c *TracearrClient) discoverJellyfinServer(ctx context.Context) (string, error) {
+	servers, err := c.fetchHealthServers(ctx)
+	if err != nil {
+		return "", err
+	}
+
+	jellyfin := make([]tracearrHealthServer, 0, len(servers))
+	for _, s := range servers {
+		if strings.EqualFold(strings.TrimSpace(s.Type), "jellyfin") {
+			jellyfin = append(jellyfin, s)
+		}
+	}
+
+	switch len(jellyfin) {
+	case 0:
+		return "", fmt.Errorf("tracearr: no Jellyfin server found; configure one in Tracearr or set server_id explicitly")
+	case 1:
+		id := strings.TrimSpace(jellyfin[0].ID)
+		if id == "" {
+			return "", fmt.Errorf("tracearr: discovered Jellyfin server has no id; set server_id explicitly")
+		}
+		log.Debug().Str("server_id", id).Msg("Tracearr: auto-detected Jellyfin server")
+		return id, nil
+	default:
+		names := make([]string, 0, len(jellyfin))
+		for _, s := range jellyfin {
+			names = append(names, fmt.Sprintf("%s (%s)", s.Name, strings.TrimSpace(s.ID)))
+		}
+		return "", fmt.Errorf("tracearr: multiple Jellyfin servers found (%s); set server_id explicitly", strings.Join(names, ", "))
+	}
+}
+
+// fetchHealthServers calls GET /api/v1/public/health and returns its servers.
+func (c *TracearrClient) fetchHealthServers(ctx context.Context) ([]tracearrHealthServer, error) {
+	endpoint := fmt.Sprintf("%s/api/v1/public/health", c.baseURL)
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+	if err != nil {
+		return nil, fmt.Errorf("tracearr: creating request: %w", err)
+	}
+
+	req.Header.Set("Authorization", "Bearer "+c.apiKey)
+	req.Header.Set("Accept", "application/json")
+
+	resp, err := c.client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("tracearr: making request to %s: %w", c.baseURL, err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("tracearr: unexpected status code: %d", resp.StatusCode)
+	}
+
+	var result tracearrHealthResponse
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("tracearr: decoding response: %w", err)
+	}
+
+	return result.Servers, nil
+}
+
 // tracearrHistoryRecord is a single HistoryRecord returned by the v2 API.
 // rating_key is nullable; server_type distinguishes the originating media server.
 type tracearrHistoryRecord struct {
 	RatingKey  *string   `json:"rating_key"`
+	ServerID   string    `json:"server_id"`
 	ServerType string    `json:"server_type"`
 	StartedAt  time.Time `json:"started_at"`
 	DurationMS int       `json:"duration_ms"`
@@ -75,6 +177,26 @@ type tracearrHistoryResponse struct {
 	Meta tracearrHistoryMeta     `json:"meta"`
 }
 
+// tracearrHealthServer is one media-server entry from the v1 health endpoint.
+// ID is the media-server UUID used as the history serverId/server_id.
+type tracearrHealthServer struct {
+	ID            string `json:"id"`
+	Name          string `json:"name"`
+	Type          string `json:"type"`
+	Online        bool   `json:"online"`
+	Historical    bool   `json:"historical"`
+	ActiveStreams int    `json:"activeStreams"`
+}
+
+// tracearrHealthResponse is the GET /api/v1/public/health envelope. The v2
+// public API has no health endpoint; health is v1-only.
+type tracearrHealthResponse struct {
+	Status    string                 `json:"status"`
+	Version   string                 `json:"version"`
+	Timestamp string                 `json:"timestamp"`
+	Servers   []tracearrHealthServer `json:"servers"`
+}
+
 // GetHistory fetches the complete watch history from Tracearr, following
 // meta.nextCursor until it is null/absent. itemIDs is accepted for interface
 // compatibility but ignored — Tracearr returns bulk cursor-paginated history.
@@ -83,12 +205,12 @@ type tracearrHistoryResponse struct {
 // PlaybackSeconds=duration_ms/1000. Rows with an empty/null rating_key or a
 // server_type other than "jellyfin" are skipped.
 func (c *TracearrClient) GetHistory(ctx context.Context, _ []string) ([]StatsHistoryItem, error) {
-	// server_id is required when Tracearr is enabled (enforced by config
-	// validation). Guarding here as well prevents history from multiple
-	// Jellyfin servers being merged into one unscoped result if a config
-	// bypasses validation (e.g. programmatic/hot-reload paths).
-	if c.serverID == "" {
-		return nil, fmt.Errorf("tracearr: server_id is required")
+	// Resolve the media server to scope history to. An explicit server_id wins;
+	// otherwise the sole Jellyfin server is auto-detected from health and
+	// cached so history from multiple servers is never merged unscoped.
+	serverID, err := c.resolveServerID(ctx)
+	if err != nil {
+		return nil, err
 	}
 
 	log.Debug().Str("url", c.baseURL).Msg("Fetching watch history from Tracearr")
@@ -109,7 +231,7 @@ func (c *TracearrClient) GetHistory(ctx context.Context, _ []string) ([]StatsHis
 			break
 		}
 
-		records, nextCursor, err := c.fetchHistoryPage(ctx, cursor)
+		records, nextCursor, err := c.fetchHistoryPage(ctx, serverID, cursor)
 		if err != nil {
 			return nil, err
 		}
@@ -119,8 +241,16 @@ func (c *TracearrClient) GetHistory(ctx context.Context, _ []string) ([]StatsHis
 			if rec.RatingKey == nil || *rec.RatingKey == "" {
 				continue
 			}
-			// Defensive: only Jellyfin items are relevant to OxiCleanarr.
-			if rec.ServerType != "jellyfin" {
+			// Defensive: only Jellyfin items are relevant to OxiCleanarr. Match
+			// case-insensitively and ignore surrounding whitespace so a
+			// differently-cased provider value is not silently dropped.
+			if !strings.EqualFold(strings.TrimSpace(rec.ServerType), "jellyfin") {
+				continue
+			}
+			// Record-level scope defence: if the API ignores the serverId query
+			// and returns rows from other media servers, drop any row that names
+			// a different server. An empty server_id is tolerated (older rows).
+			if recServerID := strings.TrimSpace(rec.ServerID); recServerID != "" && recServerID != serverID {
 				continue
 			}
 			// A JSON null/absent started_at decodes to the zero time; treat it
@@ -165,8 +295,9 @@ func (c *TracearrClient) GetHistory(ctx context.Context, _ []string) ([]StatsHis
 }
 
 // fetchHistoryPage requests a single page of history and returns its records
-// along with the next cursor (empty when pagination is exhausted).
-func (c *TracearrClient) fetchHistoryPage(ctx context.Context, cursor string) ([]tracearrHistoryRecord, string, error) {
+// along with the next cursor (empty when pagination is exhausted). serverID is
+// always non-empty — GetHistory resolves it (explicit or auto-detected) first.
+func (c *TracearrClient) fetchHistoryPage(ctx context.Context, serverID, cursor string) ([]tracearrHistoryRecord, string, error) {
 	endpoint, err := url.Parse(fmt.Sprintf("%s/api/v2/public/history", c.baseURL))
 	if err != nil {
 		return nil, "", fmt.Errorf("tracearr: parsing history URL: %w", err)
@@ -177,9 +308,7 @@ func (c *TracearrClient) fetchHistoryPage(ctx context.Context, cursor string) ([
 	if cursor != "" {
 		q.Set("cursor", cursor)
 	}
-	if c.serverID != "" {
-		q.Set("serverId", c.serverID)
-	}
+	q.Set("serverId", serverID)
 	endpoint.RawQuery = q.Encode()
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint.String(), nil)
@@ -213,10 +342,11 @@ func (c *TracearrClient) fetchHistoryPage(ctx context.Context, cursor string) ([
 	return result.Data, next, nil
 }
 
-// Ping checks whether Tracearr is reachable by calling the public health
-// endpoint. Only HTTP 200 is considered healthy.
+// Ping checks whether Tracearr is reachable by calling the v1 public health
+// endpoint (the v2 public API has no health endpoint). Only HTTP 200 is
+// considered healthy.
 func (c *TracearrClient) Ping(ctx context.Context) error {
-	endpoint := fmt.Sprintf("%s/api/v2/public/health", c.baseURL)
+	endpoint := fmt.Sprintf("%s/api/v1/public/health", c.baseURL)
 
 	log.Debug().Str("url", c.baseURL).Msg("Pinging Tracearr")
 
@@ -226,6 +356,7 @@ func (c *TracearrClient) Ping(ctx context.Context) error {
 	}
 
 	req.Header.Set("Authorization", "Bearer "+c.apiKey)
+	req.Header.Set("Accept", "application/json")
 
 	resp, err := c.client.Do(req)
 	if err != nil {

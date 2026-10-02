@@ -305,7 +305,7 @@ integrations:
     enabled: false
     url: http://tracearr:3000
     api_key: ""        # Tracearr v2 Public API key (trr_pub_...; Settings → General)
-    server_id: ""      # Tracearr media-server UUID (required; NOT the Jellyfin server id)
+    server_id: ""      # Optional: leave blank to auto-detect the Jellyfin server
 ```
 
 ### Environment Variables

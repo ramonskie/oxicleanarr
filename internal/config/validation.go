@@ -121,15 +121,11 @@ func Validate(cfg *Config) error {
 		}
 	}
 
-	// Validate Tracearr
+	// Validate Tracearr. server_id is optional: when blank the client
+	// auto-detects the sole Jellyfin media server from Tracearr's health
+	// endpoint, so only url + api_key are required.
 	if cfg.Integrations.Tracearr.Enabled {
 		errors = validateIntegration(errors, "integrations.tracearr", cfg.Integrations.Tracearr.URL, cfg.Integrations.Tracearr.APIKey)
-		if cfg.Integrations.Tracearr.ServerID == "" {
-			errors = append(errors, ValidationError{
-				Field:   "integrations.tracearr.server_id",
-				Message: "required when enabled=true",
-			})
-		}
 	}
 
 	// Validate retention_base
