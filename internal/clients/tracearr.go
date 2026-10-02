@@ -158,11 +158,12 @@ func (c *TracearrClient) fetchHealthServers(ctx context.Context) ([]tracearrHeal
 // tracearrHistoryRecord is a single HistoryRecord returned by the v2 API.
 // rating_key is nullable; server_type distinguishes the originating media server.
 type tracearrHistoryRecord struct {
-	RatingKey  *string   `json:"rating_key"`
-	ServerID   string    `json:"server_id"`
-	ServerType string    `json:"server_type"`
-	StartedAt  time.Time `json:"started_at"`
-	DurationMS int       `json:"duration_ms"`
+	RatingKey   *string   `json:"rating_key"`
+	ServerID    string    `json:"server_id"`
+	ServerType  string    `json:"server_type"`
+	StartedAt   time.Time `json:"started_at"`
+	DurationMS  int       `json:"duration_ms"`
+	ReferenceID string    `json:"reference_id"` // resume-chain / play key
 }
 
 // tracearrHistoryMeta carries cursor pagination metadata. NextCursor is a
@@ -264,6 +265,7 @@ func (c *TracearrClient) GetHistory(ctx context.Context, _ []string) ([]StatsHis
 				JellyfinItemID:  *rec.RatingKey,
 				WatchedAt:       rec.StartedAt,
 				PlaybackSeconds: rec.DurationMS / 1000,
+				PlayID:          rec.ReferenceID,
 			})
 		}
 

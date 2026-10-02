@@ -24,6 +24,8 @@ const (
 	SourceWatchedRule
 	SourceStandardRetention
 	SourceEpisodeRule
+	SourceStaleRule
+	SourceRoiRule
 )
 
 // RuleVerdict is the complete, structured output of rule evaluation.

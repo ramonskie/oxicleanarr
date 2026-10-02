@@ -10,6 +10,11 @@ type StatsHistoryItem struct {
 	JellyfinItemID  string
 	WatchedAt       time.Time
 	PlaybackSeconds int
+	// PlayID is a stable identity for the play this record belongs to. When a
+	// provider groups resume chains (e.g. Tracearr's reference_id) this is the
+	// chain key; otherwise it is a per-session id or empty. Empty means each
+	// record is treated as a distinct play.
+	PlayID string
 }
 
 // StatsProvider is the common interface for watch-history providers (Jellystat, Streamystats).

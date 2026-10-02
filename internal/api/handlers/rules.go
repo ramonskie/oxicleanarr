@@ -438,10 +438,12 @@ func validateRule(rule *config.AdvancedRule) error {
 		"tag":     true,
 		"episode": true,
 		"user":    true,
+		"stale":   true,
+		"roi":     true,
 	}
 
 	if !validTypes[rule.Type] {
-		return ErrInvalidInput{Field: "type", Message: "Rule type must be 'tag', 'episode', or 'user'"}
+		return ErrInvalidInput{Field: "type", Message: "Rule type must be 'tag', 'episode', 'user', 'stale', or 'roi'"}
 	}
 
 	// Type-specific validation
@@ -457,6 +459,9 @@ func validateRule(rule *config.AdvancedRule) error {
 		if rule.MaxEpisodes <= 0 && rule.MaxAge == "" {
 			return ErrInvalidInput{Field: "max_episodes", Message: "Either max_episodes or max_age is required for episode rules"}
 		}
+	case "stale", "roi":
+		// Thresholds are optional: the rule falls back to analytics config
+		// defaults when stale_days / min_watch_hours_per_gb are unset.
 	case "user":
 		if len(rule.Users) == 0 {
 			return ErrInvalidInput{Field: "users", Message: "At least one user is required for user-based rules"}

@@ -128,6 +128,43 @@ func Validate(cfg *Config) error {
 		errors = validateIntegration(errors, "integrations.tracearr", cfg.Integrations.Tracearr.URL, cfg.Integrations.Tracearr.APIKey)
 	}
 
+	// Analytics value thresholds are validated regardless of whether the
+	// feature is enabled, so invalid values can't be persisted while off and
+	// then silently activate. These drive stale/roi rules.
+	validateThreshold := func(field string, t ValueThreshold) {
+		if t.Low < 0 || t.High < 0 {
+			errors = append(errors, ValidationError{Field: field, Message: "low/high must be non-negative"})
+		} else if t.High > 0 && t.Low > t.High {
+			errors = append(errors, ValidationError{Field: field, Message: "low must be less than or equal to high"})
+		}
+	}
+	validateThreshold("analytics.value_thresholds.movie", cfg.Analytics.ValueThresholds.Movie)
+	validateThreshold("analytics.value_thresholds.episode", cfg.Analytics.ValueThresholds.Episode)
+	validateThreshold("analytics.value_thresholds.show", cfg.Analytics.ValueThresholds.Show)
+
+	// When analytics is enabled the day windows must be positive: negative or
+	// zero values would make every item stale / eligible for deletion.
+	if cfg.Analytics.Enabled {
+		if cfg.Analytics.StaleDays <= 0 {
+			errors = append(errors, ValidationError{
+				Field:   "analytics.stale_days",
+				Message: "must be a positive integer when analytics is enabled",
+			})
+		}
+		if cfg.Analytics.ROIPeriodDays <= 0 {
+			errors = append(errors, ValidationError{
+				Field:   "analytics.roi_period_days",
+				Message: "must be a positive integer when analytics is enabled",
+			})
+		}
+		if cfg.Analytics.SuggestDeletionDays <= 0 {
+			errors = append(errors, ValidationError{
+				Field:   "analytics.suggest_deletion_days",
+				Message: "must be a positive integer when analytics is enabled",
+			})
+		}
+	}
+
 	// Validate retention_base
 	validRetentionBases := []string{"last_watched_or_added", "last_watched", "added"}
 	if cfg.Rules.RetentionBase != "" && !contains(validRetentionBases, cfg.Rules.RetentionBase) {

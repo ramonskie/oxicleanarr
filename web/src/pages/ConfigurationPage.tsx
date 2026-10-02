@@ -7,7 +7,7 @@ import { Input } from '@/components/ui/input';
 import { Save, Clock, RefreshCw, Info, Eye, EyeOff, HardDrive } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { useState, useEffect } from 'react';
-import type { Config, UpdateConfigRequest, BaseIntegration, DiskThresholdConfig } from '@/lib/types';
+import type { Config, UpdateConfigRequest, BaseIntegration, DiskThresholdConfig, AnalyticsConfig } from '@/lib/types';
 import AppLayout from '@/components/AppLayout';
 import { ServiceStatusCard } from '@/components/ServiceStatusCard';
 import {
@@ -18,6 +18,21 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
+
+// Client-side fallbacks mirroring the backend analytics defaults. Used only
+// when the server has not yet supplied the analytics section.
+const DEFAULT_ANALYTICS: AnalyticsConfig = {
+  enabled: true,
+  stale_days: 90,
+  roi_period_days: 90,
+  include_age_decay: true,
+  suggest_deletion_days: 180,
+  value_thresholds: {
+    movie: { low: 0.1, high: 0.5 },
+    episode: { low: 0.5, high: 2.0 },
+    show: { low: 0.3, high: 1.0 },
+  },
+};
 
 export default function ConfigurationPage() {
   const { section = 'general' } = useParams<{ section: string }>();
@@ -189,6 +204,7 @@ export default function ConfigurationPage() {
         },
       },
       overlay: formData.overlay,
+      analytics: formData.analytics,
     };
     
     updateConfigMutation.mutate(updateReq);
@@ -219,6 +235,32 @@ export default function ConfigurationPage() {
         },
       } as any,
     }));
+  };
+
+  const handleValueThresholdChange = (
+    kind: 'movie' | 'episode' | 'show',
+    field: 'low' | 'high',
+    value: number
+  ) => {
+    setFormData((prev) => {
+      // Never fabricate an analytics section: only edit what the server sent,
+      // so a stale form can't silently enable analytics.
+      if (!prev.analytics) return prev;
+      return {
+        ...prev,
+        analytics: {
+          ...prev.analytics,
+          value_thresholds: {
+            ...DEFAULT_ANALYTICS.value_thresholds,
+            ...prev.analytics.value_thresholds,
+            [kind]: {
+              ...(prev.analytics.value_thresholds?.[kind] ?? DEFAULT_ANALYTICS.value_thresholds[kind]),
+              [field]: value,
+            },
+          },
+        },
+      };
+    });
   };
 
   const handleDiskThresholdChange = (field: keyof DiskThresholdConfig, value: any) => {
@@ -349,6 +391,7 @@ export default function ConfigurationPage() {
             <h1 className="text-3xl font-bold">
               {section === 'general' && 'General Settings'}
               {section === 'integrations' && 'Integrations'}
+              {section === 'analytics' && 'Analytics'}
               {section === 'admin' && 'Server & Admin'}
             </h1>
           </div>
@@ -1021,6 +1064,124 @@ export default function ConfigurationPage() {
         )}
 
 
+
+        {/* Analytics Section */}
+        {section === 'analytics' && (
+          <div className="space-y-6">
+            <div className="mb-4">
+              <h2 className="text-xl font-bold mb-2">Analytics Settings</h2>
+              <p className="text-sm text-muted-foreground">
+                Stale-content and storage-ROI (watch hours per GB) thresholds. Changes hot-reload and re-evaluate rules.
+              </p>
+            </div>
+
+            <Card>
+              <CardHeader>
+                <CardTitle>Stale &amp; ROI Analysis</CardTitle>
+                <CardDescription>
+                  Thresholds used by the Analytics dashboard and the stale/roi rule types
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <label className="text-sm font-medium">Enable Analytics</label>
+                    <p className="text-sm text-gray-500">Compute stale content and storage ROI</p>
+                  </div>
+                  <input
+                    type="checkbox"
+                    checked={formData.analytics?.enabled || false}
+                    onChange={(e) => handleInputChange('analytics', 'enabled', e.target.checked)}
+                    className="h-4 w-4"
+                  />
+                </div>
+
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <div>
+                    <label className="text-sm font-medium">Stale After (days)</label>
+                    <p className="text-sm text-gray-500 mb-2">
+                      Item is stale once unwatched this long (never-watched counts from add date)
+                    </p>
+                    <Input
+                      type="number"
+                      min="1"
+                      value={formData.analytics?.stale_days ?? 90}
+                      disabled={!formData.analytics?.enabled}
+                      onChange={(e) => handleInputChange('analytics', 'stale_days', Math.max(1, parseInt(e.target.value, 10) || 1))}
+                    />
+                  </div>
+                  <div>
+                    <label className="text-sm font-medium">ROI Period (days)</label>
+                    <p className="text-sm text-gray-500 mb-2">Watch-time window used for hours-per-GB</p>
+                    <Input
+                      type="number"
+                      min="1"
+                      value={formData.analytics?.roi_period_days ?? 90}
+                      disabled={!formData.analytics?.enabled}
+                      onChange={(e) => handleInputChange('analytics', 'roi_period_days', Math.max(1, parseInt(e.target.value, 10) || 1))}
+                    />
+                  </div>
+                  <div>
+                    <label className="text-sm font-medium">Suggest Deletion After (days)</label>
+                    <p className="text-sm text-gray-500 mb-2">
+                      Low-value items unwatched this long become deletion candidates
+                    </p>
+                    <Input
+                      type="number"
+                      min="1"
+                      value={formData.analytics?.suggest_deletion_days ?? 180}
+                      disabled={!formData.analytics?.enabled}
+                      onChange={(e) => handleInputChange('analytics', 'suggest_deletion_days', Math.max(1, parseInt(e.target.value, 10) || 1))}
+                    />
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <label className="text-sm font-medium">Age Decay</label>
+                      <p className="text-sm text-gray-500">Penalise the ROI score of old, unwatched content</p>
+                    </div>
+                    <input
+                      type="checkbox"
+                      checked={formData.analytics?.include_age_decay ?? true}
+                      disabled={!formData.analytics?.enabled}
+                      onChange={(e) => handleInputChange('analytics', 'include_age_decay', e.target.checked)}
+                      className="h-4 w-4"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="text-sm font-medium">Value Thresholds (watch hours per GB)</label>
+                  <p className="text-sm text-gray-500 mb-3">Below low = low value; above high = high value</p>
+                  <div className="space-y-3">
+                    {(['movie', 'episode', 'show'] as const).map((kind) => (
+                      <div key={kind} className="grid grid-cols-[90px_1fr_1fr] gap-3 items-center">
+                        <span className="text-sm text-gray-400 capitalize">{kind}</span>
+                        <Input
+                          type="number"
+                          step="0.01"
+                          min="0"
+                          disabled={!formData.analytics?.enabled}
+                          value={formData.analytics?.value_thresholds?.[kind]?.low ?? DEFAULT_ANALYTICS.value_thresholds[kind].low}
+                          onChange={(e) => handleValueThresholdChange(kind, 'low', Math.max(0, parseFloat(e.target.value) || 0))}
+                          placeholder="low"
+                        />
+                        <Input
+                          type="number"
+                          step="0.01"
+                          min="0"
+                          disabled={!formData.analytics?.enabled}
+                          value={formData.analytics?.value_thresholds?.[kind]?.high ?? DEFAULT_ANALYTICS.value_thresholds[kind].high}
+                          onChange={(e) => handleValueThresholdChange(kind, 'high', Math.max(0, parseFloat(e.target.value) || 0))}
+                          placeholder="high"
+                        />
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+        )}
 
         {/* Server & Admin Section */}
         {section === 'admin' && (

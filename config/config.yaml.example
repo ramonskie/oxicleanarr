@@ -77,6 +77,17 @@ integrations:
 #   incremental_interval: 15       # Incremental sync every 15 minutes
 #   auto_start: true               # Start sync scheduler on application startup
 
+# analytics:                    # Stale-content, dead-weight (never-watched), and storage ROI analysis
+#   enabled: true
+#   stale_days: 90              # Stale once unwatched this long (never-watched counts from add date)
+#   roi_period_days: 90         # Watch-time window for hours-per-GB
+#   include_age_decay: true     # Decay the ROI score for old, unwatched content
+#   suggest_deletion_days: 180  # Flag low-value items unwatched this long
+#   value_thresholds:           # Watch hours per GB (low / high)
+#     movie:   { low: 0.1, high: 0.5 }
+#     episode: { low: 0.5, high: 2.0 }   # reserved: episode-level data not yet stored
+#     show:    { low: 0.3, high: 1.0 }
+
 # rules:
 #   movie_retention: 90d        # How long to keep movies (e.g., "90d", "30d", "180d")
 #   tv_retention: 120d          # How long to keep TV shows (e.g., "120d", "60d", "240d")
@@ -94,8 +105,23 @@ integrations:
 #                         # NOTE: With auth enabled, the login token is sent as an
 #                         # httpOnly cookie, so cross-origin frontends MUST be listed here.
 
-# Advanced Rules (optional) - Tag-based, watched-based, or user-based cleanup
+# Advanced Rules (optional) - Tag-based, watched-based, user-based, or analytics cleanup
 # advanced_rules:
+#   # Example 0a: Stale-Content Cleanup
+#   # Delete items unwatched (or unadded) beyond the analytics stale threshold.
+#   - name: Stale Content
+#     type: stale
+#     enabled: true
+#     stale_days: 90            # Optional; defaults to analytics.stale_days
+#     retention: 7d             # Optional grace period after the threshold
+#
+#   # Example 0b: Low-ROI Cleanup
+#   # Delete storage that earns too few watch hours per GB.
+#   - name: Low ROI
+#     type: roi
+#     enabled: true
+#     min_watch_hours_per_gb: 0.1   # Optional; defaults to per-type analytics thresholds
+#
 #   # Example 1: Tag-Based Rules
 #   - name: Kids Content
 #     type: tag

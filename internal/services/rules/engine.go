@@ -68,6 +68,14 @@ func NewRulesEngine(exclusions *storage.ExclusionsFile, diskMonitor DiskMonitor)
 			wr := NewWatchedRule(rule)
 			e.protectionRules = append(e.protectionRules, wr)
 			e.schedulingRules = append(e.schedulingRules, wr)
+		case "stale":
+			sr := NewStaleRule(rule)
+			e.protectionRules = append(e.protectionRules, sr)
+			e.schedulingRules = append(e.schedulingRules, sr)
+		case "roi":
+			rr := NewROIRule(rule)
+			e.protectionRules = append(e.protectionRules, rr)
+			e.schedulingRules = append(e.schedulingRules, rr)
 		case "episode":
 			// Episode rules require a Sonarr client, injected later via SetSonarrClient().
 			// Store the config now; EpisodeRule instances are created on injection.

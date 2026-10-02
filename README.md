@@ -12,7 +12,8 @@
 ## Features
 
 - **Automated Media Cleanup**: Intelligently removes unwatched media based on configurable retention rules
-- **Advanced Rules Engine**: Tag-based, user-based, and watched-based cleanup rules for fine-grained control
+- **Advanced Rules Engine**: Tag-based, user-based, watched-based, and analytics (stale/ROI) cleanup rules for fine-grained control
+- **Stale, Dead Weight & ROI Analytics**: Stale-content detection, all-time never-watched ("dead weight") titles, and storage ROI (watch hours per GB) with a dashboard, inline Protect / Leaving Soon actions, and deletion suggestions. Works with any enabled watch-history provider (Jellystat, Streamystats, or Tracearr); dead weight also works with Jellyfin alone.
 - **"Leaving Soon" Library**: Exposes scheduled-deletion media to the [jellyfin-plugin-leaving-soon](https://github.com/ramonskie/jellyfin-plugin-leaving-soon) plugin, which manages the "leaving soon" symlink libraries in Jellyfin
 - **Multi-Service Integration**: Supports Jellyfin, Radarr, Sonarr, Jellyseerr, Jellystat, Streamystats, and Tracearr
 - **Safe Operations**: Dry-run mode enabled by default, manual exclusions, and job history tracking
@@ -621,6 +622,14 @@ Response:
 }
 ```
 
+#### Add / Remove Manual Leaving Soon
+
+**POST** `/api/media/{id}/manual-leaving-soon` — flag an item as leaving soon (appears in
+the leaving-soon list and is scheduled for deletion independently of rule evaluation).
+
+**DELETE** `/api/media/{id}/manual-leaving-soon` — remove the flag, returning the item to
+normal rule evaluation.
+
 #### Delete Media
 
 **DELETE** `/api/media/{id}`
@@ -638,6 +647,36 @@ Response:
   "dry_run": false
 }
 ```
+
+### Analytics Endpoints
+
+Analytics are hot-computed from the synced media library and watch history.
+All three share an `enabled` flag (from `analytics.enabled`); each listed item includes
+`excluded` and `manual_leaving_soon` so the UI can offer Protect / Leaving Soon actions.
+
+#### Stale Content
+
+**GET** `/api/analytics/stale`
+
+Titles not watched within `analytics.stale_days` (never-watched items count from their add
+date). Optional `category` = `all` | `never_watched` | `stale`. Response:
+`{ enabled, items, summary: { never_watched, stale, total, threshold_days } }`.
+
+#### Storage ROI
+
+**GET** `/api/analytics/roi`
+
+Watch-hours-per-GB, a 0-100 value score, value category and deletion suggestion per title.
+Requires a stats provider — `has_watch_data` is `false` otherwise. Optional
+`value_category` = `all` | `low_value` | `moderate_value` | `high_value`.
+
+#### Dead Weight
+
+**GET** `/api/analytics/dead-weight`
+
+All-time never-watched titles (`watch_count == 0`) and the storage they occupy. The
+`summary` (count + `total_size_bytes`) covers every title; `items` lists the largest 10 by
+size. Works with Jellyfin alone (per-item PlayCount) or any stats provider.
 
 ### Sync Endpoints
 

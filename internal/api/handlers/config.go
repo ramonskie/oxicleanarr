@@ -33,6 +33,7 @@ type SanitizedConfig struct {
 	Server        config.ServerConfig         `json:"server"`
 	Integrations  SanitizedIntegrationsConfig `json:"integrations"`
 	Overlay       config.OverlayConfig        `json:"overlay"`
+	Analytics     config.AnalyticsConfig      `json:"analytics"`
 	AdvancedRules []config.AdvancedRule       `json:"advanced_rules"`
 }
 
@@ -114,6 +115,7 @@ func (h *ConfigHandler) GetConfig(w http.ResponseWriter, r *http.Request) {
 		Rules:         cfg.Rules,
 		Server:        cfg.Server,
 		Overlay:       cfg.Overlay,
+		Analytics:     cfg.Analytics,
 		AdvancedRules: cfg.AdvancedRules,
 		Integrations: SanitizedIntegrationsConfig{
 			Jellyfin: SanitizedJellyfinConfig{
@@ -179,7 +181,69 @@ type UpdateConfigRequest struct {
 	Server        *config.ServerConfig      `json:"server,omitempty"`
 	Integrations  *UpdateIntegrationsConfig `json:"integrations,omitempty"`
 	Overlay       *config.OverlayConfig     `json:"overlay,omitempty"`
+	Analytics     *UpdateAnalyticsConfig    `json:"analytics,omitempty"`
 	AdvancedRules *[]config.AdvancedRule    `json:"advanced_rules,omitempty"`
+}
+
+// UpdateAnalyticsConfig holds updatable analytics config. All fields are
+// optional pointers so a partial update merges instead of zeroing the rest.
+type UpdateAnalyticsConfig struct {
+	Enabled             *bool                        `json:"enabled,omitempty"`
+	StaleDays           *int                         `json:"stale_days,omitempty"`
+	ROIPeriodDays       *int                         `json:"roi_period_days,omitempty"`
+	IncludeAgeDecay     *bool                        `json:"include_age_decay,omitempty"`
+	SuggestDeletionDays *int                         `json:"suggest_deletion_days,omitempty"`
+	ValueThresholds     *UpdateValueThresholdsConfig `json:"value_thresholds,omitempty"`
+}
+
+// UpdateValueThresholdsConfig holds per-media-type threshold updates.
+type UpdateValueThresholdsConfig struct {
+	Movie   *UpdateValueThreshold `json:"movie,omitempty"`
+	Episode *UpdateValueThreshold `json:"episode,omitempty"`
+	Show    *UpdateValueThreshold `json:"show,omitempty"`
+}
+
+// UpdateValueThreshold holds an optional low/high threshold update.
+type UpdateValueThreshold struct {
+	Low  *float64 `json:"low,omitempty"`
+	High *float64 `json:"high,omitempty"`
+}
+
+// applyAnalyticsUpdate merges the provided pointer fields into dst, leaving
+// untouched fields unchanged.
+func applyAnalyticsUpdate(dst *config.AnalyticsConfig, src *UpdateAnalyticsConfig) {
+	if src.Enabled != nil {
+		dst.Enabled = *src.Enabled
+	}
+	if src.StaleDays != nil {
+		dst.StaleDays = *src.StaleDays
+	}
+	if src.ROIPeriodDays != nil {
+		dst.ROIPeriodDays = *src.ROIPeriodDays
+	}
+	if src.IncludeAgeDecay != nil {
+		dst.IncludeAgeDecay = *src.IncludeAgeDecay
+	}
+	if src.SuggestDeletionDays != nil {
+		dst.SuggestDeletionDays = *src.SuggestDeletionDays
+	}
+	if src.ValueThresholds != nil {
+		applyThresholdUpdate(&dst.ValueThresholds.Movie, src.ValueThresholds.Movie)
+		applyThresholdUpdate(&dst.ValueThresholds.Episode, src.ValueThresholds.Episode)
+		applyThresholdUpdate(&dst.ValueThresholds.Show, src.ValueThresholds.Show)
+	}
+}
+
+func applyThresholdUpdate(dst *config.ValueThreshold, src *UpdateValueThreshold) {
+	if src == nil {
+		return
+	}
+	if src.Low != nil {
+		dst.Low = *src.Low
+	}
+	if src.High != nil {
+		dst.High = *src.High
+	}
 }
 
 // UpdateAdminConfig holds updatable admin config.
@@ -300,6 +364,10 @@ func (h *ConfigHandler) UpdateConfig(w http.ResponseWriter, r *http.Request) {
 
 	if req.Server != nil {
 		newCfg.Server = *req.Server
+	}
+
+	if req.Analytics != nil {
+		applyAnalyticsUpdate(&newCfg.Analytics, req.Analytics)
 	}
 
 	if req.Overlay != nil {
@@ -463,6 +531,13 @@ func (h *ConfigHandler) UpdateConfig(w http.ResponseWriter, r *http.Request) {
 	if req.AdvancedRules != nil {
 		retentionChanged = true
 		log.Info().Msg("Advanced rules changed, will re-evaluate existing media")
+	}
+	// Analytics thresholds feed the stale/roi rule types, so changing them
+	// changes scheduling and must trigger re-evaluation (including disabling
+	// analytics, which must clear existing stale/roi schedules).
+	if req.Analytics != nil {
+		retentionChanged = true
+		log.Info().Msg("Analytics settings changed, will re-evaluate existing media")
 	}
 
 	// Reload config to apply changes

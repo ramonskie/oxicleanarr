@@ -877,15 +877,64 @@ func (e *SyncEngine) syncStats(ctx context.Context) error {
 	e.mediaLibraryLock.Lock()
 	defer e.mediaLibraryLock.Unlock()
 
-	// Build per-item maps: most recent watch timestamp and total watch count.
-	lastWatchedMap := make(map[string]time.Time)
-	watchCountMap := make(map[string]int)
+	// Minimum engagement for a play to count toward watch-time analytics.
+	// Matches Tracearr's 2-minute gate so accidental plays are excluded.
+	const minPlaybackSeconds = 120
 
-	for _, item := range history {
-		if existing, found := lastWatchedMap[item.JellyfinItemID]; !found || item.WatchedAt.After(existing) {
-			lastWatchedMap[item.JellyfinItemID] = item.WatchedAt
+	// Watch-time analytics are windowed by analytics.roi_period_days so ROI
+	// reflects recent usage. Raw watch count and last-watched stay lifetime.
+	var roiCutoff time.Time
+	if cfg := config.Get(); cfg != nil && cfg.Analytics.ROIPeriodDays > 0 {
+		roiCutoff = time.Now().AddDate(0, 0, -cfg.Analytics.ROIPeriodDays)
+	}
+
+	// Per-item aggregates: most recent watch timestamp, raw watch count, and
+	// gated (>= minPlaybackSeconds) distinct plays with their summed time.
+	type statsAgg struct {
+		lastWatched  time.Time
+		watchCount   int
+		gatedPlays   int
+		totalSeconds int64
+		seenPlays    map[string]struct{}
+	}
+	aggs := make(map[string]*statsAgg)
+
+	// playKey returns a stable per-play key. Providers that expose a play
+	// identity (Tracearr reference_id, Jellystat session id) let resume chains
+	// and duplicate rows collapse; providers without one fall back to a
+	// synthetic key so each record still counts exactly once.
+	playKey := func(item clients.StatsHistoryItem, seq int) string {
+		if item.PlayID != "" {
+			return item.PlayID
 		}
-		watchCountMap[item.JellyfinItemID]++
+		return fmt.Sprintf("%s|%d|%d|%d", item.JellyfinItemID, item.WatchedAt.UnixNano(), item.PlaybackSeconds, seq)
+	}
+
+	for seq, item := range history {
+		agg := aggs[item.JellyfinItemID]
+		if agg == nil {
+			agg = &statsAgg{seenPlays: make(map[string]struct{})}
+			aggs[item.JellyfinItemID] = agg
+		}
+
+		if agg.lastWatched.IsZero() || item.WatchedAt.After(agg.lastWatched) {
+			agg.lastWatched = item.WatchedAt
+		}
+		agg.watchCount++
+
+		if item.PlaybackSeconds < minPlaybackSeconds {
+			continue
+		}
+		if !roiCutoff.IsZero() && item.WatchedAt.Before(roiCutoff) {
+			continue
+		}
+		key := playKey(item, seq)
+		if _, seen := agg.seenPlays[key]; seen {
+			continue
+		}
+		agg.seenPlays[key] = struct{}{}
+		agg.gatedPlays++
+		agg.totalSeconds += int64(item.PlaybackSeconds)
 	}
 
 	// Update media library with accurate watch data from the stats provider.
@@ -895,23 +944,36 @@ func (e *SyncEngine) syncStats(ctx context.Context) error {
 			continue
 		}
 
-		if lastWatched, found := lastWatchedMap[media.JellyfinID]; found {
-			updated := false
+		agg, found := aggs[media.JellyfinID]
+		if !found {
+			continue
+		}
 
-			if media.LastWatched.IsZero() || lastWatched.After(media.LastWatched) {
-				media.LastWatched = lastWatched
-				updated = true
-			}
+		updated := false
 
-			if watchCount := watchCountMap[media.JellyfinID]; watchCount > 0 {
-				media.WatchCount = watchCount
-				updated = true
-			}
+		if !agg.lastWatched.IsZero() && (media.LastWatched.IsZero() || agg.lastWatched.After(media.LastWatched)) {
+			media.LastWatched = agg.lastWatched
+			updated = true
+		}
 
-			if updated {
-				e.mediaLibrary[id] = media
-				updatedCount++
-			}
+		if agg.watchCount > 0 {
+			media.WatchCount = agg.watchCount
+			updated = true
+		}
+
+		if media.GatedPlayCount != agg.gatedPlays {
+			media.GatedPlayCount = agg.gatedPlays
+			updated = true
+		}
+
+		if media.TotalWatchSeconds != agg.totalSeconds {
+			media.TotalWatchSeconds = agg.totalSeconds
+			updated = true
+		}
+
+		if updated {
+			e.mediaLibrary[id] = media
+			updatedCount++
 		}
 	}
 

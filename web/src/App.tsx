@@ -14,6 +14,7 @@ import JobHistoryPage from '@/pages/JobHistoryPage';
 import ConfigurationPage from '@/pages/ConfigurationPage';
 import RulesPage from '@/pages/RulesPage';
 import LogsPage from '@/pages/LogsPage';
+import AnalyticsPage from '@/pages/AnalyticsPage';
 import ProtectedRoute from '@/components/ProtectedRoute';
 
 const queryClient = new QueryClient({
@@ -129,6 +130,14 @@ function App() {
             element={
               <ProtectedRoute>
                 <LogsPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/analytics"
+            element={
+              <ProtectedRoute>
+                <AnalyticsPage />
               </ProtectedRoute>
             }
           />

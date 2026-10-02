@@ -65,6 +65,7 @@ func NewRouter(deps *RouterDependencies) *chi.Mux {
 	systemHandler := handlers.NewSystemHandler(deps.SyncEngine, deps.ShutdownCh)
 	servicesHandler := handlers.NewServiceStatusHandler()
 	logsHandler := handlers.NewLogsHandler()
+	analyticsHandler := handlers.NewAnalyticsHandler(deps.SyncEngine)
 
 	// Public routes
 	r.Get("/health", healthHandler.Handle)
@@ -130,6 +131,11 @@ func NewRouter(deps *RouterDependencies) *chi.Mux {
 			r.Put("/rules/{name}", rulesHandler.UpdateRule)
 			r.Delete("/rules/{name}", rulesHandler.DeleteRule)
 			r.Patch("/rules/{name}/toggle", rulesHandler.ToggleRule)
+
+			// Analytics routes (stale content + storage ROI)
+			r.Get("/analytics/stale", analyticsHandler.GetStale)
+			r.Get("/analytics/roi", analyticsHandler.GetROI)
+			r.Get("/analytics/dead-weight", analyticsHandler.GetDeadWeight)
 
 			// Logs routes
 			r.Get("/logs", logsHandler.GetLogs)

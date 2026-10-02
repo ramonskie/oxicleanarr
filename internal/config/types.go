@@ -9,6 +9,7 @@ type Config struct {
 	Server        ServerConfig       `mapstructure:"server" yaml:"server" json:"server"`
 	Integrations  IntegrationsConfig `mapstructure:"integrations" yaml:"integrations" json:"integrations"`
 	Overlay       OverlayConfig      `mapstructure:"overlay" yaml:"overlay" json:"overlay"`
+	Analytics     AnalyticsConfig    `mapstructure:"analytics" yaml:"analytics" json:"analytics"`
 	AdvancedRules []AdvancedRule     `mapstructure:"advanced_rules" yaml:"advanced_rules,omitempty" json:"advanced_rules,omitempty"`
 }
 
@@ -67,6 +68,40 @@ type OverlayConfig struct {
 	CornerRadiusPercent float64 `mapstructure:"corner_radius_percent" yaml:"corner_radius_percent" json:"corner_radius_percent"`
 	// FontPath optionally loads a TTF/OTF font from disk; empty uses the bundled font.
 	FontPath string `mapstructure:"font_path" yaml:"font_path,omitempty" json:"font_path,omitempty"`
+}
+
+// AnalyticsConfig holds stale-content and ROI (watch-hours-per-GB) settings.
+// All thresholds are configurable; the zero value falls back to DefaultConfig.
+type AnalyticsConfig struct {
+	Enabled bool `mapstructure:"enabled" yaml:"enabled" json:"enabled"`
+	// StaleDays is the staleness threshold: content unwatched for longer than
+	// this (or never watched and added longer ago) is classified stale.
+	StaleDays int `mapstructure:"stale_days" yaml:"stale_days" json:"stale_days"`
+	// ROIPeriodDays bounds the watch-time window used for ROI aggregation.
+	ROIPeriodDays int `mapstructure:"roi_period_days" yaml:"roi_period_days" json:"roi_period_days"`
+	// IncludeAgeDecay applies a recency penalty to the ROI value score after
+	// the stale threshold, matching Tracearr's age-decay behaviour.
+	IncludeAgeDecay bool `mapstructure:"include_age_decay" yaml:"include_age_decay" json:"include_age_decay"`
+	// SuggestDeletionDays is the no-watch age past which a low-value item is
+	// flagged as a deletion suggestion.
+	SuggestDeletionDays int `mapstructure:"suggest_deletion_days" yaml:"suggest_deletion_days" json:"suggest_deletion_days"`
+	// ValueThresholds holds watch-hours-per-GB value cut-offs per media type.
+	ValueThresholds ValueThresholdsConfig `mapstructure:"value_thresholds" yaml:"value_thresholds" json:"value_thresholds"`
+}
+
+// ValueThresholdsConfig holds per-media-type ROI value thresholds
+// (watch hours per GB).
+type ValueThresholdsConfig struct {
+	Movie   ValueThreshold `mapstructure:"movie" yaml:"movie" json:"movie"`
+	Episode ValueThreshold `mapstructure:"episode" yaml:"episode" json:"episode"`
+	Show    ValueThreshold `mapstructure:"show" yaml:"show" json:"show"`
+}
+
+// ValueThreshold is a low/high watch-hours-per-GB band. Values below Low are
+// low-value, above High are high-value, and the range between is moderate.
+type ValueThreshold struct {
+	Low  float64 `mapstructure:"low" yaml:"low" json:"low"`
+	High float64 `mapstructure:"high" yaml:"high" json:"high"`
 }
 
 // RulesConfig holds simple retention rules
@@ -160,6 +195,12 @@ type AdvancedRule struct {
 	MaxAge            string     `mapstructure:"max_age" yaml:"max_age,omitempty" json:"max_age,omitempty"`
 	RequireWatched    bool       `mapstructure:"require_watched" yaml:"require_watched,omitempty" json:"require_watched,omitempty"`
 	Users             []UserRule `mapstructure:"users" yaml:"users,omitempty" json:"users,omitempty"`
+
+	// Analytics-rule fields (only valid when Type="stale" or Type="roi").
+	// StaleDays overrides analytics.stale_days for a stale rule.
+	StaleDays int `mapstructure:"stale_days" yaml:"stale_days,omitempty" json:"stale_days,omitempty"`
+	// MinWatchHoursPerGB overrides the low-value cutoff for a ROI rule.
+	MinWatchHoursPerGB float64 `mapstructure:"min_watch_hours_per_gb" yaml:"min_watch_hours_per_gb,omitempty" json:"min_watch_hours_per_gb,omitempty"`
 
 	// Episode-specific fields (only valid when Type="episode")
 	SeasonNumbers           []int  `mapstructure:"season_numbers" yaml:"season_numbers,omitempty" json:"season_numbers,omitempty"`

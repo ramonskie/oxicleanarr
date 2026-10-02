@@ -13,6 +13,9 @@ import type {
   AdvancedRule,
   DiskStatus,
   LogsResponse,
+  StaleAnalyticsResponse,
+  ROIAnalyticsResponse,
+  DeadWeightAnalyticsResponse,
 } from './types';
 import type { ServiceStatusResponse } from './types-services';
 
@@ -273,6 +276,24 @@ class ApiClient {
 
   async getDiskStatus(): Promise<DiskStatus> {
     return this.request<DiskStatus>('/system/disk');
+  }
+
+  // Analytics
+  async getStaleAnalytics(category: string = 'all'): Promise<StaleAnalyticsResponse> {
+    const query = category && category !== 'all' ? `?category=${encodeURIComponent(category)}` : '';
+    return this.request<StaleAnalyticsResponse>(`/analytics/stale${query}`);
+  }
+
+  async getROIAnalytics(valueCategory: string = 'all'): Promise<ROIAnalyticsResponse> {
+    const query =
+      valueCategory && valueCategory !== 'all'
+        ? `?value_category=${encodeURIComponent(valueCategory)}`
+        : '';
+    return this.request<ROIAnalyticsResponse>(`/analytics/roi${query}`);
+  }
+
+  async getDeadWeightAnalytics(): Promise<DeadWeightAnalyticsResponse> {
+    return this.request<DeadWeightAnalyticsResponse>('/analytics/dead-weight');
   }
 
   // Logs

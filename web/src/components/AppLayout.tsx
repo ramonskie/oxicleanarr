@@ -4,7 +4,7 @@ import { useQuery } from '@tanstack/react-query';
 import { apiClient } from '@/lib/api';
 import { useAuthStore } from '@/store/auth';
 import { Button } from '@/components/ui/button';
-import { Clock, LogOut, Settings, LayoutDashboard, Calendar, Library, Trash2, History, ChevronDown, ChevronRight, Sliders, Wrench, Plug, Shield, ScrollText } from 'lucide-react';
+import { Clock, LogOut, Settings, LayoutDashboard, Calendar, Library, Trash2, History, ChevronDown, ChevronRight, Sliders, Wrench, Plug, Shield, ScrollText, BarChart3 } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { useState } from 'react';
 
@@ -41,12 +41,14 @@ export default function AppLayout({ children }: AppLayoutProps) {
     { path: '/timeline', label: 'Timeline', icon: Calendar },
     { path: '/scheduled-deletions', label: 'Deletions', icon: Trash2 },
     { path: '/job-history', label: 'Activity', icon: History },
+    { path: '/analytics', label: 'Analytics', icon: BarChart3 },
     { path: '/logs', label: 'Logs', icon: ScrollText },
   ];
 
   const settingsSubItems = [
     { path: '/settings/general', label: 'General', icon: Wrench },
     { path: '/settings/integrations', label: 'Integrations', icon: Plug },
+    { path: '/settings/analytics', label: 'Analytics', icon: BarChart3 },
     { path: '/settings/admin', label: 'Server & Admin', icon: Shield },
     { path: '/rules', label: 'Advanced Rules', icon: Sliders },
   ];

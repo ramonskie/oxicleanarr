@@ -119,7 +119,29 @@ export interface Config {
   server: ServerConfig;
   integrations: IntegrationsConfig;
   overlay: OverlayConfig;
+  analytics: AnalyticsConfig;
   advanced_rules: AdvancedRule[];
+}
+
+export interface ValueThreshold {
+  low: number;
+  high: number;
+}
+
+export interface ValueThresholdsConfig {
+  movie: ValueThreshold;
+  episode: ValueThreshold;
+  show: ValueThreshold;
+}
+
+// AnalyticsConfig holds stale-content and ROI (watch-hours-per-GB) settings.
+export interface AnalyticsConfig {
+  enabled: boolean;
+  stale_days: number;
+  roi_period_days: number;
+  include_age_decay: boolean;
+  suggest_deletion_days: number;
+  value_thresholds: ValueThresholdsConfig;
 }
 
 export interface AdminConfig {
@@ -214,7 +236,7 @@ export interface TracearrIntegration extends BaseIntegration {
 
 export interface AdvancedRule {
   name: string;
-  type: 'tag' | 'episode' | 'user';
+  type: 'tag' | 'episode' | 'user' | 'stale' | 'roi';
   enabled: boolean;
   tag?: string;
   retention?: string;
@@ -224,6 +246,8 @@ export interface AdvancedRule {
   max_age?: string;
   require_watched?: boolean;
   users?: UserRule[];
+  stale_days?: number;              // stale-rule threshold override
+  min_watch_hours_per_gb?: number;  // roi-rule low-value cutoff override
 }
 
 export interface UserRule {
@@ -250,6 +274,7 @@ export interface UpdateConfigRequest {
     tracearr?: Partial<TracearrIntegration & { api_key?: string }>;
   }>;
   overlay?: Partial<OverlayConfig>;
+  analytics?: Partial<AnalyticsConfig>;
   advanced_rules?: AdvancedRule[];
 }
 
@@ -271,4 +296,97 @@ export interface LogsResponse {
   file: string;
   lines: LogLine[];
   total: number;
+}
+
+// Analytics responses
+export type StaleCategory = 'never_watched' | 'stale';
+export type ValueCategory = 'low_value' | 'moderate_value' | 'high_value';
+
+export interface StaleItem {
+  id: string;
+  title: string;
+  type: string;
+  year?: number;
+  file_size: number;
+  added_at: string;
+  last_watched: string | null;
+  watch_count: number;
+  category: StaleCategory;
+  days_stale: number;
+  excluded: boolean;
+  manual_leaving_soon: boolean;
+}
+
+export interface CategoryCount {
+  count: number;
+  size_bytes: number;
+}
+
+export interface StaleAnalyticsResponse {
+  enabled: boolean;
+  items: StaleItem[];
+  summary: {
+    never_watched: CategoryCount;
+    stale: CategoryCount;
+    total: CategoryCount;
+    threshold_days: number;
+  };
+}
+
+export interface ROIItem {
+  id: string;
+  title: string;
+  type: string;
+  year?: number;
+  file_size_bytes: number;
+  file_size_gb: number;
+  watch_count: number;
+  gated_play_count: number;
+  total_watch_hours: number;
+  last_watched: string | null;
+  days_since_last_watch: number;
+  watch_hours_per_gb: number;
+  value_score: number;
+  value_category: ValueCategory;
+  suggest_deletion: boolean;
+  excluded: boolean;
+  manual_leaving_soon: boolean;
+}
+
+export interface ROIAnalyticsResponse {
+  enabled: boolean;
+  has_watch_data: boolean;
+  items: ROIItem[];
+  summary: {
+    total_items: number;
+    total_storage_gb: number;
+    total_watch_hours: number;
+    avg_watch_hours_per_gb: number;
+    low_value_items: number;
+    low_value_storage_gb: number;
+    potential_savings_gb: number;
+  };
+  thresholds: ValueThresholdsConfig;
+}
+
+// All-time never-watched ("dead weight") titles.
+export interface DeadWeightItem {
+  id: string;
+  title: string;
+  type: string;
+  year?: number;
+  file_size: number;
+  added_at: string;
+  excluded: boolean;
+  manual_leaving_soon: boolean;
+}
+
+export interface DeadWeightAnalyticsResponse {
+  enabled: boolean;
+  has_watch_data: boolean;
+  items: DeadWeightItem[];
+  summary: {
+    count: number;
+    total_size_bytes: number;
+  };
 }

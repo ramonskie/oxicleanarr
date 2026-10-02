@@ -317,6 +317,23 @@ function RuleDetails({ rule }: { rule: AdvancedRule }) {
     );
   }
 
+  if (rule.type === 'stale') {
+    return (
+      <div className="space-y-1 text-sm text-gray-300">
+        <p><strong className="text-white">Stale After:</strong> {rule.stale_days ? `${rule.stale_days}d` : 'analytics default'}</p>
+        {rule.retention && <p><strong className="text-white">Grace Period:</strong> {rule.retention}</p>}
+      </div>
+    );
+  }
+
+  if (rule.type === 'roi') {
+    return (
+      <div className="space-y-1 text-sm text-gray-300">
+        <p><strong className="text-white">Min Hours / GB:</strong> {rule.min_watch_hours_per_gb ?? 'analytics default'}</p>
+      </div>
+    );
+  }
+
   if (rule.type === 'user') {
     return (
       <div className="space-y-2 text-sm text-gray-300">
@@ -366,6 +383,8 @@ function RuleDialog({
     max_age: rule?.max_age || '',
     require_watched: rule?.require_watched ?? false,
     users: rule?.users || [],
+    stale_days: rule?.stale_days,
+    min_watch_hours_per_gb: rule?.min_watch_hours_per_gb,
   });
 
   const [newUser, setNewUser] = useState<Partial<UserRule>>({
@@ -381,11 +400,16 @@ function RuleDialog({
 
     const ruleData: Omit<AdvancedRule, 'name'> & { name: string } = {
       name: formData.name,
-      type: formData.type as 'tag' | 'episode' | 'user',
+      type: formData.type as 'tag' | 'episode' | 'user' | 'stale' | 'roi',
       enabled: formData.enabled ?? true,
     };
 
-    if (formData.type === 'tag') {
+    if (formData.type === 'stale') {
+      ruleData.stale_days = formData.stale_days;
+      if (formData.retention) ruleData.retention = formData.retention;
+    } else if (formData.type === 'roi') {
+      ruleData.min_watch_hours_per_gb = formData.min_watch_hours_per_gb;
+    } else if (formData.type === 'tag') {
       ruleData.tag = formData.tag;
       ruleData.retention = formData.retention;
       if (formData.retention_base) ruleData.retention_base = formData.retention_base;
@@ -463,6 +487,8 @@ function RuleDialog({
               <option value="tag">Tag-based</option>
               <option value="episode">Episode Limit</option>
               <option value="user">User-based</option>
+              <option value="stale">Stale Content</option>
+              <option value="roi">Low ROI</option>
             </select>
           </div>
 
@@ -667,6 +693,57 @@ function RuleDialog({
                 </Button>
               </div>
             </>
+          )}
+
+          {formData.type === 'stale' && (
+            <>
+              <div>
+                <label className="text-sm font-medium">Stale After (days)</label>
+                <Input
+                  type="number"
+                  value={formData.stale_days ?? ''}
+                  onChange={(e) =>
+                    setFormData({ ...formData, stale_days: e.target.value ? Number(e.target.value) : undefined })
+                  }
+                  placeholder="90"
+                />
+                <p className="text-xs text-gray-500 mt-1">
+                  Delete items unwatched (or unadded) for longer than this. Defaults to analytics.stale_days.
+                </p>
+              </div>
+              <div>
+                <label className="text-sm font-medium">Grace Period (optional)</label>
+                <Input
+                  value={formData.retention || ''}
+                  onChange={(e) => setFormData({ ...formData, retention: e.target.value })}
+                  placeholder="0d"
+                />
+                <p className="text-xs text-gray-500 mt-1">
+                  Extra time after the threshold before deletion (e.g. 7d). Defaults to immediate.
+                </p>
+              </div>
+            </>
+          )}
+
+          {formData.type === 'roi' && (
+            <div>
+              <label className="text-sm font-medium">Min Watch Hours per GB (optional)</label>
+              <Input
+                type="number"
+                step="0.01"
+                value={formData.min_watch_hours_per_gb ?? ''}
+                onChange={(e) =>
+                  setFormData({
+                    ...formData,
+                    min_watch_hours_per_gb: e.target.value ? Number(e.target.value) : undefined,
+                  })
+                }
+                placeholder="0.1"
+              />
+              <p className="text-xs text-gray-500 mt-1">
+                Items below this watch-hours-per-GB are low value. Defaults to the per-type analytics threshold.
+              </p>
+            </div>
           )}
         </div>
 

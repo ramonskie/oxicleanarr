@@ -15,13 +15,20 @@ const (
 
 // Media represents a media item (movie or TV show)
 type Media struct {
-	ID                  string    `json:"id"`
-	Type                MediaType `json:"type"`
-	Title               string    `json:"title"`
-	Year                int       `json:"year,omitempty"`
-	AddedAt             time.Time `json:"added_at"`
-	LastWatched         time.Time `json:"last_watched,omitempty"`
-	WatchCount          int       `json:"watch_count"`
+	ID          string    `json:"id"`
+	Type        MediaType `json:"type"`
+	Title       string    `json:"title"`
+	Year        int       `json:"year,omitempty"`
+	AddedAt     time.Time `json:"added_at"`
+	LastWatched time.Time `json:"last_watched,omitempty"`
+	WatchCount  int       `json:"watch_count"`
+	// GatedPlayCount counts distinct plays that met the minimum engagement
+	// threshold (>= 120s), deduplicated by provider play identity. Kept
+	// separate from WatchCount so existing rule semantics are unchanged.
+	GatedPlayCount int `json:"gated_play_count"`
+	// TotalWatchSeconds is the summed playback time of gated plays, used for
+	// watch-hours-per-GB ROI.
+	TotalWatchSeconds   int64     `json:"total_watch_seconds"`
 	FilePath            string    `json:"file_path,omitempty"`
 	FileSize            int64     `json:"file_size,omitempty"`
 	QualityTag          string    `json:"quality_tag,omitempty"`

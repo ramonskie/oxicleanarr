@@ -27,6 +27,18 @@ func DefaultConfig() *Config {
 			MovieRetention: "90d",
 			TVRetention:    "120d",
 		},
+		Analytics: AnalyticsConfig{
+			Enabled:             true,
+			StaleDays:           90,
+			ROIPeriodDays:       90,
+			IncludeAgeDecay:     true,
+			SuggestDeletionDays: 180,
+			ValueThresholds: ValueThresholdsConfig{
+				Movie:   ValueThreshold{Low: 0.1, High: 0.5},
+				Episode: ValueThreshold{Low: 0.5, High: 2.0},
+				Show:    ValueThreshold{Low: 0.3, High: 1.0},
+			},
+		},
 		Server: ServerConfig{
 			Host: "0.0.0.0",
 			Port: 9709,
@@ -80,6 +92,26 @@ func SetDefaults(cfg *Config) {
 	}
 	if cfg.Rules.TVRetention == "" {
 		cfg.Rules.TVRetention = defaults.Rules.TVRetention
+	}
+
+	// Analytics defaults
+	if cfg.Analytics.StaleDays == 0 {
+		cfg.Analytics.StaleDays = defaults.Analytics.StaleDays
+	}
+	if cfg.Analytics.ROIPeriodDays == 0 {
+		cfg.Analytics.ROIPeriodDays = defaults.Analytics.ROIPeriodDays
+	}
+	if cfg.Analytics.SuggestDeletionDays == 0 {
+		cfg.Analytics.SuggestDeletionDays = defaults.Analytics.SuggestDeletionDays
+	}
+	if cfg.Analytics.ValueThresholds.Movie == (ValueThreshold{}) {
+		cfg.Analytics.ValueThresholds.Movie = defaults.Analytics.ValueThresholds.Movie
+	}
+	if cfg.Analytics.ValueThresholds.Episode == (ValueThreshold{}) {
+		cfg.Analytics.ValueThresholds.Episode = defaults.Analytics.ValueThresholds.Episode
+	}
+	if cfg.Analytics.ValueThresholds.Show == (ValueThreshold{}) {
+		cfg.Analytics.ValueThresholds.Show = defaults.Analytics.ValueThresholds.Show
 	}
 
 	// Server defaults

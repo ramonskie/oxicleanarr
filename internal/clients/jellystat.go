@@ -97,6 +97,7 @@ func (c *JellystatClient) GetHistory(ctx context.Context, _ []string) ([]StatsHi
 			JellyfinItemID:  h.NowPlayingItemID,
 			WatchedAt:       h.ActivityDateInserted,
 			PlaybackSeconds: h.PlaybackDuration,
+			PlayID:          h.ID,
 		})
 	}
 
