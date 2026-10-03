@@ -165,7 +165,7 @@ export default function AppLayout({ children }: AppLayoutProps) {
               </Button>
           </div>
           <div className="text-[10px] text-center text-gray-600 mt-2">
-            v0.1.0-alpha
+            {__APP_VERSION__}
           </div>
         </div>
       </aside>

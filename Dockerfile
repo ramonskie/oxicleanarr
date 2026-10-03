@@ -1,6 +1,9 @@
 # Stage 1: Build Frontend
 FROM node:20-alpine AS frontend-builder
 
+# Release tag (e.g. v1.10.1), passed by release.yml. Baked into the UI.
+ARG VERSION=dev
+
 WORKDIR /app/web
 
 # Copy frontend package files
@@ -13,7 +16,7 @@ RUN npm ci
 COPY web/ ./
 
 # Build frontend (output to /app/web/dist)
-RUN npm run build
+RUN VITE_APP_VERSION="$VERSION" npm run build
 
 # Stage 2: Build Backend
 FROM golang:1.25-alpine AS backend-builder
