@@ -15,6 +15,13 @@ type StatsHistoryItem struct {
 	// chain key; otherwise it is a per-session id or empty. Empty means each
 	// record is treated as a distinct play.
 	PlayID string
+	// SeriesID, when non-empty, is the Jellyfin id of the show this record
+	// belongs to. Providers that emit episode-level rows (e.g. Tracearr, which
+	// exposes grandparent_rating_key) set this so episode plays roll up to the
+	// series during sync. It is empty for movies and for providers whose rows
+	// are already series-scoped: Jellystat stores the SeriesId as
+	// NowPlayingItemId, and Streamystats is queried per series id.
+	SeriesID string
 }
 
 // StatsProvider is the common interface for watch-history providers (Jellystat, Streamystats).

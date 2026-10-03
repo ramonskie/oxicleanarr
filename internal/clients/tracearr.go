@@ -158,12 +158,14 @@ func (c *TracearrClient) fetchHealthServers(ctx context.Context) ([]tracearrHeal
 // tracearrHistoryRecord is a single HistoryRecord returned by the v2 API.
 // rating_key is nullable; server_type distinguishes the originating media server.
 type tracearrHistoryRecord struct {
-	RatingKey   *string   `json:"rating_key"`
-	ServerID    string    `json:"server_id"`
-	ServerType  string    `json:"server_type"`
-	StartedAt   time.Time `json:"started_at"`
-	DurationMS  int       `json:"duration_ms"`
-	ReferenceID string    `json:"reference_id"` // resume-chain / play key
+	RatingKey            *string   `json:"rating_key"`
+	ParentRatingKey      *string   `json:"parent_rating_key"`
+	GrandparentRatingKey *string   `json:"grandparent_rating_key"`
+	ServerID             string    `json:"server_id"`
+	ServerType           string    `json:"server_type"`
+	StartedAt            time.Time `json:"started_at"`
+	DurationMS           int       `json:"duration_ms"`
+	ReferenceID          string    `json:"reference_id"` // resume-chain / play key
 }
 
 // tracearrHistoryMeta carries cursor pagination metadata. NextCursor is a
@@ -202,9 +204,10 @@ type tracearrHealthResponse struct {
 // meta.nextCursor until it is null/absent. itemIDs is accepted for interface
 // compatibility but ignored — Tracearr returns bulk cursor-paginated history.
 //
-// Mapping: JellyfinItemID=rating_key, WatchedAt=started_at,
-// PlaybackSeconds=duration_ms/1000. Rows with an empty/null rating_key or a
-// server_type other than "jellyfin" are skipped.
+// Mapping: JellyfinItemID=rating_key, SeriesID=grandparent_rating_key,
+// WatchedAt=started_at, PlaybackSeconds=duration_ms/1000. Rows with an
+// empty/null rating_key or a server_type other than "jellyfin" are skipped.
+// SeriesID is empty for movies; for TV episodes it is the show's Jellyfin id.
 func (c *TracearrClient) GetHistory(ctx context.Context, _ []string) ([]StatsHistoryItem, error) {
 	// Resolve the media server to scope history to. An explicit server_id wins;
 	// otherwise the sole Jellyfin server is auto-detected from health and
@@ -261,11 +264,20 @@ func (c *TracearrClient) GetHistory(ctx context.Context, _ []string) ([]StatsHis
 				continue
 			}
 
+			// rating_key is the played item (episode for TV); the series id,
+			// when present, is grandparent_rating_key. Carrying it lets the sync
+			// layer roll episode plays up to the show instead of dropping them.
+			seriesID := ""
+			if rec.GrandparentRatingKey != nil {
+				seriesID = strings.TrimSpace(*rec.GrandparentRatingKey)
+			}
+
 			items = append(items, StatsHistoryItem{
 				JellyfinItemID:  *rec.RatingKey,
 				WatchedAt:       rec.StartedAt,
 				PlaybackSeconds: rec.DurationMS / 1000,
 				PlayID:          rec.ReferenceID,
+				SeriesID:        seriesID,
 			})
 		}
 

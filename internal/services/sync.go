@@ -662,7 +662,14 @@ func (e *SyncEngine) syncJellyfin(ctx context.Context) error {
 		if jm, found := jellyfinMoviesByTMDB[tmdbIDStr]; found {
 			// Exact match found
 			media.JellyfinID = jm.ID
-			media.WatchCount = jm.UserData.PlayCount
+			// Jellyfin only returns UserData with a user context; these library
+			// queries send no userId, so UserData is absent and PlayCount reads
+			// as 0. Only overwrite when Jellyfin actually reports plays, so a
+			// sync (notably the incremental one, which never runs the stats
+			// provider) cannot clobber stats-provided watch data.
+			if jm.UserData.PlayCount > 0 {
+				media.WatchCount = jm.UserData.PlayCount
+			}
 			if !jm.UserData.LastPlayedDate.IsZero() {
 				media.LastWatched = jm.UserData.LastPlayedDate
 			}
@@ -724,7 +731,12 @@ func (e *SyncEngine) syncJellyfin(ctx context.Context) error {
 		if js, found := jellyfinShowsByTVDB[tvdbIDStr]; found {
 			// Exact match found
 			media.JellyfinID = js.ID
-			media.WatchCount = js.UserData.PlayCount
+			// Jellyfin series UserData is absent without a user context and its
+			// series-level PlayCount is 0 even when episodes are watched. Never
+			// zero the stats-provided aggregate here — see the movie branch.
+			if js.UserData.PlayCount > 0 {
+				media.WatchCount = js.UserData.PlayCount
+			}
 			if !js.UserData.LastPlayedDate.IsZero() {
 				media.LastWatched = js.UserData.LastPlayedDate
 			}
@@ -905,16 +917,28 @@ func (e *SyncEngine) syncStats(ctx context.Context) error {
 	// synthetic key so each record still counts exactly once.
 	playKey := func(item clients.StatsHistoryItem, seq int) string {
 		if item.PlayID != "" {
-			return item.PlayID
+			// Scope the play id to its item: episode rows share one aggregation
+			// bucket (the series), so a provider reusing a play id across two
+			// different episodes must not dedupe them against each other.
+			return item.JellyfinItemID + "|" + item.PlayID
 		}
 		return fmt.Sprintf("%s|%d|%d|%d", item.JellyfinItemID, item.WatchedAt.UnixNano(), item.PlaybackSeconds, seq)
 	}
 
 	for seq, item := range history {
-		agg := aggs[item.JellyfinItemID]
+		// Attribute episode-level records to their series so TV plays update the
+		// show. Providers that already key history by series (Jellystat) leave
+		// SeriesID empty and fall back to the item id (JellyfinItemID), which is
+		// the movie id for films and the series id for shows.
+		aggKey := item.JellyfinItemID
+		if item.SeriesID != "" {
+			aggKey = item.SeriesID
+		}
+
+		agg := aggs[aggKey]
 		if agg == nil {
 			agg = &statsAgg{seenPlays: make(map[string]struct{})}
-			aggs[item.JellyfinItemID] = agg
+			aggs[aggKey] = agg
 		}
 
 		if agg.lastWatched.IsZero() || item.WatchedAt.After(agg.lastWatched) {

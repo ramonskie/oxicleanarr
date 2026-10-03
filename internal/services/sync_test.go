@@ -1287,6 +1287,130 @@ func TestSyncEngine_ExecuteDeletions_ProtectsOnFreshWatchActivity(t *testing.T) 
 	assert.Equal(t, 0, failedCount)
 }
 
+func TestSyncEngine_SyncStats_RollsEpisodeHistoryToSeries(t *testing.T) {
+	engine, _, _ := newTestSyncEngine(t)
+	now := time.Now()
+
+	engine.mediaLibrary["show-1"] = models.Media{
+		ID: "show-1", Type: models.MediaTypeTVShow, Title: "Test Show", JellyfinID: "series-jf",
+	}
+	engine.mediaLibrary["movie-1"] = models.Media{
+		ID: "movie-1", Type: models.MediaTypeMovie, Title: "Test Movie", JellyfinID: "movie-jf",
+	}
+
+	engine.statsClient = &stubStatsProvider{
+		history: []clients.StatsHistoryItem{
+			{JellyfinItemID: "ep-1", SeriesID: "series-jf", WatchedAt: now.Add(-48 * time.Hour), PlaybackSeconds: 1800, PlayID: "p1"},
+			{JellyfinItemID: "ep-2", SeriesID: "series-jf", WatchedAt: now.Add(-24 * time.Hour), PlaybackSeconds: 1800, PlayID: "p2"},
+			{JellyfinItemID: "movie-jf", WatchedAt: now.Add(-1 * time.Hour), PlaybackSeconds: 3600, PlayID: "p3"},
+		},
+	}
+
+	require.NoError(t, engine.syncStats(context.Background()))
+
+	show := engine.mediaLibrary["show-1"]
+	assert.Equal(t, 2, show.WatchCount, "episode plays must roll up to the series")
+	assert.Equal(t, 2, show.GatedPlayCount, "gated episode plays likewise roll up")
+	assert.WithinDuration(t, now.Add(-24*time.Hour), show.LastWatched, time.Minute)
+
+	movie := engine.mediaLibrary["movie-1"]
+	assert.Equal(t, 1, movie.WatchCount, "movie plays still map by item id")
+	assert.WithinDuration(t, now.Add(-1*time.Hour), movie.LastWatched, time.Minute)
+}
+
+func TestSyncJellyfin_PreservesStatsWatchData(t *testing.T) {
+	engine, _, _ := newTestSyncEngine(t)
+	lastWatched := time.Now().Add(-48 * time.Hour)
+
+	engine.mediaLibrary["movie-1"] = models.Media{
+		ID: "movie-1", Type: models.MediaTypeMovie, Title: "Dune",
+		TMDBID: 438631, JellyfinID: "old-id", WatchCount: 7, LastWatched: lastWatched,
+	}
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		// No UserData — mirrors a real Jellyfin response without a user context.
+		resp := `{"Items":[{"Id":"jf-dune","Name":"Dune","Type":"Movie","ProviderIds":{"Tmdb":"438631"}}]}`
+		if r.URL.Query().Get("IncludeItemTypes") != "Movie" {
+			resp = `{"Items":[]}`
+		}
+		_, _ = w.Write([]byte(resp))
+	}))
+	defer srv.Close()
+
+	engine.jellyfinClient = clients.NewJellyfinClient(config.JellyfinConfig{
+		BaseIntegrationConfig: config.BaseIntegrationConfig{URL: srv.URL, APIKey: "k"},
+	})
+
+	require.NoError(t, engine.syncJellyfin(context.Background()))
+
+	movie := engine.mediaLibrary["movie-1"]
+	assert.Equal(t, "jf-dune", movie.JellyfinID, "match is still recorded")
+	assert.True(t, movie.HasPoster, "match metadata is still recorded")
+	assert.Equal(t, "matched", movie.JellyfinMatchStatus, "match status is still recorded")
+	assert.Equal(t, 7, movie.WatchCount, "absent Jellyfin UserData must not clobber stats watch data")
+	assert.WithinDuration(t, lastWatched, movie.LastWatched, time.Second)
+}
+
+func TestSyncJellyfin_PreservesShowWatchData(t *testing.T) {
+	engine, _, _ := newTestSyncEngine(t)
+	lastWatched := time.Now().Add(-72 * time.Hour)
+
+	// Series-level PlayCount is 0 in Jellyfin even when episodes were watched;
+	// the stats provider owns show watch fields and must not be clobbered.
+	engine.mediaLibrary["show-1"] = models.Media{
+		ID: "show-1", Type: models.MediaTypeTVShow, Title: "Lost",
+		TVDBID: 73739, JellyfinID: "old-id", WatchCount: 11, LastWatched: lastWatched,
+	}
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		resp := `{"Items":[]}`
+		if r.URL.Query().Get("IncludeItemTypes") == "Series" {
+			resp = `{"Items":[{"Id":"jf-lost","Name":"Lost","Type":"Series","ProviderIds":{"Tvdb":"73739"}}]}`
+		}
+		_, _ = w.Write([]byte(resp))
+	}))
+	defer srv.Close()
+
+	engine.jellyfinClient = clients.NewJellyfinClient(config.JellyfinConfig{
+		BaseIntegrationConfig: config.BaseIntegrationConfig{URL: srv.URL, APIKey: "k"},
+	})
+
+	require.NoError(t, engine.syncJellyfin(context.Background()))
+
+	show := engine.mediaLibrary["show-1"]
+	assert.Equal(t, "jf-lost", show.JellyfinID, "match is still recorded")
+	assert.True(t, show.HasPoster, "match metadata is still recorded")
+	assert.Equal(t, "matched", show.JellyfinMatchStatus, "match status is still recorded")
+	assert.Equal(t, 11, show.WatchCount, "series PlayCount 0 must not clobber stats watch data")
+	assert.WithinDuration(t, lastWatched, show.LastWatched, time.Second)
+}
+
+func TestSyncEngine_SyncStats_ScopesPlayIDPerEpisode(t *testing.T) {
+	engine, _, _ := newTestSyncEngine(t)
+	now := time.Now()
+
+	engine.mediaLibrary["show-1"] = models.Media{
+		ID: "show-1", Type: models.MediaTypeTVShow, Title: "Test Show", JellyfinID: "series-jf",
+	}
+
+	// Two different episodes sharing the same provider play id must both count —
+	// the series aggregation bucket must not collapse them via a raw PlayID key.
+	engine.statsClient = &stubStatsProvider{
+		history: []clients.StatsHistoryItem{
+			{JellyfinItemID: "ep-1", SeriesID: "series-jf", WatchedAt: now.Add(-2 * time.Hour), PlaybackSeconds: 1800, PlayID: "same-id"},
+			{JellyfinItemID: "ep-2", SeriesID: "series-jf", WatchedAt: now.Add(-1 * time.Hour), PlaybackSeconds: 1800, PlayID: "same-id"},
+		},
+	}
+
+	require.NoError(t, engine.syncStats(context.Background()))
+
+	show := engine.mediaLibrary["show-1"]
+	assert.Equal(t, 2, show.WatchCount)
+	assert.Equal(t, 2, show.GatedPlayCount, "distinct episodes must not be deduped by a shared play id")
+}
+
 func TestSyncEngine_SyncQueuesBehindRunningSync(t *testing.T) {
 	engine, _, _ := newTestSyncEngine(t)
 

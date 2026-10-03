@@ -54,6 +54,32 @@ func TestTracearrGetHistory(t *testing.T) {
 		assert.Equal(t, "Bearer trr_pub_test", gotAuth)
 	})
 
+	t.Run("maps grandparent_rating_key to SeriesID for episodes", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			w.Write([]byte(`{"data":[` +
+				`{"rating_key":"ep-1","parent_rating_key":"season-1","grandparent_rating_key":"series-1","server_type":"jellyfin","started_at":"2024-01-01T00:00:00Z","duration_ms":1000},` +
+				`{"rating_key":"movie-1","parent_rating_key":null,"grandparent_rating_key":null,"server_type":"jellyfin","started_at":"2024-01-01T00:00:00Z","duration_ms":1000},` +
+				`{"rating_key":"tv-no-grandparent","server_type":"jellyfin","started_at":"2024-01-01T00:00:00Z","duration_ms":1000},` +
+				`{"rating_key":"tv-blank-grandparent","grandparent_rating_key":"   ","server_type":"jellyfin","started_at":"2024-01-01T00:00:00Z","duration_ms":1000}` +
+				`],"meta":{"nextCursor":null}}`))
+		}))
+		defer server.Close()
+
+		client := newTestTracearrClient(t, server.URL, testTracearrServerID)
+
+		history, err := client.GetHistory(context.Background(), nil)
+
+		require.NoError(t, err)
+		require.Len(t, history, 4)
+		assert.Equal(t, "ep-1", history[0].JellyfinItemID)
+		assert.Equal(t, "series-1", history[0].SeriesID, "episode rows carry the show id")
+		assert.Equal(t, "movie-1", history[1].JellyfinItemID)
+		assert.Empty(t, history[1].SeriesID, "movies have no series id")
+		assert.Empty(t, history[2].SeriesID, "absent grandparent_rating_key yields empty SeriesID")
+		assert.Empty(t, history[3].SeriesID, "whitespace-only grandparent_rating_key yields empty SeriesID")
+	})
+
 	t.Run("ignores itemIDs and always requests pageSize 100", func(t *testing.T) {
 		var gotPageSize string
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
