@@ -2233,3 +2233,127 @@ func TestAnalyzeJellyfinMatch_RetryErrorSurfaced(t *testing.T) {
 	assert.Equal(t, VerdictJellyfinWrong, analysis.Verdict,
 		"the verdict must still flow from the filename evidence")
 }
+
+// TestBuildMovieArrIdentity_RuntimeWiring proves the Radarr movie runtime and
+// the on-disk file's mediaInfo runtime are carried onto arrMatchIdentity, and
+// that a missing mediaInfo/runTime degrades to 0 ("no runtime evidence").
+func TestBuildMovieArrIdentity_RuntimeWiring(t *testing.T) {
+	tests := []struct {
+		name         string
+		movie        clients.RadarrMovie
+		wantRuntime  int
+		wantFileTime int
+	}{
+		{
+			name: "runtime and mediaInfo are parsed",
+			movie: clients.RadarrMovie{
+				ID: 306, Title: "Long Distance", Year: 2024, TmdbId: 605722, Runtime: 87,
+				MovieFile: &clients.RadarrMovieFile{
+					Path:      "/movies/Long.Distance.2024.mkv",
+					MediaInfo: &clients.RadarrMediaInfo{RunTime: "1:27:00"},
+				},
+			},
+			wantRuntime:  87,
+			wantFileTime: 87,
+		},
+		{
+			name: "missing mediaInfo yields zero file runtime",
+			movie: clients.RadarrMovie{
+				ID: 306, Title: "Long Distance", Year: 2024, TmdbId: 605722, Runtime: 87,
+				MovieFile: &clients.RadarrMovieFile{Path: "/movies/Long.Distance.2024.mkv"},
+			},
+			wantRuntime:  87,
+			wantFileTime: 0,
+		},
+		{
+			name: "garbage runTime yields zero file runtime",
+			movie: clients.RadarrMovie{
+				ID: 306, Title: "Long Distance", Year: 2024, TmdbId: 605722, Runtime: 87,
+				MovieFile: &clients.RadarrMovieFile{
+					Path:      "/movies/Long.Distance.2024.mkv",
+					MediaInfo: &clients.RadarrMediaInfo{RunTime: "garbage"},
+				},
+			},
+			wantRuntime:  87,
+			wantFileTime: 0,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			engine, _, _ := newTestSyncEngine(t)
+			movie := tt.movie
+
+			radarrSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				_ = json.NewEncoder(w).Encode(movie)
+			}))
+			t.Cleanup(radarrSrv.Close)
+			engine.radarrClient = clients.NewRadarrClient(config.RadarrConfig{
+				BaseIntegrationConfig: config.BaseIntegrationConfig{URL: radarrSrv.URL, APIKey: "k"},
+			})
+
+			arr, err := engine.buildMovieArrIdentity(context.Background(), models.Media{
+				ID: "radarr-306", Type: models.MediaTypeMovie, Title: "Long Distance",
+				Year: 2024, TMDBID: 605722, RadarrID: 306,
+			})
+			require.NoError(t, err)
+			assert.Equal(t, tt.wantRuntime, arr.RuntimeMinutes)
+			assert.Equal(t, tt.wantFileTime, arr.FileRuntimeMinutes)
+		})
+	}
+}
+
+// TestAnalyzeJellyfinMatch_RuntimeTieBreak exercises the full wiring end to end:
+// the Radarr movie's declared runtime and its file's mediaInfo runtime reach the
+// adjudicator, and the Jellyfin item's RunTimeTicks is converted to minutes. The
+// filename title/year evidence ties, so the runtime is the decisive signal —
+// removing the runtime branch makes this test fail (verdict would be ambiguous).
+func TestAnalyzeJellyfinMatch_RuntimeTieBreak(t *testing.T) {
+	engine, _ := newTestJellyfinServer(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(clients.JellyfinItemsResponse{Items: []clients.JellyfinItem{{
+			ID:             "jf-distant",
+			Name:           "Distant",
+			Type:           "Movie",
+			ProductionYear: 2024,
+			// 5 minutes in ticks (600,000,000 ticks per minute).
+			RunTimeTicks: 5 * 600000000,
+			Path:         "/movies/2024/Unknown.mkv",
+			ProviderIds:  map[string]string{"Tmdb": "1395720"},
+		}}})
+	})
+
+	radarrSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(clients.RadarrMovie{
+			ID: 306, Title: "Long Distance", Year: 2024, TmdbId: 605722, Runtime: 87,
+			Path: "/movies/2024",
+			MovieFile: &clients.RadarrMovieFile{
+				Path:      "/movies/2024/Unknown.mkv",
+				MediaInfo: &clients.RadarrMediaInfo{RunTime: "1:27:00"},
+			},
+		})
+	}))
+	t.Cleanup(radarrSrv.Close)
+	engine.radarrClient = clients.NewRadarrClient(config.RadarrConfig{
+		BaseIntegrationConfig: config.BaseIntegrationConfig{URL: radarrSrv.URL, APIKey: "k"},
+	})
+
+	engine.mediaLibrary["radarr-306"] = models.Media{
+		ID: "radarr-306", Type: models.MediaTypeMovie, Title: "Long Distance",
+		Year: 2024, TMDBID: 605722, RadarrID: 306,
+		FilePath: "/movies/2024/Unknown.mkv", JellyfinConflictID: "jf-distant",
+	}
+
+	analysis, err := engine.AnalyzeJellyfinMatch(context.Background(), "radarr-306")
+	require.NoError(t, err)
+	assert.Equal(t, VerdictJellyfinWrong, analysis.Verdict,
+		"tied filename with a mismatched Jellyfin runtime must resolve to jellyfin_wrong")
+	assert.GreaterOrEqual(t, analysis.Confidence, 0.75)
+
+	evidence := strings.Join(analysis.Evidence, "\n")
+	assert.Contains(t, evidence, "runtime:", "runtime evidence must be surfaced")
+	assert.Contains(t, evidence, "file 87m", "file runtime from mediaInfo must be wired in")
+	assert.Contains(t, evidence, "5m", "Jellyfin RunTimeTicks must convert to minutes")
+}

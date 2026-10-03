@@ -12,6 +12,7 @@ type JellyfinItem struct {
 	ProductionYear int               `json:"ProductionYear"`
 	DateCreated    time.Time         `json:"DateCreated"`
 	Path           string            `json:"Path"`
+	RunTimeTicks   int64             `json:"RunTimeTicks"`
 	UserData       JellyfinUserData  `json:"UserData"`
 	ProviderIds    map[string]string `json:"ProviderIds"`
 }
@@ -40,6 +41,7 @@ type RadarrMovie struct {
 	HasFile          bool             `json:"hasFile"`
 	QualityProfileId int              `json:"qualityProfileId"`
 	TmdbId           int              `json:"tmdbId"`
+	Runtime          int              `json:"runtime"`
 	Tags             []int            `json:"tags"`
 	MovieFile        *RadarrMovieFile `json:"movieFile,omitempty"`
 }
@@ -52,12 +54,19 @@ type RadarrTag struct {
 
 // RadarrMovieFile represents a movie file in Radarr
 type RadarrMovieFile struct {
-	ID           int           `json:"id"`
-	RelativePath string        `json:"relativePath"`
-	Path         string        `json:"path"`
-	Size         int64         `json:"size"`
-	DateAdded    time.Time     `json:"dateAdded"`
-	Quality      RadarrQuality `json:"quality"`
+	ID           int              `json:"id"`
+	RelativePath string           `json:"relativePath"`
+	Path         string           `json:"path"`
+	Size         int64            `json:"size"`
+	DateAdded    time.Time        `json:"dateAdded"`
+	Quality      RadarrQuality    `json:"quality"`
+	MediaInfo    *RadarrMediaInfo `json:"mediaInfo,omitempty"`
+}
+
+// RadarrMediaInfo carries the media metadata Radarr exposes for a file. RunTime
+// is the file's runtime as a "H:MM:SS" (or "MM:SS") clock string.
+type RadarrMediaInfo struct {
+	RunTime string `json:"runTime"`
 }
 
 // RadarrQuality represents quality information

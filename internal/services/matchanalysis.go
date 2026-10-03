@@ -36,6 +36,18 @@ const (
 	titleWeight          = 0.70
 	yearWeight           = 0.30
 	unknownYearScore     = 0.50 // neutral year credit when either side lacks a year
+
+	// minRuntimeDeltaMinutes is the smallest separation between the file's
+	// runtime deltas from each identity that counts as decisive. Below it the
+	// two identities are effectively the same length and runtime cannot break
+	// the tie, so the verdict stays ambiguous.
+	minRuntimeDeltaMinutes = 10
+
+	// maxRuntimeDriftMinutes bounds how far the file may be from the identity it
+	// is said to match. A file that is far from BOTH identities means its runtime
+	// argues the arr/Jellyfin pair is wrong, not which side is wrong, so the
+	// last-resort tie-breaker must abstain instead of picking the "less bad" side.
+	maxRuntimeDriftMinutes = 20
 )
 
 // Identity is a caller-supplied name/year/provider tuple describing one side of
@@ -66,6 +78,16 @@ type MatchAnalysisInput struct {
 	// FilePath is the on-disk path held by the arr side: the movie file, or a
 	// representative episode file for TV. Used for filename title/year tokens.
 	FilePath string
+
+	// Runtime evidence, in whole minutes, is a last-resort tie-breaker used only
+	// when the title/year scores are within scoreMargin AND the media is a movie.
+	// ArrRuntimeMinutes is the runtime Radarr declares for the movie;
+	// JellyfinRuntimeMinutes is derived from the conflicting item's RunTimeTicks;
+	// FileRuntimeMinutes is the runtime declared on the on-disk file's mediaInfo.
+	// Any value <= 0 means that side has no usable runtime.
+	ArrRuntimeMinutes      int
+	JellyfinRuntimeMinutes int
+	FileRuntimeMinutes     int
 
 	// ArrEpisodes / JellyfinEpisodes are compared by (season, episode) for TV.
 	ArrEpisodes      []Episode
@@ -146,6 +168,11 @@ func adjudicateTV(in MatchAnalysisInput) (MatchAnalysis, bool) {
 func adjudicateByFileText(in MatchAnalysisInput) MatchAnalysis {
 	file := extractFileText(in.FilePath)
 	if len(file.tokens) == 0 && len(file.years) == 0 {
+		if runtime, ok := adjudicateMovieRuntime(in); ok {
+			runtime.Evidence = append([]string{
+				"no filename evidence available to compare identities"}, runtime.Evidence...)
+			return runtime
+		}
 		return MatchAnalysis{
 			Verdict:    VerdictAmbiguous,
 			Confidence: 0.10,
@@ -170,8 +197,121 @@ func adjudicateByFileText(in MatchAnalysisInput) MatchAnalysis {
 			"path matches the Jellyfin identity; arr (%s) is the outlier", describeIdentity(in.Arr)))
 		return MatchAnalysis{Verdict: VerdictArrWrong, Confidence: clamp01(0.5 - margin), Evidence: evidence}
 	default:
+		if runtime, ok := adjudicateMovieRuntime(in); ok {
+			runtime.Evidence = append(evidence, runtime.Evidence...)
+			return runtime
+		}
 		evidence = append(evidence, "path scores are too close to decide which side is wrong")
 		return MatchAnalysis{Verdict: VerdictAmbiguous, Confidence: clamp01(0.5 - math.Abs(margin)), Evidence: evidence}
+	}
+}
+
+// adjudicateMovieRuntime is the last-resort tie-breaker for movies whose
+// title/year evidence is inconclusive. It compares the on-disk file's runtime
+// against each identity's declared runtime: the file physically runs for one
+// length, so whichever identity matches that length more closely holds the
+// correct identity. It is deliberately narrow — movies only, all three runtimes
+// present, a winner within maxRuntimeDriftMinutes of the file, and a delta
+// separation of at least minRuntimeDeltaMinutes — so it can never override a
+// decisive title/year verdict or touch per-episode TV runtimes.
+func adjudicateMovieRuntime(in MatchAnalysisInput) (MatchAnalysis, bool) {
+	if in.MediaType != models.MediaTypeMovie {
+		return MatchAnalysis{}, false
+	}
+	if in.FileRuntimeMinutes <= 0 || in.ArrRuntimeMinutes <= 0 || in.JellyfinRuntimeMinutes <= 0 {
+		return MatchAnalysis{}, false
+	}
+
+	deltaArr := absInt(in.FileRuntimeMinutes - in.ArrRuntimeMinutes)
+	deltaJellyfin := absInt(in.FileRuntimeMinutes - in.JellyfinRuntimeMinutes)
+
+	// The winner must be genuinely close to the file, not merely closer than the
+	// other side. A file 113 minutes from its "best" identity is evidence the
+	// identity pair itself is wrong, so runtime abstains and the verdict stays
+	// ambiguous rather than falsely deciding at high confidence.
+	if min(deltaArr, deltaJellyfin) > maxRuntimeDriftMinutes {
+		return MatchAnalysis{}, false
+	}
+
+	gap := absInt(deltaArr - deltaJellyfin)
+	if gap < minRuntimeDeltaMinutes {
+		// Both identities are effectively the same length as the file; runtime
+		// carries no information and must not manufacture a verdict.
+		return MatchAnalysis{}, false
+	}
+
+	if deltaArr < deltaJellyfin {
+		return MatchAnalysis{
+			Verdict:    VerdictJellyfinWrong,
+			Confidence: runtimeConfidence(gap),
+			Evidence: []string{fmt.Sprintf(
+				"runtime: file %dm; arr %s %dm (Δ%dm) vs Jellyfin %s %dm (Δ%dm) => arr identity matches",
+				in.FileRuntimeMinutes, describeIdentity(in.Arr), in.ArrRuntimeMinutes, deltaArr,
+				describeIdentity(in.Jellyfin), in.JellyfinRuntimeMinutes, deltaJellyfin)},
+		}, true
+	}
+	return MatchAnalysis{
+		Verdict:    VerdictArrWrong,
+		Confidence: runtimeConfidence(gap),
+		Evidence: []string{fmt.Sprintf(
+			"runtime: file %dm; Jellyfin %s %dm (Δ%dm) vs arr %s %dm (Δ%dm) => Jellyfin identity matches",
+			in.FileRuntimeMinutes, describeIdentity(in.Jellyfin), in.JellyfinRuntimeMinutes, deltaJellyfin,
+			describeIdentity(in.Arr), in.ArrRuntimeMinutes, deltaArr)},
+	}, true
+}
+
+// runtimeConfidence scales the verdict confidence from 0.75 at the minimum
+// decisive gap up to 0.90 once the gap reaches 60 minutes, so a wide runtime
+// separation is trusted more than a barely-over-threshold one.
+func runtimeConfidence(gap int) float64 {
+	decisiveness := float64(gap-minRuntimeDeltaMinutes) / 50.0
+	if decisiveness > 1 {
+		decisiveness = 1
+	}
+	return 0.75 + 0.15*decisiveness
+}
+
+// absInt returns the absolute value of n.
+func absInt(n int) int {
+	if n < 0 {
+		return -n
+	}
+	return n
+}
+
+// parseRuntimeMinutes converts a clock-style runtime string into whole minutes.
+// It accepts "H:MM:SS", "HH:MM:SS", and "MM:SS"; seconds are truncated. It
+// returns 0 for empty or unparseable input so a missing runtime is treated as
+// "no evidence" rather than zero minutes.
+func parseRuntimeMinutes(s string) int {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return 0
+	}
+	parts := strings.Split(s, ":")
+	if len(parts) > 3 {
+		return 0
+	}
+	values := make([]int, 0, len(parts))
+	for _, part := range parts {
+		n, err := strconv.Atoi(strings.TrimSpace(part))
+		if err != nil || n < 0 {
+			return 0
+		}
+		// Reject absurd components before multiplying so a pathological input
+		// such as "9223372036854775807:00:00" cannot overflow the int math.
+		if n > 100000 {
+			return 0
+		}
+		values = append(values, n)
+	}
+	switch len(values) {
+	case 3:
+		return values[0]*60 + values[1] + values[2]/60
+	case 2:
+		return values[0] + values[1]/60
+	default:
+		return values[0]
 	}
 }
 
@@ -358,17 +498,91 @@ type fileText struct {
 }
 
 // extractFileText pulls the full path, non-year title tokens, and candidate
-// years out of a path. The whole path is parsed (not just the basename) so a
-// year that lives only in a parent directory — e.g. Sonarr's
-// ".../Vanished (2026)/Vanished - S01E01 - Rosefinch.mkv" — is still seen.
-// Pure string handling; it never touches the filesystem.
+// years out of a path. Title tokens come from the file basename only (directory
+// and extension stripped): a parent folder name is often a different work than
+// the file itself — e.g. Radarr's ".../Distant (2024)/Long.Distance.2024....mkv"
+// — so letting folder words match an identity would tie the score. Years are
+// still parsed from the whole path so a year that lives only in a parent
+// directory, e.g. Sonarr's ".../Vanished (2026)/Vanished - S01E01 - Rosefinch.mkv",
+// is not lost. When the basename yields no title content — only a year or a
+// structural season/episode marker, as in "2024.mkv" or "S01E01.mkv" — it falls
+// back to the whole path so the folder title still contributes. The source stays
+// the full cleaned path for evidence. Pure string handling; it never touches the
+// filesystem.
 func extractFileText(path string) fileText {
 	cleaned := strings.TrimRight(strings.ReplaceAll(path, "\\", "/"), "/")
+	tokens := titleTokens(stripExtension(pathFileName(cleaned)))
+	if !hasTitleContent(tokens) {
+		tokens = titleTokens(cleaned)
+	}
 	return fileText{
 		source: cleaned,
-		tokens: titleTokens(cleaned),
+		tokens: tokens,
 		years:  extractYears(cleaned),
 	}
+}
+
+// stripExtension removes the final "." extension from a file name. A leading dot
+// (dotfile) or a name without a dot is returned unchanged.
+func stripExtension(name string) string {
+	if idx := strings.LastIndex(name, "."); idx > 0 {
+		return name[:idx]
+	}
+	return name
+}
+
+// hasTitleContent reports whether a token slice carries anything beyond
+// structural noise (years and season/episode markers). It decides whether a
+// basename is informative enough to trust on its own or whether the full path
+// must be parsed instead.
+func hasTitleContent(tokens []string) bool {
+	for _, tok := range tokens {
+		if isYearToken(tok) || isEpisodeMarkerToken(tok) {
+			continue
+		}
+		return true
+	}
+	return false
+}
+
+// isEpisodeMarkerToken reports whether tok is a bare season/episode code such as
+// "s01e01", "s01", "e01", "x01" or "1x01" — structural, not a title word. A
+// basename like "S01.E01.mkv" normalizes to two tokens, so a bare season marker
+// ("s01") must be recognized too or the title-only-in-folder fallback never
+// fires. Repeated episode numbers ("s01e01e02") are accepted. Anything that
+// fails to parse as digits is treated as a real token so titles are never
+// silently dropped.
+func isEpisodeMarkerToken(tok string) bool {
+	// Bare season/episode marker: "s01", "e01" or "x01".
+	if len(tok) > 1 && (tok[0] == 's' || tok[0] == 'e' || tok[0] == 'x') && isDigitsOnly(tok[1:]) {
+		return true
+	}
+	// Combined "1x01" form.
+	if idx := strings.IndexByte(tok, 'x'); idx > 0 {
+		if isDigitsOnly(tok[:idx]) && isDigitsOnly(tok[idx+1:]) {
+			return true
+		}
+	}
+	// "s..e.." form, including repeated episode numbers ("s01e01e02").
+	if len(tok) > 1 && tok[0] == 's' {
+		if idx := strings.IndexByte(tok, 'e'); idx > 1 && isDigitsOnly(tok[1:idx]) {
+			return isDigitsOnly(strings.ReplaceAll(tok[idx+1:], "e", ""))
+		}
+	}
+	return false
+}
+
+// isDigitsOnly reports whether s is a non-empty run of ASCII digits.
+func isDigitsOnly(s string) bool {
+	if s == "" {
+		return false
+	}
+	for i := 0; i < len(s); i++ {
+		if s[i] < '0' || s[i] > '9' {
+			return false
+		}
+	}
+	return true
 }
 
 // NormalizeTitle lowercases, strips punctuation, collapses whitespace, and maps

@@ -148,9 +148,29 @@ func (c *SonarrClient) DeleteEpisodeFile(ctx context.Context, episodeFileID int)
 	return nil
 }
 
-// GetEpisodes fetches episodes for a series
+// GetEpisodes fetches episodes for a series. It stays lean and does NOT request
+// the nested episodeFile, so callers that only read HasFile/EpisodeFileID/
+// SeasonNumber/AirDate (e.g. the episode cleanup rule) avoid the extra payload.
+// Callers that need EpisodeFile.Path must use GetEpisodesWithFiles.
 func (c *SonarrClient) GetEpisodes(ctx context.Context, seriesID int) ([]SonarrEpisode, error) {
+	return c.getEpisodes(ctx, seriesID, false)
+}
+
+// GetEpisodesWithFiles fetches episodes for a series with the nested episodeFile
+// embedded (includeEpisodeFile=true), so SonarrEpisode.EpisodeFile and its
+// on-disk Path are populated. Used by the match adjudicator to recover the file
+// year/title for a TV fallback.
+func (c *SonarrClient) GetEpisodesWithFiles(ctx context.Context, seriesID int) ([]SonarrEpisode, error) {
+	return c.getEpisodes(ctx, seriesID, true)
+}
+
+// getEpisodes is the shared implementation behind GetEpisodes and
+// GetEpisodesWithFiles; includeFiles toggles the nested episodeFile request.
+func (c *SonarrClient) getEpisodes(ctx context.Context, seriesID int, includeFiles bool) ([]SonarrEpisode, error) {
 	url := fmt.Sprintf("%s/api/v3/episode?seriesId=%d", c.baseURL, seriesID)
+	if includeFiles {
+		url += "&includeEpisodeFile=true"
+	}
 
 	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {

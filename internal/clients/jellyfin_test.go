@@ -431,7 +431,7 @@ func TestJellyfinClientGetItemsNoBoxSetCollapse(t *testing.T) {
 		assert.Equal(t, "true", req.query.Get("Recursive"))
 		assert.Equal(t, "false", req.query.Get("CollapseBoxSetItems"),
 			"library query must not collapse box-set members: %s", req.query.Encode())
-		assert.ElementsMatch(t, []string{"Path", "DateCreated", "ProviderIds"},
+		assert.ElementsMatch(t, []string{"Path", "DateCreated", "ProviderIds", "RunTimeTicks"},
 			strings.Split(req.query.Get("Fields"), ","))
 	}
 }

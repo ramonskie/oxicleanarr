@@ -1024,11 +1024,16 @@ type FixResult struct {
 }
 
 // arrMatchIdentity is the arr side of the comparison: its identity, a
-// representative file path, and (for TV) its episode list.
+// representative file path, and (for TV) its episode list. RuntimeMinutes and
+// FileRuntimeMinutes carry the movie runtime Radarr declares and the runtime
+// declared on the on-disk file, both in whole minutes; they stay 0 for TV
+// because a series' runtime is per-episode and not comparable to a movie.
 type arrMatchIdentity struct {
-	Identity Identity
-	FilePath string
-	Episodes []Episode
+	Identity           Identity
+	FilePath           string
+	Episodes           []Episode
+	RuntimeMinutes     int
+	FileRuntimeMinutes int
 }
 
 // AnalyzeJellyfinMatch adjudicates which side holds the wrong identity for a
@@ -1187,11 +1192,14 @@ func logMatchRefusal(mediaID string, err error, analysis *MatchAnalysis) {
 // item into adjudicator input and runs the pure AnalyzeMatch.
 func (e *SyncEngine) analyzeJellyfinMatch(ctx context.Context, media models.Media, item *clients.JellyfinItem, arr arrMatchIdentity) (MatchAnalysis, error) {
 	input := MatchAnalysisInput{
-		MediaType:   media.Type,
-		Arr:         arr.Identity,
-		Jellyfin:    jellyfinIdentity(media.Type, item),
-		FilePath:    arr.FilePath,
-		ArrEpisodes: arr.Episodes,
+		MediaType:              media.Type,
+		Arr:                    arr.Identity,
+		Jellyfin:               jellyfinIdentity(media.Type, item),
+		FilePath:               arr.FilePath,
+		ArrEpisodes:            arr.Episodes,
+		ArrRuntimeMinutes:      arr.RuntimeMinutes,
+		FileRuntimeMinutes:     arr.FileRuntimeMinutes,
+		JellyfinRuntimeMinutes: int(item.RunTimeTicks / 600000000),
 	}
 
 	// episodeFetchErr records a failed empty-list retry so the evidence below
@@ -1280,7 +1288,19 @@ func (e *SyncEngine) buildMovieArrIdentity(ctx context.Context, media models.Med
 	if movie.MovieFile != nil && movie.MovieFile.Path != "" {
 		filePath = movie.MovieFile.Path
 	}
-	return arrMatchIdentity{Identity: identity, FilePath: filePath}, nil
+	// Runtime is a movie-only tie-breaker. MediaInfo and RunTime may be absent
+	// (older files, hand-placed media), in which case parseRuntimeMinutes yields
+	// 0 and the adjudicator treats runtime as unavailable.
+	fileRuntime := 0
+	if movie.MovieFile != nil && movie.MovieFile.MediaInfo != nil {
+		fileRuntime = parseRuntimeMinutes(movie.MovieFile.MediaInfo.RunTime)
+	}
+	return arrMatchIdentity{
+		Identity:           identity,
+		FilePath:           filePath,
+		RuntimeMinutes:     movie.Runtime,
+		FileRuntimeMinutes: fileRuntime,
+	}, nil
 }
 
 // buildTVArrIdentity resolves the Sonarr series identity and its episodes.
@@ -1305,7 +1325,7 @@ func (e *SyncEngine) buildTVArrIdentity(ctx context.Context, media models.Media)
 	identity.Year = firstNonZero(series.Year, identity.Year)
 	identity.ProviderID = providerRef("tvdb", firstNonZero(series.TvdbId, media.TVDBID))
 
-	sonarrEpisodes, err := e.sonarrClient.GetEpisodes(ctx, media.SonarrID)
+	sonarrEpisodes, err := e.sonarrClient.GetEpisodesWithFiles(ctx, media.SonarrID)
 	if err != nil {
 		return arrMatchIdentity{}, fmt.Errorf("fetching Sonarr episodes for series %d: %w", media.SonarrID, err)
 	}

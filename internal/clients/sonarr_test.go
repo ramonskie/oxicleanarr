@@ -2,6 +2,9 @@ package clients
 
 import (
 	"context"
+	"net/http"
+	"net/http/httptest"
+	"net/url"
 	"os"
 	"testing"
 	"time"
@@ -317,5 +320,71 @@ func TestSonarrClient_Unit(t *testing.T) {
 		client := NewSonarrClient(cfg)
 
 		assert.Equal(t, 2*time.Minute, client.client.Timeout, "Should use custom timeout")
+	})
+}
+
+// TestSonarrClient_GetEpisodesQueryShape proves GetEpisodes stays lean (no
+// nested episodeFile) while GetEpisodesWithFiles asks Sonarr to embed it and
+// decodes episodeFile.path. The match adjudicator needs the path (and its year)
+// for a TV fallback; the episode cleanup rule does not and must not pay for it.
+func TestSonarrClient_GetEpisodesQueryShape(t *testing.T) {
+	const episodePath = "/data/media/tv/Vanished/Vanished.2026.S01E01.1080p.WEB.h264-ETHEL.mkv"
+
+	var rawQuery string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		rawQuery = r.URL.RawQuery
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`[
+			{
+				"id": 1,
+				"seriesId": 179,
+				"episodeFileId": 9,
+				"episodeNumber": 1,
+				"seasonNumber": 1,
+				"title": "Rosefinch",
+				"hasFile": true,
+				"episodeFile": {
+					"id": 9,
+					"path": "` + episodePath + `",
+					"size": 123
+				}
+			}
+		]`))
+	}))
+	defer server.Close()
+
+	client := NewSonarrClient(config.SonarrConfig{
+		BaseIntegrationConfig: config.BaseIntegrationConfig{
+			URL:     server.URL,
+			APIKey:  "test-api-key",
+			Timeout: "5s",
+		},
+	})
+
+	t.Run("GetEpisodes stays lean", func(t *testing.T) {
+		episodes, err := client.GetEpisodes(context.Background(), 179)
+		require.NoError(t, err)
+		require.Len(t, episodes, 1)
+
+		query, err := url.ParseQuery(rawQuery)
+		require.NoError(t, err)
+		assert.Equal(t, "179", query.Get("seriesId"))
+		assert.Empty(t, query.Get("includeEpisodeFile"),
+			"GetEpisodes must not request the nested episodeFile")
+	})
+
+	t.Run("GetEpisodesWithFiles embeds and decodes episodeFile", func(t *testing.T) {
+		episodes, err := client.GetEpisodesWithFiles(context.Background(), 179)
+		require.NoError(t, err)
+		require.Len(t, episodes, 1)
+
+		query, err := url.ParseQuery(rawQuery)
+		require.NoError(t, err)
+		assert.Equal(t, "179", query.Get("seriesId"))
+		assert.Equal(t, "true", query.Get("includeEpisodeFile"),
+			"GetEpisodesWithFiles must request includeEpisodeFile=true")
+
+		require.NotNil(t, episodes[0].EpisodeFile, "episodeFile must be decoded")
+		assert.Equal(t, episodePath, episodes[0].EpisodeFile.Path)
 	})
 }

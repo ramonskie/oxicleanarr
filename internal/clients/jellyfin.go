@@ -72,7 +72,7 @@ func (c *JellyfinClient) GetTVShows(ctx context.Context) ([]JellyfinItem, error)
 // collection/box set. Those items then fail to match and are reported as
 // unmatched (observed on the live Jellyfin 12.1.0 server: 314 vs 372 movies).
 func (c *JellyfinClient) getItems(ctx context.Context, itemType string) ([]JellyfinItem, error) {
-	url := fmt.Sprintf("%s/Items?IncludeItemTypes=%s&Recursive=true&CollapseBoxSetItems=false&Fields=Path,DateCreated,ProviderIds",
+	url := fmt.Sprintf("%s/Items?IncludeItemTypes=%s&Recursive=true&CollapseBoxSetItems=false&Fields=Path,DateCreated,ProviderIds,RunTimeTicks",
 		c.baseURL, itemType)
 
 	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
