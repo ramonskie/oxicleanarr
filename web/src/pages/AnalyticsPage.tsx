@@ -14,14 +14,12 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { useToast } from '@/hooks/use-toast';
+import { Shield, ShieldOff, Timer, TimerOff, RefreshCw } from 'lucide-react';
 import type { StaleItem, ROIItem, DeadWeightItem, ValueCategory } from '@/lib/types';
 
 const CARD_CLASS = 'bg-[#262626] border-[#333]';
 const SELECT_CLASS =
   'bg-[#1e1e1e] border border-[#333] text-gray-200 text-sm rounded-md px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-primary cursor-pointer';
-const ACTION_BUTTON_CLASS =
-  'h-7 px-2 text-xs border-[#444] bg-[#262626] text-gray-300 hover:bg-[#333]';
-
 // Item shape shared by every analytics list for row actions.
 interface ActionableItem {
   id: string;
@@ -103,9 +101,22 @@ function RowActions({ item, onAction }: { item: ActionableItem; onAction: Action
   return (
     <div className="flex items-center gap-2">
       <Button
+        variant="ghost"
         size="sm"
-        variant="outline"
-        className={ACTION_BUTTON_CLASS}
+        className="h-8 w-8 p-0 text-gray-400 hover:text-white"
+        onClick={() => onAction(item.excluded ? 'unprotect' : 'protect', item)}
+        title={item.excluded ? 'Remove protection' : 'Protect from deletion'}
+      >
+        {item.excluded ? <ShieldOff className="h-4 w-4" /> : <Shield className="h-4 w-4" />}
+      </Button>
+      <Button
+        variant="ghost"
+        size="sm"
+        className={
+          item.manual_leaving_soon
+            ? 'h-8 w-8 p-0 text-orange-400 hover:text-orange-300'
+            : 'h-8 w-8 p-0 text-gray-400 hover:text-orange-400'
+        }
         disabled={item.excluded && !item.manual_leaving_soon}
         title={
           item.manual_leaving_soon
@@ -116,17 +127,24 @@ function RowActions({ item, onAction }: { item: ActionableItem; onAction: Action
         }
         onClick={() => onAction(item.manual_leaving_soon ? 'remove-leaving-soon' : 'leaving-soon', item)}
       >
-        {item.manual_leaving_soon ? 'Unflag' : 'Leaving Soon'}
-      </Button>
-      <Button
-        size="sm"
-        variant="outline"
-        className={ACTION_BUTTON_CLASS}
-        onClick={() => onAction(item.excluded ? 'unprotect' : 'protect', item)}
-      >
-        {item.excluded ? 'Unprotect' : 'Protect'}
+        {item.manual_leaving_soon ? <TimerOff className="h-4 w-4" /> : <Timer className="h-4 w-4" />}
       </Button>
     </div>
+  );
+}
+
+function RefreshButton({ isFetching, onRefresh }: { isFetching: boolean; onRefresh: () => void }) {
+  return (
+    <Button
+      variant="ghost"
+      size="sm"
+      onClick={() => onRefresh()}
+      disabled={isFetching}
+      className="text-gray-400 hover:text-white border border-[#333] hover:bg-[#333]"
+    >
+      <RefreshCw className={`h-4 w-4 mr-1.5 ${isFetching ? 'animate-spin' : ''}`} />
+      Refresh
+    </Button>
   );
 }
 
@@ -169,9 +187,7 @@ function StaleTab({ onAction }: { onAction: ActionHandler }) {
           <option value="never_watched">Never watched</option>
           <option value="stale">Stale</option>
         </select>
-        <button onClick={() => refetch()} className="text-sm text-gray-400 hover:text-white" disabled={isFetching}>
-          Refresh
-        </button>
+        <RefreshButton isFetching={isFetching} onRefresh={refetch} />
       </div>
 
       <TableShell>
@@ -254,9 +270,7 @@ function ROITab({ onAction }: { onAction: ActionHandler }) {
           <option value="moderate_value">Moderate value</option>
           <option value="high_value">High value</option>
         </select>
-        <button onClick={() => refetch()} className="text-sm text-gray-400 hover:text-white" disabled={isFetching}>
-          Refresh
-        </button>
+        <RefreshButton isFetching={isFetching} onRefresh={refetch} />
       </div>
 
       <TableShell>
@@ -327,9 +341,7 @@ function DeadWeightTab({ onAction }: { onAction: ActionHandler }) {
         <p className="text-sm text-gray-500">
           All-time never-watched titles. The summary covers every title; the table lists the largest titles by size.
         </p>
-        <button onClick={() => refetch()} className="text-sm text-gray-400 hover:text-white" disabled={isFetching}>
-          Refresh
-        </button>
+        <RefreshButton isFetching={isFetching} onRefresh={refetch} />
       </div>
 
       <TableShell>
