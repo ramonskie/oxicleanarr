@@ -2,6 +2,8 @@ package clients
 
 import (
 	"context"
+	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -432,4 +434,294 @@ func TestJellyfinClientGetItemsNoBoxSetCollapse(t *testing.T) {
 		assert.ElementsMatch(t, []string{"Path", "DateCreated", "ProviderIds"},
 			strings.Split(req.query.Get("Fields"), ","))
 	}
+}
+
+// newTestJellyfinClient builds a client pointed at a test server URL.
+func newTestJellyfinClient(url string) *JellyfinClient {
+	return NewJellyfinClient(config.JellyfinConfig{
+		BaseIntegrationConfig: config.BaseIntegrationConfig{
+			URL:    url,
+			APIKey: "test-api-key",
+		},
+	})
+}
+
+func TestJellyfinClientRemoteSearchMovie(t *testing.T) {
+	var (
+		gotMethod string
+		gotPath   string
+		gotAuth   string
+		gotBody   []byte
+	)
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotMethod = r.Method
+		gotPath = r.URL.Path
+		gotAuth = r.Header.Get("Authorization")
+		gotBody, _ = io.ReadAll(r.Body)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`[{"Name":"Fullmetal Alchemist","ProviderIds":{"Tvdb":"75579"},"ProductionYear":2003}]`))
+	}))
+	defer srv.Close()
+
+	client := newTestJellyfinClient(srv.URL)
+
+	results, err := client.RemoteSearchMovie(context.Background(), "Fullmetal Alchemist", 2003, map[string]string{"Tvdb": "75579"})
+	require.NoError(t, err)
+	require.Len(t, results, 1)
+	assert.Equal(t, "Fullmetal Alchemist", results[0].Name)
+	assert.Equal(t, "75579", results[0].ProviderIds["Tvdb"])
+	assert.Equal(t, 2003, results[0].ProductionYear)
+
+	assert.Equal(t, http.MethodPost, gotMethod)
+	assert.Equal(t, "/Items/RemoteSearch/Movie", gotPath)
+	assert.Equal(t, `MediaBrowser Token="test-api-key"`, gotAuth)
+
+	var body map[string]any
+	require.NoError(t, json.Unmarshal(gotBody, &body))
+	searchInfo, ok := body["SearchInfo"].(map[string]any)
+	require.True(t, ok, "request must wrap criteria in SearchInfo: %s", string(gotBody))
+	assert.Equal(t, "Fullmetal Alchemist", searchInfo["Name"])
+	assert.Equal(t, float64(2003), searchInfo["Year"])
+	providerIDs, ok := searchInfo["ProviderIds"].(map[string]any)
+	require.True(t, ok)
+	assert.Equal(t, "75579", providerIDs["Tvdb"])
+}
+
+func TestJellyfinClientRemoteSearchSeries(t *testing.T) {
+	var (
+		gotPath string
+		gotBody []byte
+	)
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.Path
+		gotBody, _ = io.ReadAll(r.Body)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`[{"Name":"Fullmetal Alchemist","ProviderIds":{"Tvdb":"75579"},"ProductionYear":2003},{"Name":"Fullmetal Alchemist: Brotherhood","ProviderIds":{"Tvdb":"85249"},"ProductionYear":2009}]`))
+	}))
+	defer srv.Close()
+
+	client := newTestJellyfinClient(srv.URL)
+
+	results, err := client.RemoteSearchSeries(context.Background(), "Fullmetal Alchemist", 2003, nil)
+	require.NoError(t, err)
+	require.Len(t, results, 2)
+	assert.Equal(t, "85249", results[1].ProviderIds["Tvdb"])
+
+	assert.Equal(t, "/Items/RemoteSearch/Series", gotPath)
+
+	var body map[string]any
+	require.NoError(t, json.Unmarshal(gotBody, &body))
+	searchInfo, ok := body["SearchInfo"].(map[string]any)
+	require.True(t, ok, "request must wrap criteria in SearchInfo: %s", string(gotBody))
+	assert.Equal(t, "Fullmetal Alchemist", searchInfo["Name"])
+}
+
+// TestJellyfinClientRemoteSearchCanonicalizesProviderIDs pins the fix for the
+// case-sensitive Jellyfin ItemLookupInfo.ProviderIds: the sync service builds
+// lowercase keys ({"tmdb": ...}/{"tvdb": ...}), but Jellyfin only honors
+// PascalCase keys, so the outbound body must carry "Tmdb"/"Tvdb".
+func TestJellyfinClientRemoteSearchCanonicalizesProviderIDs(t *testing.T) {
+	cases := []struct {
+		name        string
+		kind        string
+		providerIDs map[string]string
+		want        map[string]string
+	}{
+		{"movie lowercase tmdb", "Movie", map[string]string{"tmdb": "605722"}, map[string]string{"Tmdb": "605722"}},
+		{"series lowercase tvdb", "Series", map[string]string{"tvdb": "75579"}, map[string]string{"Tvdb": "75579"}},
+		{"lowercase imdb", "Movie", map[string]string{"imdb": "tt1234567"}, map[string]string{"Imdb": "tt1234567"}},
+		{"unknown provider first-letter cap", "Movie", map[string]string{"other": "x"}, map[string]string{"Other": "x"}},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			var gotBody []byte
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				gotBody, _ = io.ReadAll(r.Body)
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusOK)
+				_, _ = w.Write([]byte(`[]`))
+			}))
+			defer srv.Close()
+
+			client := newTestJellyfinClient(srv.URL)
+			ctx := context.Background()
+
+			var err error
+			if tc.kind == "Series" {
+				_, err = client.RemoteSearchSeries(ctx, "Fullmetal Alchemist", 2003, tc.providerIDs)
+			} else {
+				_, err = client.RemoteSearchMovie(ctx, "Long Distance", 2024, tc.providerIDs)
+			}
+			require.NoError(t, err)
+
+			var body struct {
+				SearchInfo struct {
+					ProviderIds map[string]string `json:"ProviderIds"`
+				} `json:"SearchInfo"`
+			}
+			require.NoError(t, json.Unmarshal(gotBody, &body))
+			for wantKey, wantValue := range tc.want {
+				assert.Equal(t, wantValue, body.SearchInfo.ProviderIds[wantKey],
+					"outbound ProviderIds must use Jellyfin's PascalCase key: %s", string(gotBody))
+			}
+			for lower := range tc.providerIDs {
+				_, present := body.SearchInfo.ProviderIds[lower]
+				assert.False(t, present, "lowercase key %q must not be sent: %s", lower, string(gotBody))
+			}
+		})
+	}
+}
+
+func TestCanonicalProviderIDKey(t *testing.T) {
+	cases := map[string]string{
+		"tmdb":  "Tmdb",
+		"TMDB":  "Tmdb",
+		"Tmdb":  "Tmdb",
+		"tvdb":  "Tvdb",
+		"imdb":  "Imdb",
+		"other": "Other",
+		"":      "",
+	}
+	for in, want := range cases {
+		assert.Equal(t, want, canonicalProviderIDKey(in), "canonicalProviderIDKey(%q)", in)
+	}
+}
+
+func TestJellyfinClientRemoteSearchNon200(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer srv.Close()
+
+	client := newTestJellyfinClient(srv.URL)
+	ctx := context.Background()
+
+	t.Run("movie", func(t *testing.T) {
+		results, err := client.RemoteSearchMovie(ctx, "x", 0, nil)
+		require.Error(t, err)
+		assert.Nil(t, results)
+		assert.Contains(t, err.Error(), "unexpected status code: 500")
+	})
+
+	t.Run("series", func(t *testing.T) {
+		results, err := client.RemoteSearchSeries(ctx, "x", 0, nil)
+		require.Error(t, err)
+		assert.Nil(t, results)
+		assert.Contains(t, err.Error(), "unexpected status code: 500")
+	})
+}
+
+func TestJellyfinClientApplyRemoteSearch(t *testing.T) {
+	cases := []struct {
+		name             string
+		replaceAllImages bool
+	}{
+		{"keep images", false},
+		{"replace all images", true},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			var (
+				gotPath  string
+				gotQuery url.Values
+				gotBody  []byte
+			)
+
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				gotPath = r.URL.Path
+				gotQuery = r.URL.Query()
+				gotBody, _ = io.ReadAll(r.Body)
+				w.WriteHeader(http.StatusNoContent)
+			}))
+			defer srv.Close()
+
+			client := newTestJellyfinClient(srv.URL)
+			result := RemoteSearchResult{
+				Name:           "Fullmetal Alchemist",
+				ProviderIds:    map[string]string{"Tvdb": "75579"},
+				ProductionYear: 2003,
+			}
+
+			err := client.ApplyRemoteSearch(context.Background(), "item-123", result, tc.replaceAllImages)
+			require.NoError(t, err)
+
+			assert.Equal(t, "/Items/RemoteSearch/Apply/item-123", gotPath)
+
+			wantQuery := "false"
+			if tc.replaceAllImages {
+				wantQuery = "true"
+			}
+			assert.Equal(t, wantQuery, gotQuery.Get("replaceAllImages"))
+
+			var sent RemoteSearchResult
+			require.NoError(t, json.Unmarshal(gotBody, &sent))
+			assert.Equal(t, result, sent)
+		})
+	}
+}
+
+func TestJellyfinClientApplyRemoteSearchNon204(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusBadRequest)
+	}))
+	defer srv.Close()
+
+	client := newTestJellyfinClient(srv.URL)
+
+	err := client.ApplyRemoteSearch(context.Background(), "item-123", RemoteSearchResult{Name: "x"}, false)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "unexpected status code: 400")
+}
+
+func TestJellyfinClientGetEpisodes(t *testing.T) {
+	t.Run("decodes episodes and requests path/provider fields", func(t *testing.T) {
+		var (
+			gotPath  string
+			gotQuery url.Values
+			gotAuth  string
+		)
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			gotPath = r.URL.Path
+			gotQuery = r.URL.Query()
+			gotAuth = r.Header.Get("Authorization")
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"Items":[{"Id":"e1","Name":"Fullmetal Alchemist",` +
+				`"SeriesId":"series-1","ParentIndexNumber":1,"IndexNumber":1,` +
+				`"Path":"/tv/x/S01E01.mkv","ProviderIds":{"Tvdb":"75579"}}]}`))
+		}))
+		defer srv.Close()
+
+		client := newTestJellyfinClient(srv.URL)
+		episodes, err := client.GetEpisodes(context.Background(), "series-1")
+		require.NoError(t, err)
+		require.Len(t, episodes, 1)
+		assert.Equal(t, "Fullmetal Alchemist", episodes[0].Name)
+		assert.Equal(t, 1, episodes[0].ParentIndexNumber)
+		assert.Equal(t, 1, episodes[0].IndexNumber)
+		assert.Equal(t, "/tv/x/S01E01.mkv", episodes[0].Path)
+		assert.Equal(t, "75579", episodes[0].ProviderIds["Tvdb"])
+
+		assert.Equal(t, "/Shows/series-1/Episodes", gotPath)
+		assert.Equal(t, "Path,ProviderIds", gotQuery.Get("Fields"))
+		assert.Equal(t, `MediaBrowser Token="test-api-key"`, gotAuth)
+	})
+
+	t.Run("non-200 is an error", func(t *testing.T) {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusInternalServerError)
+		}))
+		defer srv.Close()
+
+		client := newTestJellyfinClient(srv.URL)
+		episodes, err := client.GetEpisodes(context.Background(), "series-1")
+		require.Error(t, err)
+		assert.Nil(t, episodes)
+		assert.Contains(t, err.Error(), "unexpected status code: 500")
+	})
 }

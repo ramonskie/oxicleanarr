@@ -92,6 +92,8 @@ func NewRouter(deps *RouterDependencies) *chi.Mux {
 				// Parameterized routes must come last
 				r.Get("/{id}", mediaHandler.GetMediaItem)
 				r.Get("/{id}/poster", mediaHandler.ProxyPoster)
+				r.Get("/{id}/match-analysis", mediaHandler.GetMatchAnalysis)
+				r.Post("/{id}/fix-match", mediaHandler.FixMatch)
 				r.Post("/{id}/exclude", mediaHandler.AddExclusion)
 				r.Delete("/{id}/exclude", mediaHandler.RemoveExclusion)
 				r.Post("/{id}/manual-leaving-soon", mediaHandler.AddManualLeavingSoon)

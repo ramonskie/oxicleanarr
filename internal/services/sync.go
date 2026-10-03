@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"path"
 	"strconv"
 	"strings"
 	"sync"
@@ -621,6 +622,98 @@ func (e *SyncEngine) syncSonarr(ctx context.Context) ([]models.Media, error) {
 
 	return mediaItems, nil
 }
+
+// jellyfinNotScannedReason is the cheap, human-readable reason attached to an
+// item that has no Jellyfin identity match and no path conflict. It tells the
+// user the file is likely not imported/scanned yet rather than mis-identified.
+const jellyfinNotScannedReason = "Not present in Jellyfin library (file may not be scanned)"
+
+// normalizeJellyfinPathKey canonicalizes a filesystem path for map comparison:
+// backslashes fold to slashes, redundant separators collapse, and case folds.
+// An empty path stays empty so it can never collide with a real entry. It uses
+// the host-independent path package so Windows-style paths normalise the same
+// way on every host.
+func normalizeJellyfinPathKey(p string) string {
+	if p == "" {
+		return ""
+	}
+	return strings.ToLower(path.Clean(strings.ReplaceAll(p, "\\", "/")))
+}
+
+// jellyfinParentPathKey returns the normalized parent directory of a Jellyfin
+// item path. It folds Windows separators to POSIX before deriving the directory
+// so a Windows-style path on a Linux host still yields a real parent (instead
+// of the "." that filepath.Dir returns for an unrecognised separator). Returns
+// empty when there is no meaningful parent.
+func jellyfinParentPathKey(itemPath string) string {
+	dir := path.Dir(strings.ReplaceAll(itemPath, "\\", "/"))
+	if dir == "" || dir == "." || dir == "/" {
+		return ""
+	}
+	return normalizeJellyfinPathKey(dir)
+}
+
+// buildJellyfinPathIndex maps normalized paths to the Jellyfin item at that
+// path. Both the item's full path and its parent directory are indexed: arr
+// clients report a media folder (Radarr movie path, Sonarr series path) while
+// Jellyfin reports a movie's file path, so matching on the directory bridges
+// the two spellings without touching Jellyfin.
+//
+// A parent directory is indexed only when exactly one item claims it. When two
+// items share a folder (e.g. a featurette or sample beside the feature) the
+// directory is dropped rather than letting first-wins resolve to the wrong
+// item. Exact item paths always take precedence over parent-directory entries.
+func buildJellyfinPathIndex(items []clients.JellyfinItem) map[string]*clients.JellyfinItem {
+	exact := make(map[string]*clients.JellyfinItem, len(items))
+	for i := range items {
+		if key := normalizeJellyfinPathKey(items[i].Path); key != "" {
+			exact[key] = &items[i]
+		}
+	}
+
+	parents := make(map[string]*clients.JellyfinItem, len(items))
+	ambiguous := make(map[string]struct{})
+	for i := range items {
+		dir := jellyfinParentPathKey(items[i].Path)
+		if dir == "" {
+			continue
+		}
+		if _, collision := parents[dir]; collision {
+			ambiguous[dir] = struct{}{}
+			continue
+		}
+		parents[dir] = &items[i]
+	}
+
+	index := make(map[string]*clients.JellyfinItem, len(exact)+len(parents))
+	for dir, item := range parents {
+		if _, skip := ambiguous[dir]; skip {
+			continue
+		}
+		index[dir] = item
+	}
+	// Exact paths win over a parent-directory entry sharing the same key.
+	for key, item := range exact {
+		index[key] = item
+	}
+	return index
+}
+
+// lookupJellyfinPath resolves a normalized path against items, giving an exact
+// item.Path match precedence over the parent-directory bridge, and returning nil
+// when neither resolves.
+func lookupJellyfinPath(items []clients.JellyfinItem, normalizedPath string) *clients.JellyfinItem {
+	if normalizedPath == "" {
+		return nil
+	}
+	for i := range items {
+		if normalizeJellyfinPathKey(items[i].Path) == normalizedPath {
+			return &items[i]
+		}
+	}
+	return buildJellyfinPathIndex(items)[normalizedPath]
+}
+
 func (e *SyncEngine) syncJellyfin(ctx context.Context) error {
 	// Get movies
 	jellyfinMovies, err := e.jellyfinClient.GetMovies(ctx)
@@ -651,6 +744,9 @@ func (e *SyncEngine) syncJellyfin(ctx context.Context) error {
 		normalizedTitle := strings.ToLower(strings.TrimSpace(jm.Name))
 		jellyfinMoviesByTitle[normalizedTitle] = jm
 	}
+	// Path index lets a movie whose Jellyfin metadata was mis-identified (so the
+	// TMDB ID does not match) still be recognised as the same file on disk.
+	jellyfinMoviesByPath := buildJellyfinPathIndex(jellyfinMovies)
 
 	// Update watch data for movies and track mismatches
 	for id, media := range e.mediaLibrary {
@@ -677,25 +773,61 @@ func (e *SyncEngine) syncJellyfin(ctx context.Context) error {
 			media.HasPoster = true
 			media.JellyfinMatchStatus = "matched"
 			media.JellyfinMismatchInfo = ""
+			media.JellyfinMatchReason = ""
+			media.JellyfinConflictID = ""
+			media.JellyfinVerdict = ""
 			movieMatched++
 		} else {
 			// No exact match - check for potential metadata mismatch
 			normalizedTitle := strings.ToLower(strings.TrimSpace(media.Title))
 			if jm, found := jellyfinMoviesByTitle[normalizedTitle]; found {
-				// Same title but different TMDB ID - metadata mismatch
+				// Same title but different TMDB ID - metadata mismatch. Record the
+				// matched item's id so a later fix can re-identify it by id even
+				// when arr and Jellyfin library roots differ.
 				jellyfinTMDB := jm.ProviderIds["Tmdb"]
 				media.JellyfinMatchStatus = "metadata_mismatch"
 				media.JellyfinMismatchInfo = fmt.Sprintf("Jellyfin has wrong metadata (TMDB %s instead of %d)", jellyfinTMDB, media.TMDBID)
+				media.JellyfinMatchReason = media.JellyfinMismatchInfo
+				media.JellyfinConflictID = jm.ID
+				media.JellyfinID = ""
+				media.HasPoster = false
+				media.JellyfinVerdict = ""
 				movieMismatch++
 				log.Warn().
 					Str("title", media.Title).
 					Int("radarr_tmdb_id", media.TMDBID).
 					Str("jellyfin_tmdb_id", jellyfinTMDB).
 					Msg("Metadata mismatch detected for movie")
+			} else if jm, found := jellyfinMoviesByPath[normalizeJellyfinPathKey(media.FilePath)]; found {
+				// Same file on disk, different identity: Jellyfin mis-identified it.
+				// Classification only — never re-identify or attach watch data here.
+				jellyfinTMDB := jm.ProviderIds["Tmdb"]
+				media.JellyfinMatchStatus = "metadata_mismatch"
+				media.JellyfinMismatchInfo = fmt.Sprintf("Jellyfin has wrong metadata (TMDB %s instead of %d)", jellyfinTMDB, media.TMDBID)
+				media.JellyfinMatchReason = fmt.Sprintf(
+					"Jellyfin identifies the file at this path as %q (TMDB %s), not %q (TMDB %d)",
+					jm.Name, jellyfinTMDB, media.Title, media.TMDBID)
+				media.JellyfinConflictID = jm.ID
+				media.JellyfinID = ""
+				media.HasPoster = false
+				media.JellyfinVerdict = ""
+				movieMismatch++
+				log.Warn().
+					Str("title", media.Title).
+					Int("radarr_tmdb_id", media.TMDBID).
+					Str("jellyfin_title", jm.Name).
+					Str("jellyfin_tmdb_id", jellyfinTMDB).
+					Str("jellyfin_item_id", jm.ID).
+					Msg("Path conflict detected for movie")
 			} else {
 				// Not found in Jellyfin at all
 				media.JellyfinMatchStatus = "not_found"
 				media.JellyfinMismatchInfo = "Item not found in Jellyfin library"
+				media.JellyfinMatchReason = jellyfinNotScannedReason
+				media.JellyfinConflictID = ""
+				media.JellyfinID = ""
+				media.HasPoster = false
+				media.JellyfinVerdict = ""
 				movieNotFound++
 			}
 		}
@@ -720,6 +852,9 @@ func (e *SyncEngine) syncJellyfin(ctx context.Context) error {
 		normalizedTitle := strings.ToLower(strings.TrimSpace(js.Name))
 		jellyfinShowsByTitle[normalizedTitle] = js
 	}
+	// Path index catches series whose Jellyfin metadata was mis-identified so
+	// the TVDB ID no longer matches, even though the files are the same.
+	jellyfinShowsByPath := buildJellyfinPathIndex(jellyfinShows)
 
 	// Update watch data for TV shows and track mismatches
 	for id, media := range e.mediaLibrary {
@@ -744,25 +879,61 @@ func (e *SyncEngine) syncJellyfin(ctx context.Context) error {
 			media.HasPoster = true
 			media.JellyfinMatchStatus = "matched"
 			media.JellyfinMismatchInfo = ""
+			media.JellyfinMatchReason = ""
+			media.JellyfinConflictID = ""
+			media.JellyfinVerdict = ""
 			showMatched++
 		} else {
 			// No exact match - check for potential metadata mismatch
 			normalizedTitle := strings.ToLower(strings.TrimSpace(media.Title))
 			if js, found := jellyfinShowsByTitle[normalizedTitle]; found {
-				// Same title but different TVDB ID - metadata mismatch
+				// Same title but different TVDB ID - metadata mismatch. Record the
+				// matched item's id so a later fix can re-identify it by id even
+				// when arr and Jellyfin library roots differ.
 				jellyfinTVDB := js.ProviderIds["Tvdb"]
 				media.JellyfinMatchStatus = "metadata_mismatch"
 				media.JellyfinMismatchInfo = fmt.Sprintf("Jellyfin has wrong metadata (TVDB %s instead of %d)", jellyfinTVDB, media.TVDBID)
+				media.JellyfinMatchReason = media.JellyfinMismatchInfo
+				media.JellyfinConflictID = js.ID
+				media.JellyfinID = ""
+				media.HasPoster = false
+				media.JellyfinVerdict = ""
 				showMismatch++
 				log.Warn().
 					Str("title", media.Title).
 					Int("sonarr_tvdb_id", media.TVDBID).
 					Str("jellyfin_tvdb_id", jellyfinTVDB).
 					Msg("Metadata mismatch detected for TV show")
+			} else if js, found := jellyfinShowsByPath[normalizeJellyfinPathKey(media.FilePath)]; found {
+				// Same files on disk, different identity: Jellyfin mis-identified it.
+				// Classification only — never re-identify or attach watch data here.
+				jellyfinTVDB := js.ProviderIds["Tvdb"]
+				media.JellyfinMatchStatus = "metadata_mismatch"
+				media.JellyfinMismatchInfo = fmt.Sprintf("Jellyfin has wrong metadata (TVDB %s instead of %d)", jellyfinTVDB, media.TVDBID)
+				media.JellyfinMatchReason = fmt.Sprintf(
+					"Jellyfin identifies the files at this path as %q (TVDB %s), not %q (TVDB %d)",
+					js.Name, jellyfinTVDB, media.Title, media.TVDBID)
+				media.JellyfinConflictID = js.ID
+				media.JellyfinID = ""
+				media.HasPoster = false
+				media.JellyfinVerdict = ""
+				showMismatch++
+				log.Warn().
+					Str("title", media.Title).
+					Int("sonarr_tvdb_id", media.TVDBID).
+					Str("jellyfin_title", js.Name).
+					Str("jellyfin_tvdb_id", jellyfinTVDB).
+					Str("jellyfin_item_id", js.ID).
+					Msg("Path conflict detected for TV show")
 			} else {
 				// Not found in Jellyfin at all
 				media.JellyfinMatchStatus = "not_found"
 				media.JellyfinMismatchInfo = "Item not found in Jellyfin library"
+				media.JellyfinMatchReason = jellyfinNotScannedReason
+				media.JellyfinConflictID = ""
+				media.JellyfinID = ""
+				media.HasPoster = false
+				media.JellyfinVerdict = ""
 				showNotFound++
 			}
 		}
@@ -798,6 +969,552 @@ func (e *SyncEngine) syncJellyfin(ctx context.Context) error {
 	}
 
 	return nil
+}
+
+// Jellyfin match-fix errors. They are sentinels so the API layer can map each
+// outcome to a precise HTTP status without string matching.
+var (
+	// ErrJellyfinItemNotFound means no Jellyfin library item could be resolved
+	// for the media (no stored conflict id and no path match). The file is
+	// likely not scanned yet, so there is nothing to re-identify.
+	ErrJellyfinItemNotFound = errors.New("jellyfin item not found (file may not be scanned)")
+	// ErrMatchArrWrong means the adjudicator concluded the Sonarr/Radarr entry
+	// is the outlier. The fix belongs in the arr; Jellyfin is left untouched.
+	ErrMatchArrWrong = errors.New("arr (Sonarr/Radarr) identity is wrong; fix it in the arr")
+	// ErrMatchAmbiguous means the evidence does not clearly favour either side,
+	// so the fix is refused without an explicit override.
+	ErrMatchAmbiguous = errors.New("match is ambiguous; refusing to modify Jellyfin")
+	// ErrRemoteSearchNoMatch means Jellyfin's remote search returned no candidate
+	// carrying the arr's provider id.
+	ErrRemoteSearchNoMatch = errors.New("no Jellyfin remote-search result matched the arr identity")
+)
+
+// MatchRefusalError is returned when a Fix Match request declines to mutate
+// Jellyfin. It wraps one of the exported sentinels so errors.Is still matches
+// ErrMatchArrWrong / ErrMatchAmbiguous / ErrRemoteSearchNoMatch, and it carries
+// the adjudication that justified the refusal so a caller can present that
+// evidence without re-running the analysis.
+type MatchRefusalError struct {
+	// Err is the exported sentinel the refusal maps to.
+	Err error
+	// Analysis is the adjudication behind the refusal; nil when the failure
+	// happened before an analysis could be produced.
+	Analysis *MatchAnalysis
+}
+
+// Error implements error, appending the verdict when an analysis is carried.
+func (e *MatchRefusalError) Error() string {
+	if e.Analysis != nil {
+		return fmt.Sprintf("%s (verdict=%s)", e.Err.Error(), e.Analysis.Verdict)
+	}
+	return e.Err.Error()
+}
+
+// Unwrap exposes the wrapped sentinel to errors.Is / errors.As.
+func (e *MatchRefusalError) Unwrap() error { return e.Err }
+
+// FixResult is the outcome of a successful FixJellyfinMatch: the re-identified
+// Jellyfin item, the identity that was applied, and the analysis that justified it.
+type FixResult struct {
+	MediaID            string            `json:"media_id"`
+	JellyfinID         string            `json:"jellyfin_id"`
+	Title              string            `json:"title"`
+	AppliedProviderIDs map[string]string `json:"applied_provider_ids,omitempty"`
+	Analysis           MatchAnalysis     `json:"analysis"`
+}
+
+// arrMatchIdentity is the arr side of the comparison: its identity, a
+// representative file path, and (for TV) its episode list.
+type arrMatchIdentity struct {
+	Identity Identity
+	FilePath string
+	Episodes []Episode
+}
+
+// AnalyzeJellyfinMatch adjudicates which side holds the wrong identity for a
+// media item. It gathers the arr identity, resolves the conflicting Jellyfin
+// item, and delegates the actual reasoning to the pure AnalyzeMatch. It never
+// mutates Jellyfin and is only ever called by an explicit user request.
+func (e *SyncEngine) AnalyzeJellyfinMatch(ctx context.Context, mediaID string) (*MatchAnalysis, error) {
+	media, found := e.GetMediaByID(mediaID)
+	if !found {
+		return nil, fmt.Errorf("media not found: %s", mediaID)
+	}
+	if e.jellyfinClient == nil {
+		return nil, fmt.Errorf("analyzing match for %s: jellyfin integration is disabled", mediaID)
+	}
+
+	item, err := e.resolveJellyfinItem(ctx, media)
+	if err != nil {
+		return nil, err
+	}
+	if item == nil {
+		return nil, fmt.Errorf("analyzing match for %s: %w", mediaID, ErrJellyfinItemNotFound)
+	}
+
+	arr, err := e.buildArrIdentity(ctx, media)
+	if err != nil {
+		return nil, err
+	}
+	analysis, err := e.analyzeJellyfinMatch(ctx, media, item, arr)
+	if err != nil {
+		return nil, err
+	}
+
+	e.setJellyfinVerdict(mediaID, analysis.Verdict)
+	return &analysis, nil
+}
+
+// FixJellyfinMatch re-identifies the Jellyfin item against the arr identity when
+// the adjudicator finds Jellyfin is the outlier. It refuses arr_wrong and
+// ambiguous verdicts, applies the matching RemoteSearch result, then re-runs the
+// read-only Jellyfin sync so the item flips to "matched". Only an explicit,
+// user-confirmed request may call it; no sync or job path invokes it.
+func (e *SyncEngine) FixJellyfinMatch(ctx context.Context, mediaID string) (*FixResult, error) {
+	media, found := e.GetMediaByID(mediaID)
+	if !found {
+		return nil, fmt.Errorf("media not found: %s", mediaID)
+	}
+	if e.jellyfinClient == nil {
+		return nil, fmt.Errorf("fixing match for %s: jellyfin integration is disabled", mediaID)
+	}
+
+	item, err := e.resolveJellyfinItem(ctx, media)
+	if err != nil {
+		return nil, err
+	}
+	if item == nil {
+		return nil, fmt.Errorf("fixing match for %s: %w", mediaID, ErrJellyfinItemNotFound)
+	}
+
+	arr, err := e.buildArrIdentity(ctx, media)
+	if err != nil {
+		return nil, err
+	}
+	analysis, err := e.analyzeJellyfinMatch(ctx, media, item, arr)
+	if err != nil {
+		return nil, err
+	}
+
+	switch analysis.Verdict {
+	case VerdictJellyfinWrong:
+		// Jellyfin is the outlier; it is safe to re-identify it.
+	case VerdictArrWrong:
+		return nil, &MatchRefusalError{Err: ErrMatchArrWrong, Analysis: &analysis}
+	default:
+		return nil, &MatchRefusalError{Err: ErrMatchAmbiguous, Analysis: &analysis}
+	}
+
+	result, providerIDs, err := e.findJellyfinRemoteMatch(ctx, media, arr.Identity)
+	if err != nil {
+		if errors.Is(err, ErrRemoteSearchNoMatch) {
+			return nil, &MatchRefusalError{Err: ErrRemoteSearchNoMatch, Analysis: &analysis}
+		}
+		return nil, err
+	}
+	if err := e.jellyfinClient.ApplyRemoteSearch(ctx, item.ID, result, false); err != nil {
+		return nil, fmt.Errorf("applying remote search to Jellyfin item %s: %w", item.ID, err)
+	}
+	// Jellyfin has now been re-identified. Clear the stale mismatch diagnosis
+	// immediately and independently of the re-sync below: a re-sync failure must
+	// not leave the item holding the prior jellyfin_wrong verdict, mismatch reason
+	// and conflict id after a successful fix. Only the diagnosis fields are
+	// touched; watch counts and play state are preserved.
+	e.clearJellyfinDiagnosis(mediaID)
+	// Jellyfin is already mutated at this point. A re-sync failure must not turn
+	// a successful fix into a 500, so log it and fall back to the identity that
+	// was just applied rather than failing the request.
+	if err := e.syncJellyfin(ctx); err != nil {
+		log.Warn().Err(err).Str("media_id", mediaID).
+			Msg("post-fix Jellyfin re-sync failed; Jellyfin was already updated")
+	}
+
+	updated, found := e.GetMediaByID(mediaID)
+	if !found {
+		log.Warn().Str("media_id", mediaID).
+			Msg("media item disappeared during post-fix re-sync; reporting the applied identity")
+		updated = models.Media{ID: mediaID, Title: media.Title}
+	}
+	if updated.JellyfinID == "" {
+		// The item is re-identified in place; report its id even when the
+		// refreshed sync could not yet observe the change.
+		updated.JellyfinID = item.ID
+	}
+
+	log.Info().
+		Str("media_id", mediaID).
+		Str("jellyfin_item_id", item.ID).
+		Str("verdict", string(analysis.Verdict)).
+		Float64("confidence", analysis.Confidence).
+		Msg("Re-identified Jellyfin item after manual Fix Match")
+
+	return &FixResult{
+		MediaID:            mediaID,
+		JellyfinID:         updated.JellyfinID,
+		Title:              updated.Title,
+		AppliedProviderIDs: providerIDs,
+		Analysis:           analysis,
+	}, nil
+}
+
+// analyzeJellyfinMatch turns the arr identity and an already-resolved Jellyfin
+// item into adjudicator input and runs the pure AnalyzeMatch.
+func (e *SyncEngine) analyzeJellyfinMatch(ctx context.Context, media models.Media, item *clients.JellyfinItem, arr arrMatchIdentity) (MatchAnalysis, error) {
+	input := MatchAnalysisInput{
+		MediaType:   media.Type,
+		Arr:         arr.Identity,
+		Jellyfin:    jellyfinIdentity(media.Type, item),
+		FilePath:    arr.FilePath,
+		ArrEpisodes: arr.Episodes,
+	}
+
+	if media.Type == models.MediaTypeTVShow {
+		episodes, err := e.jellyfinClient.GetEpisodes(ctx, item.ID)
+		if err != nil {
+			return MatchAnalysis{}, fmt.Errorf("fetching Jellyfin episodes for series %s: %w", item.ID, err)
+		}
+		input.JellyfinEpisodes = jellyfinEpisodesToEvidence(episodes)
+	}
+
+	analysis := AnalyzeMatch(input)
+	// Surface the conflicting Jellyfin item and its provider ids explicitly in
+	// the evidence so the UI can show exactly what Jellyfin currently thinks.
+	analysis.Evidence = append(analysis.Evidence, fmt.Sprintf(
+		"conflicting Jellyfin item %s is %q (%s)", item.ID, item.Name, describeProviderIDs(item.ProviderIds)))
+	return analysis, nil
+}
+
+// buildArrIdentity gathers the Sonarr/Radarr side of the comparison. It prefers
+// live arr data (Radarr GetMovie / Sonarr GetSeriesByID + GetEpisodes) and falls
+// back to the synced media fields when no arr client is available.
+func (e *SyncEngine) buildArrIdentity(ctx context.Context, media models.Media) (arrMatchIdentity, error) {
+	if media.Type == models.MediaTypeTVShow {
+		return e.buildTVArrIdentity(ctx, media)
+	}
+	return e.buildMovieArrIdentity(ctx, media)
+}
+
+// buildMovieArrIdentity resolves the Radarr movie identity and its file path.
+func (e *SyncEngine) buildMovieArrIdentity(ctx context.Context, media models.Media) (arrMatchIdentity, error) {
+	identity := Identity{
+		Title:      media.Title,
+		Year:       media.Year,
+		ProviderID: providerRef("tmdb", media.TMDBID),
+	}
+	filePath := media.FilePath
+
+	if e.radarrClient == nil || media.RadarrID <= 0 {
+		return arrMatchIdentity{Identity: identity, FilePath: filePath}, nil
+	}
+
+	movie, err := e.radarrClient.GetMovie(ctx, media.RadarrID)
+	if err != nil {
+		return arrMatchIdentity{}, fmt.Errorf("fetching Radarr movie %d: %w", media.RadarrID, err)
+	}
+	identity.Title = firstNonEmpty(movie.Title, identity.Title)
+	identity.Year = firstNonZero(movie.Year, identity.Year)
+	identity.ProviderID = providerRef("tmdb", firstNonZero(movie.TmdbId, media.TMDBID))
+	if movie.MovieFile != nil && movie.MovieFile.Path != "" {
+		filePath = movie.MovieFile.Path
+	}
+	return arrMatchIdentity{Identity: identity, FilePath: filePath}, nil
+}
+
+// buildTVArrIdentity resolves the Sonarr series identity and its episodes.
+func (e *SyncEngine) buildTVArrIdentity(ctx context.Context, media models.Media) (arrMatchIdentity, error) {
+	identity := Identity{
+		Title:      media.Title,
+		Year:       media.Year,
+		ProviderID: providerRef("tvdb", media.TVDBID),
+	}
+	filePath := media.FilePath
+	var episodes []Episode
+
+	if e.sonarrClient == nil || media.SonarrID <= 0 {
+		return arrMatchIdentity{Identity: identity, FilePath: filePath, Episodes: episodes}, nil
+	}
+
+	series, err := e.sonarrClient.GetSeriesByID(ctx, media.SonarrID)
+	if err != nil {
+		return arrMatchIdentity{}, fmt.Errorf("fetching Sonarr series %d: %w", media.SonarrID, err)
+	}
+	identity.Title = firstNonEmpty(series.Title, identity.Title)
+	identity.Year = firstNonZero(series.Year, identity.Year)
+	identity.ProviderID = providerRef("tvdb", firstNonZero(series.TvdbId, media.TVDBID))
+
+	sonarrEpisodes, err := e.sonarrClient.GetEpisodes(ctx, media.SonarrID)
+	if err != nil {
+		return arrMatchIdentity{}, fmt.Errorf("fetching Sonarr episodes for series %d: %w", media.SonarrID, err)
+	}
+	episodes = sonarrEpisodesToEvidence(sonarrEpisodes)
+	if path := firstEpisodeFile(sonarrEpisodes); path != "" {
+		filePath = path
+	}
+	return arrMatchIdentity{Identity: identity, FilePath: filePath, Episodes: episodes}, nil
+}
+
+// resolveJellyfinItem locates the Jellyfin item involved in the conflict. It
+// prefers the stored conflict id (set by sync classification) and falls back to
+// a normalized path lookup. A miss returns (nil, nil).
+func (e *SyncEngine) resolveJellyfinItem(ctx context.Context, media models.Media) (*clients.JellyfinItem, error) {
+	var (
+		items []clients.JellyfinItem
+		err   error
+	)
+	if media.Type == models.MediaTypeTVShow {
+		items, err = e.jellyfinClient.GetTVShows(ctx)
+	} else {
+		items, err = e.jellyfinClient.GetMovies(ctx)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("listing Jellyfin items: %w", err)
+	}
+
+	if id := media.JellyfinConflictID; id != "" {
+		for i := range items {
+			if items[i].ID == id {
+				return &items[i], nil
+			}
+		}
+	}
+
+	if item := lookupJellyfinPath(items, normalizeJellyfinPathKey(media.FilePath)); item != nil {
+		return item, nil
+	}
+	return nil, nil
+}
+
+// jellyfinIdentity maps a Jellyfin item onto the adjudicator's Identity, using
+// the provider key appropriate to the media type.
+func jellyfinIdentity(mediaType models.MediaType, item *clients.JellyfinItem) Identity {
+	key := "Tmdb"
+	if mediaType == models.MediaTypeTVShow {
+		key = "Tvdb"
+	}
+	return Identity{
+		Title:      item.Name,
+		Year:       item.ProductionYear,
+		ProviderID: providerRefFromMap(item.ProviderIds, key),
+	}
+}
+
+// jellyfinEpisodesToEvidence normalizes Jellyfin episodes for adjudication.
+func jellyfinEpisodesToEvidence(episodes []clients.JellyfinEpisode) []Episode {
+	result := make([]Episode, 0, len(episodes))
+	for _, ep := range episodes {
+		result = append(result, Episode{
+			Season:  ep.ParentIndexNumber,
+			Episode: ep.IndexNumber,
+			Title:   ep.Name,
+			Path:    ep.Path,
+		})
+	}
+	return result
+}
+
+// sonarrEpisodesToEvidence normalizes Sonarr episodes. Episodes with a file on
+// disk are preferred; if none carry a file, all episodes are used so title
+// agreement can still be measured.
+func sonarrEpisodesToEvidence(episodes []clients.SonarrEpisode) []Episode {
+	withFile := make([]Episode, 0, len(episodes))
+	for _, ep := range episodes {
+		if ep.EpisodeFile == nil {
+			continue
+		}
+		withFile = append(withFile, Episode{
+			Season:  ep.SeasonNumber,
+			Episode: ep.EpisodeNumber,
+			Title:   ep.Title,
+			Path:    ep.EpisodeFile.Path,
+		})
+	}
+	if len(withFile) > 0 {
+		return withFile
+	}
+
+	all := make([]Episode, 0, len(episodes))
+	for _, ep := range episodes {
+		all = append(all, Episode{Season: ep.SeasonNumber, Episode: ep.EpisodeNumber, Title: ep.Title})
+	}
+	return all
+}
+
+// firstEpisodeFile returns the first on-disk episode file path, if any.
+func firstEpisodeFile(episodes []clients.SonarrEpisode) string {
+	for _, ep := range episodes {
+		if ep.EpisodeFile != nil && ep.EpisodeFile.Path != "" {
+			return ep.EpisodeFile.Path
+		}
+	}
+	return ""
+}
+
+// providerRef formats a provider id as "key:value" (e.g. "tmdb:605722").
+func providerRef(key string, id int) string {
+	if id <= 0 {
+		return ""
+	}
+	return key + ":" + strconv.Itoa(id)
+}
+
+// providerRefFromMap formats a provider id held in a Jellyfin ProviderIds map.
+func providerRefFromMap(ids map[string]string, key string) string {
+	value := ids[key]
+	if value == "" {
+		return ""
+	}
+	return strings.ToLower(key) + ":" + value
+}
+
+// providerKeyValue is one remote-search provider filter.
+type providerKeyValue struct {
+	key   string
+	value string
+}
+
+// remoteSearchProviderCandidates returns the provider ids to try, in priority
+// order, for the arr identity. The resolved identity's provider id is
+// authoritative; the synced media ids are used only when the identity carries
+// none (e.g. the arr client could not be reached). Movies use TMDB; shows try
+// TVDB then TMDB.
+func remoteSearchProviderCandidates(media models.Media, identity Identity) []providerKeyValue {
+	if identity.ProviderID != "" {
+		return []providerKeyValue{splitProviderRef(identity.ProviderID)}
+	}
+
+	candidates := make([]providerKeyValue, 0, 2)
+	if media.Type == models.MediaTypeTVShow {
+		if ref := providerRef("tvdb", media.TVDBID); ref != "" {
+			candidates = append(candidates, splitProviderRef(ref))
+		}
+		if ref := providerRef("tmdb", media.TMDBID); ref != "" {
+			candidates = append(candidates, splitProviderRef(ref))
+		}
+		return candidates
+	}
+	if ref := providerRef("tmdb", media.TMDBID); ref != "" {
+		candidates = append(candidates, splitProviderRef(ref))
+	}
+	return candidates
+}
+
+// findJellyfinRemoteMatch searches Jellyfin for the arr identity and returns the
+// first candidate whose provider ids match one of the arr's provider ids.
+func (e *SyncEngine) findJellyfinRemoteMatch(ctx context.Context, media models.Media, identity Identity) (clients.RemoteSearchResult, map[string]string, error) {
+	candidates := remoteSearchProviderCandidates(media, identity)
+	if len(candidates) == 0 {
+		return clients.RemoteSearchResult{}, nil, fmt.Errorf("finding Jellyfin match for %s: %w", media.ID, ErrRemoteSearchNoMatch)
+	}
+
+	for _, candidate := range candidates {
+		filter := map[string]string{candidate.key: candidate.value}
+		var (
+			results []clients.RemoteSearchResult
+			err     error
+		)
+		if media.Type == models.MediaTypeTVShow {
+			results, err = e.jellyfinClient.RemoteSearchSeries(ctx, identity.Title, identity.Year, filter)
+		} else {
+			results, err = e.jellyfinClient.RemoteSearchMovie(ctx, identity.Title, identity.Year, filter)
+		}
+		if err != nil {
+			return clients.RemoteSearchResult{}, nil, fmt.Errorf("remote searching Jellyfin for %s: %w", media.ID, err)
+		}
+		if match, ok := selectRemoteSearchResult(results, candidate.key, candidate.value); ok {
+			return match, match.ProviderIds, nil
+		}
+	}
+	return clients.RemoteSearchResult{}, nil, fmt.Errorf("finding Jellyfin match for %s: %w", media.ID, ErrRemoteSearchNoMatch)
+}
+
+// selectRemoteSearchResult returns the first candidate whose ProviderIds carry
+// the requested provider key/value.
+func selectRemoteSearchResult(results []clients.RemoteSearchResult, key, value string) (clients.RemoteSearchResult, bool) {
+	for _, result := range results {
+		for resultKey, resultValue := range result.ProviderIds {
+			if strings.EqualFold(resultKey, key) && resultValue == value {
+				return result, true
+			}
+		}
+	}
+	return clients.RemoteSearchResult{}, false
+}
+
+// splitProviderRef parses a "key:value" provider ref into a remote-search filter.
+func splitProviderRef(ref string) providerKeyValue {
+	key, value, _ := strings.Cut(ref, ":")
+	return providerKeyValue{key: key, value: value}
+}
+
+// describeProviderIDs renders a Jellyfin ProviderIds map for evidence messages.
+func describeProviderIDs(ids map[string]string) string {
+	if len(ids) == 0 {
+		return "no provider ids"
+	}
+	known := []string{"Tmdb", "Tvdb", "Imdb"}
+	parts := make([]string, 0, len(ids))
+	seen := make(map[string]struct{}, len(ids))
+	for _, key := range known {
+		if value, ok := ids[key]; ok {
+			parts = append(parts, key+"="+value)
+			seen[key] = struct{}{}
+		}
+	}
+	for key, value := range ids {
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		parts = append(parts, key+"="+value)
+	}
+	return strings.Join(parts, ", ")
+}
+
+// setJellyfinVerdict stores the adjudicator verdict on the in-memory media item
+// so the UI can show it. It never touches Jellyfin.
+func (e *SyncEngine) setJellyfinVerdict(mediaID string, verdict MatchVerdict) {
+	e.mediaLibraryLock.Lock()
+	defer e.mediaLibraryLock.Unlock()
+	if media, ok := e.mediaLibrary[mediaID]; ok {
+		media.JellyfinVerdict = string(verdict)
+		e.mediaLibrary[mediaID] = media
+	}
+}
+
+// clearJellyfinDiagnosis drops the adjudicator verdict and path-conflict
+// diagnosis from the in-memory item once Jellyfin has been re-identified. It is
+// deliberately independent of the post-apply re-sync so a re-sync failure
+// cannot leave a stale jellyfin_wrong verdict behind. WatchCount and
+// LastWatched are intentionally left untouched.
+func (e *SyncEngine) clearJellyfinDiagnosis(mediaID string) {
+	e.mediaLibraryLock.Lock()
+	defer e.mediaLibraryLock.Unlock()
+	if media, ok := e.mediaLibrary[mediaID]; ok {
+		media.JellyfinVerdict = ""
+		media.JellyfinMatchReason = ""
+		media.JellyfinConflictID = ""
+		e.mediaLibrary[mediaID] = media
+	}
+}
+
+// firstNonEmpty returns the first non-empty string. It keeps live arr values
+// ahead of synced fallbacks without nested conditionals.
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if value != "" {
+			return value
+		}
+	}
+	return ""
+}
+
+// firstNonZero returns the first non-zero int (used for year/provider ids).
+func firstNonZero(values ...int) int {
+	for _, value := range values {
+		if value != 0 {
+			return value
+		}
+	}
+	return 0
 }
 
 // syncJellyseerr syncs requested items from Jellyseerr

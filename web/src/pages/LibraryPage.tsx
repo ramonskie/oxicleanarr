@@ -1,13 +1,14 @@
 import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiClient } from '@/lib/api';
+import type { MatchAnalysis } from '@/lib/api';
 import type { MediaItem } from '@/lib/types';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { useSearchParams, useNavigate } from 'react-router-dom';
-import { Shield, ShieldOff, Timer, TimerOff, Search, Monitor, Film, Filter, User } from 'lucide-react';
+import { Shield, ShieldOff, Timer, TimerOff, Search, Monitor, Film, Filter, User, ScanSearch } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import AppLayout from '@/components/AppLayout';
 import { MediaPoster } from '@/components/MediaPoster';
@@ -18,6 +19,31 @@ type SortField = 'title' | 'year' | 'last_watched' | 'deletion_date';
 type SortOrder = 'asc' | 'desc';
 
 const ITEMS_PER_PAGE = 50;
+
+// A row is flagged for match diagnosis when sync classified it as missing or
+// mismatched against Jellyfin.
+function isMatchFlagged(item: MediaItem): boolean {
+  return item.jellyfin_match_status === 'metadata_mismatch' || item.jellyfin_match_status === 'not_found';
+}
+
+const MATCH_VERDICT_META: Record<string, { label: string; className: string }> = {
+  jellyfin_wrong: { label: 'Jellyfin wrong', className: 'bg-amber-900/20 text-amber-400 border-amber-900/50' },
+  arr_wrong: { label: 'Sonarr/Radarr wrong', className: 'bg-red-900/20 text-red-400 border-red-900/50' },
+  ambiguous: { label: 'Ambiguous', className: 'bg-gray-800 text-gray-300 border-gray-600' },
+};
+
+function verdictMeta(verdict?: string) {
+  return verdict ? MATCH_VERDICT_META[verdict] : undefined;
+}
+
+// The user-initiated match diagnosis dialog. Analysis is read-only; the
+// confirmed Fix Match action appears inside it only when the adjudicator finds
+// Jellyfin is the wrong side.
+interface MatchDialogState {
+  id: string;
+  title: string;
+  analysis: MatchAnalysis;
+}
 
 export default function LibraryPage() {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -39,6 +65,7 @@ export default function LibraryPage() {
   const [unexcludeConfirm, setUnexcludeConfirm] = useState<{ id: string; title: string } | null>(null);
   const [manualLeavingSoonConfirm, setManualLeavingSoonConfirm] = useState<{ id: string; title: string } | null>(null);
   const [removeManualLeavingSoonConfirm, setRemoveManualLeavingSoonConfirm] = useState<{ id: string; title: string } | null>(null);
+  const [matchDialog, setMatchDialog] = useState<MatchDialogState | null>(null);
 
   // Read URL parameters on mount
   useEffect(() => {
@@ -129,8 +156,8 @@ export default function LibraryPage() {
     }
 
     items.sort((a, b) => {
-      let aVal: any;
-      let bVal: any;
+      let aVal: string | number = 0;
+      let bVal: string | number = 0;
 
       switch (sortField) {
         case 'title':
@@ -151,11 +178,21 @@ export default function LibraryPage() {
           break;
       }
 
-      if (sortOrder === 'asc') {
-        return aVal < bVal ? -1 : aVal > bVal ? 1 : 0;
-      } else {
+      // Narrow by runtime type so the comparison stays type-safe: numeric
+      // fields sort numerically, title sorts lexicographically.
+      if (typeof aVal === 'number' && typeof bVal === 'number') {
+        if (sortOrder === 'asc') {
+          return aVal < bVal ? -1 : aVal > bVal ? 1 : 0;
+        }
         return aVal > bVal ? -1 : aVal < bVal ? 1 : 0;
       }
+
+      const aStr = String(aVal);
+      const bStr = String(bVal);
+      if (sortOrder === 'asc') {
+        return aStr < bStr ? -1 : aStr > bStr ? 1 : 0;
+      }
+      return aStr > bStr ? -1 : aStr < bStr ? 1 : 0;
     });
 
     return items;
@@ -332,6 +369,64 @@ export default function LibraryPage() {
     }
   };
 
+  // Match analysis runs only on an explicit user click, never on render. The
+  // adjudicator records the verdict on the server's in-memory media item, so a
+  // refetch surfaces it on the row while that item survives (freshness depends
+  // on the last sync).
+  const matchAnalysisMutation = useMutation({
+    mutationFn: (vars: { id: string; title: string }) =>
+      apiClient.getMatchAnalysis(vars.id),
+    onSuccess: (response, vars) => {
+      setMatchDialog({
+        id: vars.id,
+        title: vars.title,
+        analysis: response.analysis,
+      });
+      queryClient.invalidateQueries({ queryKey: ['movies'] });
+      queryClient.invalidateQueries({ queryKey: ['shows'] });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: 'Failed to analyze match',
+        description: error.message,
+        variant: 'destructive',
+      });
+    },
+  });
+
+  const fixMatchMutation = useMutation({
+    mutationFn: (id: string) => apiClient.fixMatch(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['movies'] });
+      queryClient.invalidateQueries({ queryKey: ['shows'] });
+      queryClient.invalidateQueries({ queryKey: ['leaving-soon'] });
+      setMatchDialog(null);
+      toast({
+        title: 'Match fixed',
+        description: 'Jellyfin metadata has been re-identified.',
+      });
+    },
+    onError: (error: Error) => {
+      // 409 (arr_wrong / ambiguous) and 422 (not scanned) carry the exact
+      // reason in the error message; surface it verbatim.
+      toast({
+        title: 'Fix Match failed',
+        description: error.message,
+        variant: 'destructive',
+      });
+    },
+  });
+
+  const handleMatchAction = (item: MediaItem) => {
+    matchAnalysisMutation.mutate({ id: item.id, title: item.title });
+  };
+
+  const confirmFixMatch = () => {
+    if (matchDialog) {
+      fixMatchMutation.mutate(matchDialog.id);
+    }
+  };
+
   const formatDate = (dateStr?: string, context: 'watched' | 'deletion' = 'watched') => {
     if (!dateStr) return context === 'deletion' ? 'N/A' : 'Never';
     const date = new Date(dateStr);
@@ -354,6 +449,11 @@ export default function LibraryPage() {
     if (sortField !== field) return null;
     return sortOrder === 'asc' ? '↑' : '↓';
   };
+
+  // Fix is only offered for a jellyfin_wrong verdict, inside the diagnosis
+  // dialog. arr_wrong / ambiguous are read-only explanations.
+  const matchVerdictInfo = matchDialog ? verdictMeta(matchDialog.analysis.verdict) : undefined;
+  const canConfirmFix = matchDialog?.analysis.verdict === 'jellyfin_wrong';
 
   return (
     <AppLayout>
@@ -493,12 +593,33 @@ export default function LibraryPage() {
                            size="tiny"
                          />
                          <div>
-                            <div className="flex items-center gap-2">
+                            <div className="flex items-center gap-2 flex-wrap">
                                 <span className="line-clamp-1">{item.title}</span>
                                 {item.jellyfin_match_status === 'metadata_mismatch' && (
                                    <Badge variant="destructive" className="text-[10px] h-5 px-1.5">Mismatch</Badge>
                                 )}
+                                {item.jellyfin_match_status === 'not_found' && (
+                                   <Badge variant="outline" className="text-[10px] h-5 px-1.5 bg-yellow-900/20 text-yellow-400 border-yellow-900/50">Not Found</Badge>
+                                )}
                             </div>
+                             {/* Match diagnosis: cheap reason from sync + lazily adjudicated verdict */}
+                             {isMatchFlagged(item) && (item.jellyfin_match_reason || item.jellyfin_verdict) && (
+                                <div className="flex items-center gap-2 mt-1 flex-wrap">
+                                    {item.jellyfin_match_reason && (
+                                        <span className="text-[11px] text-gray-500 line-clamp-2 max-w-[420px]">
+                                            {item.jellyfin_match_reason}
+                                        </span>
+                                    )}
+                                    {item.jellyfin_verdict && (
+                                        <Badge
+                                            variant="outline"
+                                            className={`text-[10px] h-5 px-1.5 ${verdictMeta(item.jellyfin_verdict)?.className ?? 'bg-gray-800 text-gray-300 border-gray-600'}`}
+                                        >
+                                            {verdictMeta(item.jellyfin_verdict)?.label ?? item.jellyfin_verdict}
+                                        </Badge>
+                                    )}
+                                </div>
+                             )}
                              {/* Tags displayed small under title */}
                              {item.tags && item.tags.length > 0 && (
                                 <div className="flex gap-1 mt-1">
@@ -611,6 +732,21 @@ export default function LibraryPage() {
                                 disabled={item.excluded}
                             >
                                 <Timer className="h-4 w-4" />
+                            </Button>
+                        )}
+                        {/* Match diagnosis — manual only; nothing runs until clicked.
+                            The Fix Match action is only offered inside the dialog,
+                            and only when the verdict is jellyfin_wrong. */}
+                        {isMatchFlagged(item) && (
+                            <Button
+                                variant="ghost"
+                                size="sm"
+                                className="h-8 w-8 p-0 text-gray-400 hover:text-white"
+                                onClick={() => handleMatchAction(item)}
+                                title="Diagnose match"
+                                disabled={matchAnalysisMutation.isPending}
+                            >
+                                <ScanSearch className="h-4 w-4" />
                             </Button>
                         )}
                       </div>
@@ -792,11 +928,84 @@ export default function LibraryPage() {
                disabled={removeManualLeavingSoonMutation.isPending}
                variant="destructive"
              >
-               {removeManualLeavingSoonMutation.isPending ? 'Removing...' : 'Remove Flag'}
-             </Button>
-           </DialogFooter>
-         </DialogContent>
-       </Dialog>
-     </AppLayout>
-  );
-}
+                {removeManualLeavingSoonMutation.isPending ? 'Removing...' : 'Remove Flag'}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* Jellyfin Match Analysis / Fix Confirmation Dialog */}
+        <Dialog
+          open={!!matchDialog}
+          onOpenChange={(open) => {
+            if (!open && !fixMatchMutation.isPending) setMatchDialog(null);
+          }}
+        >
+          <DialogContent className="bg-[#1a1a1a] border-[#333] max-w-lg">
+            <DialogHeader>
+              <DialogTitle className="text-white">Jellyfin Match Diagnosis</DialogTitle>
+              <DialogDescription className="text-gray-400">
+                {matchDialog ? `Diagnosis for "${matchDialog.title}"` : ''}
+              </DialogDescription>
+            </DialogHeader>
+            {matchDialog && (
+              <div className="space-y-4">
+                <div className="flex items-center gap-2">
+                  <Badge
+                    variant="outline"
+                    className={`text-[10px] h-5 px-1.5 ${matchVerdictInfo?.className ?? 'bg-gray-800 text-gray-300 border-gray-600'}`}
+                  >
+                    {matchVerdictInfo?.label ?? matchDialog.analysis.verdict}
+                  </Badge>
+                  <span className="text-xs text-gray-500">
+                    {Math.round(matchDialog.analysis.confidence * 100)}% confidence
+                  </span>
+                </div>
+
+                <ul className="space-y-1.5 text-sm text-gray-300 list-disc list-inside">
+                  {matchDialog.analysis.evidence.map((line, index) => (
+                    <li key={index}>{line}</li>
+                  ))}
+                </ul>
+
+                {matchDialog.analysis.verdict === 'arr_wrong' && (
+                  <p className="text-sm text-red-400">
+                    Sonarr/Radarr is wrong; fix it there. Jellyfin will not be modified.
+                  </p>
+                )}
+                {matchDialog.analysis.verdict === 'ambiguous' && (
+                  <p className="text-sm text-amber-400">
+                    Evidence is inconclusive; refusing to modify Jellyfin.
+                  </p>
+                )}
+                {canConfirmFix && (
+                  <p className="text-sm text-gray-400">
+                    This will re-identify the Jellyfin item to match Sonarr/Radarr.
+                  </p>
+                )}
+              </div>
+            )}
+            <DialogFooter>
+              <Button
+                variant="outline"
+                onClick={() => setMatchDialog(null)}
+                disabled={fixMatchMutation.isPending}
+                className="bg-[#262626] border-[#444] text-gray-300 hover:bg-[#333]"
+              >
+                {canConfirmFix ? 'Cancel' : 'Close'}
+              </Button>
+              {canConfirmFix && (
+                <Button
+                  onClick={confirmFixMatch}
+                  disabled={fixMatchMutation.isPending}
+                  className="bg-primary text-primary-foreground hover:bg-primary/90"
+                >
+                  {fixMatchMutation.isPending ? 'Fixing…' : 'Fix Match'}
+                </Button>
+              )}
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      </AppLayout>
+   );
+ }

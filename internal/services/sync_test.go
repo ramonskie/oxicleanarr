@@ -7,6 +7,9 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"runtime"
+	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -1437,4 +1440,621 @@ func TestSyncEngine_SyncQueuesBehindRunningSync(t *testing.T) {
 	case <-time.After(2 * time.Second):
 		t.Fatal("queued sync did not run after lock release")
 	}
+}
+
+// newJellyfinStub starts a Jellyfin stub that answers /Items with the raw Items
+// JSON keyed by IncludeItemTypes ("Movie"/"Series"); unmatched types get an
+// empty page. It mirrors the client's getItems call shape.
+func newJellyfinStub(t *testing.T, itemsByType map[string]string) *httptest.Server {
+	t.Helper()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		resp, ok := itemsByType[r.URL.Query().Get("IncludeItemTypes")]
+		if !ok {
+			resp = `{"Items":[]}`
+		}
+		_, _ = w.Write([]byte(resp))
+	}))
+	t.Cleanup(srv.Close)
+	return srv
+}
+
+// newJellyfinSyncEngine builds a SyncEngine wired to a Jellyfin stub returning
+// the given items per media type.
+func newJellyfinSyncEngine(t *testing.T, itemsByType map[string]string) *SyncEngine {
+	t.Helper()
+
+	engine, _, _ := newTestSyncEngine(t)
+	srv := newJellyfinStub(t, itemsByType)
+	engine.jellyfinClient = clients.NewJellyfinClient(config.JellyfinConfig{
+		BaseIntegrationConfig: config.BaseIntegrationConfig{URL: srv.URL, APIKey: "k"},
+	})
+	return engine
+}
+
+func TestSyncJellyfin_PathConflictClassifiesMovie(t *testing.T) {
+	engine := newJellyfinSyncEngine(t, map[string]string{
+		"Movie": `{"Items":[{"Id":"jf-distant","Name":"Distant","Type":"Movie",` +
+			`"Path":"/movies/Long Distance (2024)/Long.Distance.2024.mkv","ProviderIds":{"Tmdb":"1395720"}}]}`,
+	})
+
+	// Radarr reports the movie folder; Jellyfin reports the file inside it. The
+	// normalized-directory path index must bridge that and flag the conflict.
+	engine.mediaLibrary["radarr-306"] = models.Media{
+		ID:       "radarr-306",
+		Type:     models.MediaTypeMovie,
+		Title:    "Long Distance",
+		TMDBID:   605722,
+		FilePath: "/movies/Long Distance (2024)",
+	}
+
+	require.NoError(t, engine.syncJellyfin(context.Background()))
+
+	movie := engine.mediaLibrary["radarr-306"]
+	assert.Equal(t, "metadata_mismatch", movie.JellyfinMatchStatus)
+	assert.Equal(t, "jf-distant", movie.JellyfinConflictID)
+	assert.Contains(t, movie.JellyfinMatchReason, "Distant")
+	assert.Contains(t, movie.JellyfinMatchReason, "1395720")
+	assert.Contains(t, movie.JellyfinMatchReason, "605722")
+	assert.Contains(t, movie.JellyfinMatchReason, "Long Distance")
+	assert.Empty(t, movie.JellyfinID, "path conflict must not attach a Jellyfin id (read-only classification)")
+	assert.Zero(t, movie.WatchCount, "path conflict must not attach watch data")
+}
+
+func TestSyncJellyfin_PathConflictClassifiesShow(t *testing.T) {
+	engine := newJellyfinSyncEngine(t, map[string]string{
+		"Series": `{"Items":[{"Id":"jf-fmab","Name":"Fullmetal Alchemist: Brotherhood",` +
+			`"Type":"Series","Path":"/tv/Fullmetal Alchemist","ProviderIds":{"Tvdb":"85249"}}]}`,
+	})
+
+	engine.mediaLibrary["sonarr-97"] = models.Media{
+		ID:       "sonarr-97",
+		Type:     models.MediaTypeTVShow,
+		Title:    "Fullmetal Alchemist",
+		TVDBID:   75579,
+		FilePath: "/tv/Fullmetal Alchemist",
+	}
+
+	require.NoError(t, engine.syncJellyfin(context.Background()))
+
+	show := engine.mediaLibrary["sonarr-97"]
+	assert.Equal(t, "metadata_mismatch", show.JellyfinMatchStatus)
+	assert.Equal(t, "jf-fmab", show.JellyfinConflictID)
+	assert.Contains(t, show.JellyfinMatchReason, "Fullmetal Alchemist: Brotherhood")
+	assert.Contains(t, show.JellyfinMatchReason, "85249")
+	assert.Contains(t, show.JellyfinMatchReason, "75579")
+	assert.Empty(t, show.JellyfinID, "path conflict must not attach a Jellyfin id (read-only classification)")
+}
+
+func TestSyncJellyfin_ExactTitleMismatchKeepsReasonWording(t *testing.T) {
+	engine := newJellyfinSyncEngine(t, map[string]string{
+		"Series": `{"Items":[{"Id":"jf-vanished-2006","Name":"Vanished","Type":"Series",` +
+			`"Path":"/tv/Vanished","ProviderIds":{"Tvdb":"79332"}}]}`,
+	})
+
+	engine.mediaLibrary["sonarr-179"] = models.Media{
+		ID:       "sonarr-179",
+		Type:     models.MediaTypeTVShow,
+		Title:    "Vanished",
+		TVDBID:   461839,
+		FilePath: "/tv/Vanished",
+	}
+
+	require.NoError(t, engine.syncJellyfin(context.Background()))
+
+	show := engine.mediaLibrary["sonarr-179"]
+	assert.Equal(t, "metadata_mismatch", show.JellyfinMatchStatus)
+	assert.Contains(t, show.JellyfinMatchReason, "TVDB 79332 instead of 461839",
+		"same-title mismatches keep the existing reason wording")
+	assert.Equal(t, "jf-vanished-2006", show.JellyfinConflictID,
+		"exact-title mismatch records the matched Jellyfin item id so it can be fixed by id")
+}
+
+func TestSyncJellyfin_MatchedClearsDiagnosisFields(t *testing.T) {
+	engine := newJellyfinSyncEngine(t, map[string]string{
+		"Movie": `{"Items":[{"Id":"jf-dune","Name":"Dune","Type":"Movie",` +
+			`"Path":"/movies/Dune (2021)/Dune.2021.mkv","ProviderIds":{"Tmdb":"438631"}}]}`,
+	})
+
+	engine.mediaLibrary["movie-1"] = models.Media{
+		ID:                   "movie-1",
+		Type:                 models.MediaTypeMovie,
+		Title:                "Dune",
+		TMDBID:               438631,
+		JellyfinID:           "stale-id",
+		JellyfinMatchReason:  "stale reason",
+		JellyfinConflictID:   "stale-conflict",
+		JellyfinVerdict:      string(VerdictJellyfinWrong),
+		JellyfinMismatchInfo: "stale info",
+	}
+
+	require.NoError(t, engine.syncJellyfin(context.Background()))
+
+	movie := engine.mediaLibrary["movie-1"]
+	assert.Equal(t, "matched", movie.JellyfinMatchStatus)
+	assert.Equal(t, "jf-dune", movie.JellyfinID)
+	assert.Empty(t, movie.JellyfinMatchReason, "matched items must clear a stale reason")
+	assert.Empty(t, movie.JellyfinConflictID, "matched items must clear a stale conflict id")
+	assert.Empty(t, movie.JellyfinVerdict, "matched items must clear a stale verdict")
+	assert.Empty(t, movie.JellyfinMismatchInfo)
+}
+
+func TestSyncJellyfin_NotFoundSetsNotScannedReason(t *testing.T) {
+	engine := newJellyfinSyncEngine(t, nil)
+
+	engine.mediaLibrary["radarr-999"] = models.Media{
+		ID:       "radarr-999",
+		Type:     models.MediaTypeMovie,
+		Title:    "Ghost",
+		TMDBID:   111,
+		FilePath: "/movies/Ghost (2020)",
+	}
+
+	require.NoError(t, engine.syncJellyfin(context.Background()))
+
+	movie := engine.mediaLibrary["radarr-999"]
+	assert.Equal(t, "not_found", movie.JellyfinMatchStatus)
+	assert.Equal(t, jellyfinNotScannedReason, movie.JellyfinMatchReason)
+	assert.Empty(t, movie.JellyfinConflictID)
+}
+
+// --- AnalyzeJellyfinMatch / FixJellyfinMatch ---
+
+// newTestJellyfinServer wires a Jellyfin client to a stub and returns the engine.
+func newTestJellyfinServer(t *testing.T, handler http.HandlerFunc) (*SyncEngine, *httptest.Server) {
+	t.Helper()
+
+	engine, _, _ := newTestSyncEngine(t)
+	srv := httptest.NewServer(handler)
+	t.Cleanup(srv.Close)
+
+	engine.jellyfinClient = clients.NewJellyfinClient(config.JellyfinConfig{
+		BaseIntegrationConfig: config.BaseIntegrationConfig{URL: srv.URL, APIKey: "k"},
+	})
+	return engine, srv
+}
+
+func TestAnalyzeJellyfinMatch_MovieJellyfinWrong(t *testing.T) {
+	engine, _ := newTestJellyfinServer(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(clients.JellyfinItemsResponse{Items: []clients.JellyfinItem{{
+			ID:             "jf-distant",
+			Name:           "Distant",
+			Type:           "Movie",
+			ProductionYear: 2024,
+			Path:           "/movies/Long Distance (2024)/Long.Distance.2024.mkv",
+			ProviderIds:    map[string]string{"Tmdb": "1395720"},
+		}}})
+	})
+
+	radarrSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(clients.RadarrMovie{
+			ID: 306, Title: "Long Distance", Year: 2024, TmdbId: 605722,
+			Path: "/movies/Long Distance (2024)",
+			MovieFile: &clients.RadarrMovieFile{
+				Path: "/movies/Long Distance (2024)/Long.Distance.2024.mkv",
+			},
+		})
+	}))
+	defer radarrSrv.Close()
+	engine.radarrClient = clients.NewRadarrClient(config.RadarrConfig{
+		BaseIntegrationConfig: config.BaseIntegrationConfig{URL: radarrSrv.URL, APIKey: "k"},
+	})
+
+	engine.mediaLibrary["radarr-306"] = models.Media{
+		ID: "radarr-306", Type: models.MediaTypeMovie, Title: "Long Distance",
+		Year: 2024, TMDBID: 605722, RadarrID: 306, FilePath: "/movies/Long Distance (2024)",
+	}
+
+	analysis, err := engine.AnalyzeJellyfinMatch(context.Background(), "radarr-306")
+	require.NoError(t, err)
+	assert.Equal(t, VerdictJellyfinWrong, analysis.Verdict)
+	assert.Greater(t, analysis.Confidence, 0.5)
+
+	evidence := strings.Join(analysis.Evidence, "\n")
+	assert.Contains(t, evidence, "jf-distant", "evidence must name the conflicting Jellyfin item")
+	assert.Contains(t, evidence, "Tmdb=1395720", "evidence must include the Jellyfin provider id")
+	assert.Contains(t, evidence, "tmdb:605722", "evidence must include the arr provider id")
+	assert.Equal(t, string(VerdictJellyfinWrong), engine.mediaLibrary["radarr-306"].JellyfinVerdict)
+}
+
+func TestAnalyzeJellyfinMatch_ShowEpisodeAgreement(t *testing.T) {
+	names := []string{
+		"Fullmetal Alchemist", "The Body of a Man", "City of Heresy",
+		"A Forger's Love", "The Man with the Mechanical Arm",
+	}
+	jellyfinEpisodes := make([]clients.JellyfinEpisode, 0, len(names))
+	sonarrEpisodes := make([]clients.SonarrEpisode, 0, len(names))
+	for i, name := range names {
+		path := fmt.Sprintf("/tv/Fullmetal Alchemist/S01E%02d.mkv", i+1)
+		jellyfinEpisodes = append(jellyfinEpisodes, clients.JellyfinEpisode{
+			ID: fmt.Sprintf("e%d", i+1), Name: name,
+			ParentIndexNumber: 1, IndexNumber: i + 1, Path: path,
+		})
+		sonarrEpisodes = append(sonarrEpisodes, clients.SonarrEpisode{
+			SeasonNumber: 1, EpisodeNumber: i + 1, Title: name,
+			EpisodeFile: &clients.SonarrEpisodeFile{Path: path},
+		})
+	}
+
+	engine, _ := newTestJellyfinServer(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if strings.HasSuffix(r.URL.Path, "/Episodes") {
+			_ = json.NewEncoder(w).Encode(map[string]any{"Items": jellyfinEpisodes})
+			return
+		}
+		_ = json.NewEncoder(w).Encode(clients.JellyfinItemsResponse{Items: []clients.JellyfinItem{{
+			ID:             "jf-fmab",
+			Name:           "Fullmetal Alchemist: Brotherhood",
+			Type:           "Series",
+			ProductionYear: 2009,
+			Path:           "/tv/Fullmetal Alchemist",
+			ProviderIds:    map[string]string{"Tvdb": "85249"},
+		}}})
+	})
+
+	sonarrSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if strings.HasPrefix(r.URL.Path, "/api/v3/episode") {
+			_ = json.NewEncoder(w).Encode(sonarrEpisodes)
+			return
+		}
+		_ = json.NewEncoder(w).Encode(clients.SonarrSeries{
+			ID: 97, Title: "Fullmetal Alchemist", Year: 2003, TvdbId: 75579,
+			Path: "/tv/Fullmetal Alchemist",
+		})
+	}))
+	defer sonarrSrv.Close()
+	engine.sonarrClient = clients.NewSonarrClient(config.SonarrConfig{
+		BaseIntegrationConfig: config.BaseIntegrationConfig{URL: sonarrSrv.URL, APIKey: "k"},
+	})
+
+	engine.mediaLibrary["sonarr-97"] = models.Media{
+		ID: "sonarr-97", Type: models.MediaTypeTVShow, Title: "Fullmetal Alchemist",
+		Year: 2003, TVDBID: 75579, SonarrID: 97, FilePath: "/tv/Fullmetal Alchemist",
+		JellyfinConflictID: "jf-fmab",
+	}
+
+	analysis, err := engine.AnalyzeJellyfinMatch(context.Background(), "sonarr-97")
+	require.NoError(t, err)
+	assert.Equal(t, VerdictJellyfinWrong, analysis.Verdict, "high episode-title agreement pins the mismatch on Jellyfin")
+	evidence := strings.Join(analysis.Evidence, "\n")
+	assert.Contains(t, evidence, "episode titles agree")
+	assert.Contains(t, evidence, "85249")
+	assert.Contains(t, evidence, "75579")
+}
+
+func TestFixJellyfinMatch_RefusesArrWrong(t *testing.T) {
+	var applied, searched atomic.Int32
+
+	engine, _ := newTestJellyfinServer(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case strings.HasPrefix(r.URL.Path, "/Items/RemoteSearch/Apply/"):
+			applied.Add(1)
+			w.WriteHeader(http.StatusNoContent)
+		case strings.HasPrefix(r.URL.Path, "/Items/RemoteSearch/"):
+			searched.Add(1)
+			_, _ = w.Write([]byte(`[]`))
+		default:
+			_ = json.NewEncoder(w).Encode(clients.JellyfinItemsResponse{Items: []clients.JellyfinItem{{
+				ID:             "jf-distant",
+				Name:           "Distant",
+				Type:           "Movie",
+				ProductionYear: 2024,
+				Path:           "/movies/Distant (2024)/Distant.2024.mkv",
+				ProviderIds:    map[string]string{"Tmdb": "1395720"},
+			}}})
+		}
+	})
+
+	// The arr entry claims "Long Distance" but the file on disk is named for the
+	// Jellyfin identity ("Distant"), so the arr entry is the outlier.
+	engine.mediaLibrary["radarr-306"] = models.Media{
+		ID: "radarr-306", Type: models.MediaTypeMovie, Title: "Long Distance",
+		Year: 2024, TMDBID: 605722, FilePath: "/movies/Distant (2024)/Distant.2024.mkv",
+	}
+
+	_, err := engine.FixJellyfinMatch(context.Background(), "radarr-306")
+	require.Error(t, err)
+	assert.ErrorIs(t, err, ErrMatchArrWrong, "arr_wrong must refuse the fix")
+
+	var refusal *MatchRefusalError
+	require.ErrorAs(t, err, &refusal, "refusals must carry their adjudication")
+	require.NotNil(t, refusal.Analysis)
+	assert.Equal(t, VerdictArrWrong, refusal.Analysis.Verdict)
+	assert.Zero(t, applied.Load(), "Jellyfin must not be mutated when the arr is wrong")
+	assert.Zero(t, searched.Load(), "no remote search should run when the arr is wrong")
+}
+
+func TestFixJellyfinMatch_NoJellyfinItem(t *testing.T) {
+	engine, _ := newTestJellyfinServer(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(clients.JellyfinItemsResponse{Items: []clients.JellyfinItem{}})
+	})
+
+	engine.mediaLibrary["radarr-999"] = models.Media{
+		ID: "radarr-999", Type: models.MediaTypeMovie, Title: "Ghost",
+		Year: 2020, TMDBID: 111, FilePath: "/movies/Ghost (2020)",
+	}
+
+	t.Run("analyze", func(t *testing.T) {
+		_, err := engine.AnalyzeJellyfinMatch(context.Background(), "radarr-999")
+		require.Error(t, err)
+		assert.ErrorIs(t, err, ErrJellyfinItemNotFound)
+	})
+
+	t.Run("fix", func(t *testing.T) {
+		_, err := engine.FixJellyfinMatch(context.Background(), "radarr-999")
+		require.Error(t, err)
+		assert.ErrorIs(t, err, ErrJellyfinItemNotFound)
+	})
+}
+
+func TestFixJellyfinMatch_HappyPath(t *testing.T) {
+	var (
+		applied  atomic.Int32
+		searched atomic.Int32
+		mu       sync.Mutex
+		current  = clients.JellyfinItem{
+			ID: "jf-distant", Name: "Distant", Type: "Movie", ProductionYear: 2024,
+			Path:        "/movies/Long Distance (2024)/Long.Distance.2024.mkv",
+			ProviderIds: map[string]string{"Tmdb": "1395720"},
+		}
+	)
+
+	engine, _ := newTestJellyfinServer(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case strings.HasPrefix(r.URL.Path, "/Items/RemoteSearch/Apply/"):
+			applied.Add(1)
+			mu.Lock()
+			current.Name = "Long Distance"
+			current.ProviderIds = map[string]string{"Tmdb": "605722"}
+			mu.Unlock()
+			w.WriteHeader(http.StatusNoContent)
+		case r.URL.Path == "/Items/RemoteSearch/Movie":
+			searched.Add(1)
+			_ = json.NewEncoder(w).Encode([]clients.RemoteSearchResult{{
+				Name: "Long Distance", ProductionYear: 2024,
+				ProviderIds: map[string]string{"Tmdb": "605722"},
+			}})
+		default:
+			mu.Lock()
+			item := current
+			mu.Unlock()
+			_ = json.NewEncoder(w).Encode(clients.JellyfinItemsResponse{Items: []clients.JellyfinItem{item}})
+		}
+	})
+
+	engine.mediaLibrary["radarr-306"] = models.Media{
+		ID: "radarr-306", Type: models.MediaTypeMovie, Title: "Long Distance",
+		Year: 2024, TMDBID: 605722, FilePath: "/movies/Long Distance (2024)",
+	}
+
+	result, err := engine.FixJellyfinMatch(context.Background(), "radarr-306")
+	require.NoError(t, err)
+
+	assert.Equal(t, int32(1), applied.Load(), "the matching remote search result must be applied once")
+	assert.Equal(t, int32(1), searched.Load())
+	assert.Equal(t, "jf-distant", result.JellyfinID, "Jellyfin re-identifies the existing item in place")
+	assert.Equal(t, "Long Distance", result.Title)
+	assert.Equal(t, "605722", result.AppliedProviderIDs["Tmdb"])
+	assert.Equal(t, VerdictJellyfinWrong, result.Analysis.Verdict)
+
+	updated := engine.mediaLibrary["radarr-306"]
+	assert.Equal(t, "matched", updated.JellyfinMatchStatus, "re-sync must flip the item to matched")
+	assert.Equal(t, "jf-distant", updated.JellyfinID)
+	assert.Empty(t, updated.JellyfinVerdict,
+		"a successful fix must clear the verdict, not leave jellyfin_wrong behind")
+}
+
+// --- Jellyfin path index ---
+
+func TestBuildJellyfinPathIndex_WindowsPathParentBridge(t *testing.T) {
+	items := []clients.JellyfinItem{{
+		ID:   "jf-win",
+		Path: `C:\Movies\Long Distance (2024)\Long.Distance.2024.mkv`,
+	}}
+
+	index := buildJellyfinPathIndex(items)
+	parentKey := normalizeJellyfinPathKey(`C:\Movies\Long Distance (2024)`)
+	require.Contains(t, index, parentKey, "a Windows path must still yield a real parent directory")
+	assert.Equal(t, "jf-win", index[parentKey].ID)
+}
+
+func TestBuildJellyfinPathIndex_ParentDirCollisionDropped(t *testing.T) {
+	items := []clients.JellyfinItem{
+		{ID: "feature", Path: "/movies/Foo (2020)/Foo.2020.mkv"},
+		{ID: "featurette", Path: "/movies/Foo (2020)/Featurette.mkv"},
+	}
+
+	index := buildJellyfinPathIndex(items)
+	parentKey := normalizeJellyfinPathKey("/movies/Foo (2020)")
+	assert.NotContains(t, index, parentKey, "an ambiguous parent directory must be dropped")
+	assert.Nil(t, lookupJellyfinPath(items, parentKey), "a shared folder must not resolve to a wrong item")
+
+	// Exact file paths still resolve to their own item.
+	assert.Equal(t, "feature", lookupJellyfinPath(items, normalizeJellyfinPathKey("/movies/Foo (2020)/Foo.2020.mkv")).ID)
+	assert.Equal(t, "featurette", lookupJellyfinPath(items, normalizeJellyfinPathKey("/movies/Foo (2020)/Featurette.mkv")).ID)
+}
+
+func TestBuildJellyfinPathIndex_ExactPathWinsOverParent(t *testing.T) {
+	// The folder item is listed first on purpose. A naive index that writes each
+	// item's parent key last-wins would have the second (file) item overwrite the
+	// shared folder key, resolving it to the wrong item. Only an implementation
+	// that gives exact item.Path precedence over the parent bridge passes.
+	items := []clients.JellyfinItem{
+		{ID: "folder-item", Path: "/movies/Foo (2020)"},
+		{ID: "movie", Path: "/movies/Foo (2020)/Foo.2020.mkv"},
+	}
+
+	index := buildJellyfinPathIndex(items)
+	folderKey := normalizeJellyfinPathKey("/movies/Foo (2020)")
+	require.Contains(t, index, folderKey)
+	assert.Equal(t, "folder-item", index[folderKey].ID,
+		"an exact item.Path must win over another item's parent-directory entry")
+	assert.Equal(t, "folder-item", lookupJellyfinPath(items, folderKey).ID)
+	// The distinct exact file path still resolves to its own item.
+	assert.Equal(t, "movie",
+		lookupJellyfinPath(items, normalizeJellyfinPathKey("/movies/Foo (2020)/Foo.2020.mkv")).ID,
+		"hardening the parent key must not disturb exact file-path resolution")
+}
+
+func TestSelectRemoteSearchResult_RequiresProviderMatch(t *testing.T) {
+	results := []clients.RemoteSearchResult{
+		{Name: "Decoy", ProviderIds: map[string]string{"Tmdb": "999999"}},
+		{Name: "Correct", ProviderIds: map[string]string{"Tmdb": "605722"}},
+	}
+
+	match, ok := selectRemoteSearchResult(results, "Tmdb", "605722")
+	require.True(t, ok)
+	assert.Equal(t, "Correct", match.Name, "selection must be driven by the provider id, not result order")
+
+	_, ok = selectRemoteSearchResult(results, "Tmdb", "12345")
+	assert.False(t, ok)
+}
+
+func TestFixJellyfinMatch_AppliesOnlyMatchingProviderResult(t *testing.T) {
+	var (
+		applied   atomic.Int32
+		appliedID atomic.Value
+	)
+
+	engine, _ := newTestJellyfinServer(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case strings.HasPrefix(r.URL.Path, "/Items/RemoteSearch/Apply/"):
+			applied.Add(1)
+			var body clients.RemoteSearchResult
+			_ = json.NewDecoder(r.Body).Decode(&body)
+			appliedID.Store(body.ProviderIds["Tmdb"])
+			w.WriteHeader(http.StatusNoContent)
+		case r.URL.Path == "/Items/RemoteSearch/Movie":
+			_ = json.NewEncoder(w).Encode([]clients.RemoteSearchResult{
+				{Name: "Distant", ProductionYear: 2024, ProviderIds: map[string]string{"Tmdb": "999999"}},
+				{Name: "Long Distance", ProductionYear: 2024, ProviderIds: map[string]string{"Tmdb": "605722"}},
+			})
+		default:
+			_ = json.NewEncoder(w).Encode(clients.JellyfinItemsResponse{Items: []clients.JellyfinItem{{
+				ID: "jf-distant", Name: "Distant", Type: "Movie", ProductionYear: 2024,
+				Path:        "/movies/Long Distance (2024)/Long.Distance.2024.mkv",
+				ProviderIds: map[string]string{"Tmdb": "1395720"},
+			}}})
+		}
+	})
+
+	engine.mediaLibrary["radarr-306"] = models.Media{
+		ID: "radarr-306", Type: models.MediaTypeMovie, Title: "Long Distance",
+		Year: 2024, TMDBID: 605722, FilePath: "/movies/Long Distance (2024)",
+	}
+
+	_, err := engine.FixJellyfinMatch(context.Background(), "radarr-306")
+	require.NoError(t, err)
+	assert.Equal(t, int32(1), applied.Load())
+	assert.Equal(t, "605722", appliedID.Load(),
+		"only the remote-search result carrying the arr provider id may be applied")
+}
+
+func TestFixJellyfinMatch_RemoteSearchNoMatch(t *testing.T) {
+	var applied atomic.Int32
+
+	engine, _ := newTestJellyfinServer(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case strings.HasPrefix(r.URL.Path, "/Items/RemoteSearch/Apply/"):
+			applied.Add(1)
+			w.WriteHeader(http.StatusNoContent)
+		case r.URL.Path == "/Items/RemoteSearch/Movie":
+			_ = json.NewEncoder(w).Encode([]clients.RemoteSearchResult{{
+				Name: "Decoy", ProductionYear: 2024, ProviderIds: map[string]string{"Tmdb": "999999"},
+			}})
+		default:
+			_ = json.NewEncoder(w).Encode(clients.JellyfinItemsResponse{Items: []clients.JellyfinItem{{
+				ID: "jf-distant", Name: "Distant", Type: "Movie", ProductionYear: 2024,
+				Path:        "/movies/Long Distance (2024)/Long.Distance.2024.mkv",
+				ProviderIds: map[string]string{"Tmdb": "1395720"},
+			}}})
+		}
+	})
+
+	engine.mediaLibrary["radarr-306"] = models.Media{
+		ID: "radarr-306", Type: models.MediaTypeMovie, Title: "Long Distance",
+		Year: 2024, TMDBID: 605722, FilePath: "/movies/Long Distance (2024)",
+	}
+
+	_, err := engine.FixJellyfinMatch(context.Background(), "radarr-306")
+	require.Error(t, err)
+	assert.ErrorIs(t, err, ErrRemoteSearchNoMatch)
+
+	var refusal *MatchRefusalError
+	require.ErrorAs(t, err, &refusal)
+	require.NotNil(t, refusal.Analysis)
+	assert.Equal(t, VerdictJellyfinWrong, refusal.Analysis.Verdict)
+	assert.Zero(t, applied.Load(), "no result may be applied when none matches")
+}
+
+func TestFixJellyfinMatch_ResyncFailureStillSucceeds(t *testing.T) {
+	var (
+		applied    atomic.Int32
+		syncFailed atomic.Bool
+	)
+
+	engine, _ := newTestJellyfinServer(t, func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case strings.HasPrefix(r.URL.Path, "/Items/RemoteSearch/Apply/"):
+			applied.Add(1)
+			syncFailed.Store(true)
+			w.WriteHeader(http.StatusNoContent)
+		case r.URL.Path == "/Items/RemoteSearch/Movie":
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode([]clients.RemoteSearchResult{{
+				Name: "Long Distance", ProductionYear: 2024, ProviderIds: map[string]string{"Tmdb": "605722"},
+			}})
+		default:
+			if syncFailed.Load() {
+				w.WriteHeader(http.StatusInternalServerError)
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(clients.JellyfinItemsResponse{Items: []clients.JellyfinItem{{
+				ID: "jf-distant", Name: "Distant", Type: "Movie", ProductionYear: 2024,
+				Path:        "/movies/Long Distance (2024)/Long.Distance.2024.mkv",
+				ProviderIds: map[string]string{"Tmdb": "1395720"},
+			}}})
+		}
+	})
+
+	lastWatched := time.Now().Add(-2 * time.Hour)
+	engine.mediaLibrary["radarr-306"] = models.Media{
+		ID: "radarr-306", Type: models.MediaTypeMovie, Title: "Long Distance",
+		Year: 2024, TMDBID: 605722, FilePath: "/movies/Long Distance (2024)",
+		// Seed the stale diagnosis a previous Analyze left behind, so the test
+		// proves a successful fix clears it even when the re-sync cannot be
+		// observed. Watch data must survive the fix untouched.
+		JellyfinVerdict:     string(VerdictJellyfinWrong),
+		JellyfinMatchReason: "stale: Jellyfin matched Distant (Tmdb 1395720)",
+		JellyfinConflictID:  "jf-distant",
+		WatchCount:          7,
+		LastWatched:         lastWatched,
+	}
+
+	result, err := engine.FixJellyfinMatch(context.Background(), "radarr-306")
+	require.NoError(t, err, "a post-apply re-sync failure must not fail the fix")
+	assert.Equal(t, int32(1), applied.Load())
+	assert.Equal(t, "jf-distant", result.JellyfinID,
+		"the applied identity must still be reported when the re-sync cannot be observed")
+
+	updated := engine.mediaLibrary["radarr-306"]
+	assert.Empty(t, updated.JellyfinVerdict,
+		"a successful fix must clear a stale verdict even when the re-sync fails")
+	assert.Empty(t, updated.JellyfinMatchReason,
+		"a successful fix must clear a stale mismatch reason even when the re-sync fails")
+	assert.Empty(t, updated.JellyfinConflictID,
+		"a successful fix must clear a stale conflict id even when the re-sync fails")
+	assert.Equal(t, 7, updated.WatchCount, "clearing the diagnosis must not touch watch data")
+	assert.WithinDuration(t, lastWatched, updated.LastWatched, time.Second,
+		"clearing the diagnosis must not touch LastWatched")
 }

@@ -33,6 +33,10 @@ export interface MediaItem {
   has_poster?: boolean;
   jellyfin_match_status?: string;
   jellyfin_mismatch_info?: string;
+  // Result of the on-demand Jellyfin match diagnosis for flagged items.
+  jellyfin_match_reason?: string;
+  jellyfin_conflict_id?: string;
+  jellyfin_verdict?: 'jellyfin_wrong' | 'arr_wrong' | 'ambiguous' | string;
 }
 
 export interface MediaListResponse {
@@ -73,7 +77,10 @@ export interface JobSummary {
   scheduled_deletions?: number;
   dry_run?: boolean;
   would_delete?: DeletionCandidate[];
-  [key: string]: any; // Allow other summary fields
+  // Additional fields the backend adds to full-sync summaries.
+  leaving_soon_count?: number;
+  deleted_count?: number;
+  deleted_items?: DeletionCandidate[];
 }
 
 export interface Job {
@@ -222,7 +229,7 @@ export interface BaseIntegration {
   timeout: string;
 }
 
-export interface JellyfinIntegration extends BaseIntegration {}
+export type JellyfinIntegration = BaseIntegration;
 
 export interface StreamystatsIntegration extends BaseIntegration {
   has_server_id: boolean;

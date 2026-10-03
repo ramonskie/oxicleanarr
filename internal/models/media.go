@@ -64,6 +64,17 @@ type Media struct {
 	// Jellyfin matching status
 	JellyfinMatchStatus  string `json:"jellyfin_match_status,omitempty"`  // "matched", "not_found", "metadata_mismatch"
 	JellyfinMismatchInfo string `json:"jellyfin_mismatch_info,omitempty"` // Details about the mismatch
+
+	// Jellyfin match diagnosis. Populated lazily by the adjudicator when the
+	// user asks (Analyze / Fix Match); the scheduled sync only classifies the
+	// item — status, a cheap human-readable reason, and a conflict id.
+	// JellyfinMatchReason is a human-readable explanation of why the item is
+	// unmatched against Jellyfin, JellyfinConflictID is the Jellyfin item id
+	// involved in a conflict (empty when none), and JellyfinVerdict is the
+	// adjudicator's conclusion ("jellyfin_wrong", "arr_wrong", or "ambiguous").
+	JellyfinMatchReason string `json:"jellyfin_match_reason,omitempty"`
+	JellyfinConflictID  string `json:"jellyfin_conflict_id,omitempty"`
+	JellyfinVerdict     string `json:"jellyfin_verdict,omitempty"`
 }
 
 // MediaList represents a list of media items with metadata

@@ -1,29 +1,61 @@
 package handlers
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"sort"
 	"strconv"
 	"strings"
 
+	"github.com/go-chi/chi/v5"
 	"github.com/ramonskie/oxicleanarr/internal/config"
 	"github.com/ramonskie/oxicleanarr/internal/models"
 	"github.com/ramonskie/oxicleanarr/internal/services"
 	"github.com/rs/zerolog/log"
 )
 
+// matchService is the narrow slice of the sync engine the match endpoints need.
+// It is an interface so handler tests can stub adjudication outcomes without
+// wiring live arr/Jellyfin HTTP clients; production always passes the concrete
+// *services.SyncEngine.
+type matchService interface {
+	AnalyzeJellyfinMatch(ctx context.Context, mediaID string) (*services.MatchAnalysis, error)
+	FixJellyfinMatch(ctx context.Context, mediaID string) (*services.FixResult, error)
+}
+
 // MediaHandler handles media-related requests
 type MediaHandler struct {
-	syncEngine *services.SyncEngine
+	syncEngine   *services.SyncEngine
+	matchService matchService
 }
 
 // NewMediaHandler creates a new MediaHandler
 func NewMediaHandler(syncEngine *services.SyncEngine) *MediaHandler {
 	return &MediaHandler{
-		syncEngine: syncEngine,
+		syncEngine:   syncEngine,
+		matchService: syncEngine,
 	}
+}
+
+// matchResponse is the shared 200 body for the match-analysis and fix-match
+// endpoints. GET returns the analysis alone (fixed=false, empty item fields);
+// POST fix-match also returns the re-identified item so the UI can update.
+type matchResponse struct {
+	Analysis     services.MatchAnalysis `json:"analysis"`
+	Fixed        bool                   `json:"fixed"`
+	JellyfinID   string                 `json:"jellyfin_id"`
+	MatchedTitle string                 `json:"matched_title"`
+	ProviderIDs  map[string]string      `json:"provider_ids"`
+}
+
+// matchErrorResponse extends the project's ErrorResponse shape with the
+// adjudication evidence so a refused fix can explain itself to the caller.
+type matchErrorResponse struct {
+	Error    string                  `json:"error"`
+	Analysis *services.MatchAnalysis `json:"analysis,omitempty"`
 }
 
 // ListMovies handles GET /api/media/movies
@@ -532,4 +564,113 @@ func (h *MediaHandler) ListUnmatched(w http.ResponseWriter, r *http.Request) {
 		"items": unmatched,
 		"total": len(unmatched),
 	})
+}
+
+// GetMatchAnalysis handles GET /api/media/{id}/match-analysis. It adjudicates
+// which side (Jellyfin vs Sonarr/Radarr) holds the wrong identity and returns
+// the verdict, confidence, and evidence. Read-only: it never mutates Jellyfin
+// or the arr, and only runs on an explicit user request.
+func (h *MediaHandler) GetMatchAnalysis(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	id := chi.URLParam(r, "id")
+	if id == "" {
+		writeJSON(w, http.StatusBadRequest, matchErrorResponse{Error: "Media ID required"})
+		return
+	}
+
+	if _, found := h.syncEngine.GetMediaByID(id); !found {
+		writeJSON(w, http.StatusNotFound, matchErrorResponse{Error: "Media not found"})
+		return
+	}
+
+	analysis, err := h.matchService.AnalyzeJellyfinMatch(ctx, id)
+	if err != nil {
+		h.writeMatchError(w, id, err)
+		return
+	}
+	if analysis == nil {
+		log.Error().Str("media_id", id).Msg("Match analysis returned no result")
+		writeJSON(w, http.StatusInternalServerError, matchErrorResponse{Error: "Failed to process Jellyfin match"})
+		return
+	}
+
+	writeJSON(w, http.StatusOK, matchResponse{Analysis: *analysis})
+}
+
+// FixMatch handles POST /api/media/{id}/fix-match. It re-identifies the Jellyfin
+// item when, and only when, the adjudicator concludes Jellyfin is the outlier.
+// The caller must have confirmed the action; this endpoint is the only path
+// that mutates Jellyfin for a match fix.
+func (h *MediaHandler) FixMatch(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	id := chi.URLParam(r, "id")
+	if id == "" {
+		writeJSON(w, http.StatusBadRequest, matchErrorResponse{Error: "Media ID required"})
+		return
+	}
+
+	if _, found := h.syncEngine.GetMediaByID(id); !found {
+		writeJSON(w, http.StatusNotFound, matchErrorResponse{Error: "Media not found"})
+		return
+	}
+
+	result, err := h.matchService.FixJellyfinMatch(ctx, id)
+	if err != nil {
+		h.writeMatchError(w, id, err)
+		return
+	}
+	if result == nil {
+		log.Error().Str("media_id", id).Msg("Fix match returned no result")
+		writeJSON(w, http.StatusInternalServerError, matchErrorResponse{Error: "Failed to process Jellyfin match"})
+		return
+	}
+
+	writeJSON(w, http.StatusOK, matchResponse{
+		Analysis:     result.Analysis,
+		Fixed:        true,
+		JellyfinID:   result.JellyfinID,
+		MatchedTitle: result.Title,
+		ProviderIDs:  result.AppliedProviderIDs,
+	})
+}
+
+// writeMatchError maps the match service's sentinel errors to precise HTTP
+// statuses. A refusal (arr_wrong, ambiguous, remote-search-no-match) is returned
+// as a *services.MatchRefusalError carrying the adjudication that justified it;
+// that carried analysis is used verbatim for the 409 body so the verdict shown
+// is the one that caused the refusal — the handler never re-runs the analysis.
+func (h *MediaHandler) writeMatchError(w http.ResponseWriter, id string, err error) {
+	var refusal *services.MatchRefusalError
+	var analysis *services.MatchAnalysis
+	if errors.As(err, &refusal) {
+		analysis = refusal.Analysis
+	}
+
+	switch {
+	case errors.Is(err, services.ErrJellyfinItemNotFound):
+		writeJSON(w, http.StatusUnprocessableEntity, matchErrorResponse{
+			Error:    "no Jellyfin item found for this file; it may not be scanned",
+			Analysis: analysis,
+		})
+	case errors.Is(err, services.ErrMatchArrWrong):
+		writeJSON(w, http.StatusConflict, matchErrorResponse{
+			Error:    "Sonarr/Radarr is wrong; fix it there",
+			Analysis: analysis,
+		})
+	case errors.Is(err, services.ErrMatchAmbiguous):
+		writeJSON(w, http.StatusConflict, matchErrorResponse{
+			Error:    "match is ambiguous; refusing to modify Jellyfin",
+			Analysis: analysis,
+		})
+	case errors.Is(err, services.ErrRemoteSearchNoMatch):
+		writeJSON(w, http.StatusConflict, matchErrorResponse{
+			Error:    "no Jellyfin remote-search result matched the arr identity",
+			Analysis: analysis,
+		})
+	default:
+		log.Error().Err(err).Str("media_id", id).Msg("Failed to analyze or fix Jellyfin match")
+		writeJSON(w, http.StatusInternalServerError, matchErrorResponse{Error: "Failed to process Jellyfin match"})
+	}
 }

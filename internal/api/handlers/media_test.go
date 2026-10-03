@@ -2,14 +2,18 @@ package handlers
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 	"time"
 
+	"github.com/go-chi/chi/v5"
 	"github.com/ramonskie/oxicleanarr/internal/config"
 	"github.com/ramonskie/oxicleanarr/internal/models"
+	"github.com/ramonskie/oxicleanarr/internal/services"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -646,5 +650,284 @@ func TestMediaHandler_DeleteMedia(t *testing.T) {
 		handler.DeleteMedia(w, req)
 
 		assert.Equal(t, http.StatusBadRequest, w.Code)
+	})
+}
+
+// stubMatchService is a scripted matchService for handler tests. It returns the
+// configured outcomes without any real arr/Jellyfin I/O, so the tests exercise
+// only the handler's status mapping and response shaping. analyzeCalls counts
+// invocation of AnalyzeJellyfinMatch so a test can prove a refusal does not
+// re-derive the analysis.
+type stubMatchService struct {
+	analysis     *services.MatchAnalysis
+	analyzeErr   error
+	analyzeCalls int
+
+	fixResult *services.FixResult
+	fixErr    error
+}
+
+func (s *stubMatchService) AnalyzeJellyfinMatch(_ context.Context, _ string) (*services.MatchAnalysis, error) {
+	s.analyzeCalls++
+	return s.analysis, s.analyzeErr
+}
+
+func (s *stubMatchService) FixJellyfinMatch(_ context.Context, _ string) (*services.FixResult, error) {
+	return s.fixResult, s.fixErr
+}
+
+// newMatchTestHandler builds a handler backed by a real sync engine (so the
+// media lookup and 404 path are exercised) but with the analysis/fix outcomes
+// stubbed.
+func newMatchTestHandler(t *testing.T, stub *stubMatchService) *MediaHandler {
+	t.Helper()
+
+	engine := newTestSyncEngineForAPI(t)
+	engine.GetMediaLibrary()["radarr-306"] = models.Media{
+		ID: "radarr-306", Type: models.MediaTypeMovie, Title: "Long Distance", Year: 2024,
+	}
+
+	handler := NewMediaHandler(engine)
+	handler.matchService = stub
+	return handler
+}
+
+// newMatchTestRouter mounts the two match endpoints on a chi router so
+// chi.URLParam resolves the {id} segment exactly as it does in production.
+func newMatchTestRouter(h *MediaHandler) http.Handler {
+	r := chi.NewRouter()
+	r.Get("/api/media/{id}/match-analysis", h.GetMatchAnalysis)
+	r.Post("/api/media/{id}/fix-match", h.FixMatch)
+	return r
+}
+
+func TestMediaHandler_GetMatchAnalysis(t *testing.T) {
+	jellyfinWrong := &services.MatchAnalysis{
+		Verdict:    services.VerdictJellyfinWrong,
+		Confidence: 0.90,
+		Evidence:   []string{"filename matches the arr identity; Jellyfin is the outlier"},
+	}
+
+	t.Run("returns the verdict, confidence and evidence", func(t *testing.T) {
+		handler := newMatchTestHandler(t, &stubMatchService{analysis: jellyfinWrong})
+		router := newMatchTestRouter(handler)
+
+		req := httptest.NewRequest(http.MethodGet, "/api/media/radarr-306/match-analysis", nil)
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		assert.Equal(t, http.StatusOK, w.Code)
+		assert.Equal(t, "application/json", w.Header().Get("Content-Type"))
+
+		var resp struct {
+			Analysis services.MatchAnalysis `json:"analysis"`
+			Fixed    bool                   `json:"fixed"`
+		}
+		require.NoError(t, json.NewDecoder(w.Body).Decode(&resp))
+		assert.Equal(t, services.VerdictJellyfinWrong, resp.Analysis.Verdict)
+		assert.InDelta(t, 0.90, resp.Analysis.Confidence, 1e-9)
+		assert.NotEmpty(t, resp.Analysis.Evidence)
+		assert.False(t, resp.Fixed, "an analysis request must never report a fix")
+	})
+
+	t.Run("returns 404 when the media item is unknown", func(t *testing.T) {
+		handler := newMatchTestHandler(t, &stubMatchService{analysis: jellyfinWrong})
+		router := newMatchTestRouter(handler)
+
+		req := httptest.NewRequest(http.MethodGet, "/api/media/does-not-exist/match-analysis", nil)
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		assert.Equal(t, http.StatusNotFound, w.Code)
+	})
+
+	t.Run("returns 422 when no Jellyfin item exists", func(t *testing.T) {
+		handler := newMatchTestHandler(t, &stubMatchService{
+			analyzeErr: fmt.Errorf("analyzing match: %w", services.ErrJellyfinItemNotFound),
+		})
+		router := newMatchTestRouter(handler)
+
+		req := httptest.NewRequest(http.MethodGet, "/api/media/radarr-306/match-analysis", nil)
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		assert.Equal(t, http.StatusUnprocessableEntity, w.Code)
+		var resp matchErrorResponse
+		require.NoError(t, json.NewDecoder(w.Body).Decode(&resp))
+		assert.Contains(t, resp.Error, "no Jellyfin item found")
+	})
+}
+
+func TestMediaHandler_FixMatch(t *testing.T) {
+	jellyfinWrong := &services.MatchAnalysis{
+		Verdict:    services.VerdictJellyfinWrong,
+		Confidence: 0.92,
+		Evidence:   []string{"episode titles agree for 5 shared pairs"},
+	}
+
+	t.Run("fixes the match and returns the re-identified item", func(t *testing.T) {
+		handler := newMatchTestHandler(t, &stubMatchService{
+			fixResult: &services.FixResult{
+				MediaID:            "radarr-306",
+				JellyfinID:         "jf-distant",
+				Title:              "Long Distance",
+				AppliedProviderIDs: map[string]string{"Tmdb": "605722"},
+				Analysis:           *jellyfinWrong,
+			},
+		})
+		router := newMatchTestRouter(handler)
+
+		req := httptest.NewRequest(http.MethodPost, "/api/media/radarr-306/fix-match", nil)
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		assert.Equal(t, http.StatusOK, w.Code)
+
+		var resp struct {
+			Analysis     services.MatchAnalysis `json:"analysis"`
+			Fixed        bool                   `json:"fixed"`
+			JellyfinID   string                 `json:"jellyfin_id"`
+			MatchedTitle string                 `json:"matched_title"`
+			ProviderIDs  map[string]string      `json:"provider_ids"`
+		}
+		require.NoError(t, json.NewDecoder(w.Body).Decode(&resp))
+		assert.True(t, resp.Fixed)
+		assert.Equal(t, "jf-distant", resp.JellyfinID)
+		assert.Equal(t, "Long Distance", resp.MatchedTitle)
+		assert.Equal(t, "605722", resp.ProviderIDs["Tmdb"])
+		assert.Equal(t, services.VerdictJellyfinWrong, resp.Analysis.Verdict)
+	})
+
+	t.Run("refuses with 409 and the carried analysis when the arr is wrong", func(t *testing.T) {
+		arrWrong := &services.MatchAnalysis{
+			Verdict:    services.VerdictArrWrong,
+			Confidence: 0.88,
+			Evidence:   []string{"filename matches the Jellyfin identity"},
+		}
+		stub := &stubMatchService{
+			fixErr: &services.MatchRefusalError{
+				Err:      services.ErrMatchArrWrong,
+				Analysis: arrWrong,
+			},
+		}
+		handler := newMatchTestHandler(t, stub)
+		router := newMatchTestRouter(handler)
+
+		req := httptest.NewRequest(http.MethodPost, "/api/media/radarr-306/fix-match", nil)
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		assert.Equal(t, http.StatusConflict, w.Code)
+		var resp matchErrorResponse
+		require.NoError(t, json.NewDecoder(w.Body).Decode(&resp))
+		assert.Contains(t, resp.Error, "Sonarr/Radarr")
+		require.NotNil(t, resp.Analysis)
+		assert.Equal(t, services.VerdictArrWrong, resp.Analysis.Verdict)
+		assert.InDelta(t, 0.88, resp.Analysis.Confidence, 1e-9)
+		assert.Equal(t, arrWrong.Evidence, resp.Analysis.Evidence)
+		assert.Zero(t, stub.analyzeCalls, "a refusal must not re-run adjudication")
+	})
+
+	t.Run("returns 409 and the carried analysis when the match is ambiguous", func(t *testing.T) {
+		ambiguous := &services.MatchAnalysis{
+			Verdict:    services.VerdictAmbiguous,
+			Confidence: 0.40,
+			Evidence:   []string{"evidence favours neither side"},
+		}
+		stub := &stubMatchService{
+			fixErr: &services.MatchRefusalError{
+				Err:      services.ErrMatchAmbiguous,
+				Analysis: ambiguous,
+			},
+		}
+		handler := newMatchTestHandler(t, stub)
+		router := newMatchTestRouter(handler)
+
+		req := httptest.NewRequest(http.MethodPost, "/api/media/radarr-306/fix-match", nil)
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		assert.Equal(t, http.StatusConflict, w.Code)
+		var resp matchErrorResponse
+		require.NoError(t, json.NewDecoder(w.Body).Decode(&resp))
+		require.NotNil(t, resp.Analysis)
+		assert.Equal(t, services.VerdictAmbiguous, resp.Analysis.Verdict)
+		assert.Zero(t, stub.analyzeCalls, "a refusal must not re-run adjudication")
+	})
+
+	t.Run("returns 409 and the carried analysis when remote search finds no match", func(t *testing.T) {
+		jellyfinWrong := &services.MatchAnalysis{
+			Verdict:    services.VerdictJellyfinWrong,
+			Confidence: 0.70,
+			Evidence:   []string{"remote search returned no candidate with the arr provider id"},
+		}
+		stub := &stubMatchService{
+			fixErr: &services.MatchRefusalError{
+				Err:      services.ErrRemoteSearchNoMatch,
+				Analysis: jellyfinWrong,
+			},
+		}
+		handler := newMatchTestHandler(t, stub)
+		router := newMatchTestRouter(handler)
+
+		req := httptest.NewRequest(http.MethodPost, "/api/media/radarr-306/fix-match", nil)
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		assert.Equal(t, http.StatusConflict, w.Code)
+		var resp matchErrorResponse
+		require.NoError(t, json.NewDecoder(w.Body).Decode(&resp))
+		require.NotNil(t, resp.Analysis)
+		assert.Equal(t, services.VerdictJellyfinWrong, resp.Analysis.Verdict)
+		assert.Zero(t, stub.analyzeCalls, "a refusal must not re-run adjudication")
+	})
+
+	t.Run("omits analysis when the refusal genuinely carries none", func(t *testing.T) {
+		stub := &stubMatchService{
+			fixErr: &services.MatchRefusalError{Err: services.ErrMatchAmbiguous},
+		}
+		handler := newMatchTestHandler(t, stub)
+		router := newMatchTestRouter(handler)
+
+		req := httptest.NewRequest(http.MethodPost, "/api/media/radarr-306/fix-match", nil)
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		assert.Equal(t, http.StatusConflict, w.Code)
+		var resp struct {
+			Error    string                  `json:"error"`
+			Analysis *services.MatchAnalysis `json:"analysis"`
+		}
+		require.NoError(t, json.NewDecoder(w.Body).Decode(&resp))
+		assert.Contains(t, resp.Error, "ambiguous")
+		assert.Nil(t, resp.Analysis)
+		assert.Zero(t, stub.analyzeCalls, "a refusal must not re-run adjudication")
+	})
+
+	t.Run("returns 422 when no Jellyfin item exists", func(t *testing.T) {
+		handler := newMatchTestHandler(t, &stubMatchService{
+			fixErr: fmt.Errorf("fixing match: %w", services.ErrJellyfinItemNotFound),
+		})
+		router := newMatchTestRouter(handler)
+
+		req := httptest.NewRequest(http.MethodPost, "/api/media/radarr-306/fix-match", nil)
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		assert.Equal(t, http.StatusUnprocessableEntity, w.Code)
+		var resp matchErrorResponse
+		require.NoError(t, json.NewDecoder(w.Body).Decode(&resp))
+		assert.Contains(t, resp.Error, "may not be scanned")
+	})
+
+	t.Run("returns 404 when the media item is unknown", func(t *testing.T) {
+		handler := newMatchTestHandler(t, &stubMatchService{})
+		router := newMatchTestRouter(handler)
+
+		req := httptest.NewRequest(http.MethodPost, "/api/media/does-not-exist/fix-match", nil)
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		assert.Equal(t, http.StatusNotFound, w.Code)
 	})
 }

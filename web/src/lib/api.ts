@@ -21,6 +21,25 @@ import type { ServiceStatusResponse } from './types-services';
 
 const API_BASE = '/api';
 
+// Jellyfin match diagnosis. The backend serves one response shape for both the
+// read-only analysis and the confirmed fix; `analysis` carries the adjudicator
+// verdict, its confidence, and the human-readable evidence behind it.
+export type MatchVerdict = 'jellyfin_wrong' | 'arr_wrong' | 'ambiguous';
+
+export interface MatchAnalysis {
+  verdict: MatchVerdict;
+  confidence: number;
+  evidence: string[];
+}
+
+export interface MatchResponse {
+  analysis: MatchAnalysis;
+  fixed: boolean;
+  jellyfin_id: string;
+  matched_title: string;
+  provider_ids: Record<string, string> | null;
+}
+
 class ApiClient {
   private async request<T>(
     endpoint: string,
@@ -140,6 +159,21 @@ class ApiClient {
 
   async getMediaItem(id: string): Promise<MediaItem> {
     return this.request<MediaItem>(`/media/${id}`);
+  }
+
+  // Adjudicate which side (Jellyfin vs Sonarr/Radarr) holds the wrong identity.
+  // Read-only and only ever called on an explicit user request.
+  async getMatchAnalysis(id: string): Promise<MatchResponse> {
+    return this.request<MatchResponse>(`/media/${encodeURIComponent(id)}/match-analysis`);
+  }
+
+  // Re-identify the Jellyfin item when the adjudicator finds Jellyfin is the
+  // outlier. Must be preceded by an explicit user confirmation; it never runs
+  // automatically.
+  async fixMatch(id: string): Promise<MatchResponse> {
+    return this.request<MatchResponse>(`/media/${encodeURIComponent(id)}/fix-match`, {
+      method: 'POST',
+    });
   }
 
   async addExclusion(id: string): Promise<void> {
