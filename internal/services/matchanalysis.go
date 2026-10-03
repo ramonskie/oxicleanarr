@@ -78,6 +78,12 @@ type MatchAnalysis struct {
 	Verdict    MatchVerdict `json:"verdict"`
 	Confidence float64      `json:"confidence"`
 	Evidence   []string     `json:"evidence"`
+
+	// matchedEpisodes is the number of (season, episode) pairs shared between
+	// the arr and Jellyfin episode lists. It is unexported so it stays out of
+	// the JSON contract consumed by the frontend; it exists only so a refused
+	// Fix Match can log how much episode evidence backed the verdict.
+	matchedEpisodes int
 }
 
 // AnalyzeMatch adjudicates which side holds the wrong identity from evidence the

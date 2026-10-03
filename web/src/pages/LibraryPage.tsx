@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { apiClient } from '@/lib/api';
+import { apiClient, matchAnalysisFromError, ApiRequestError } from '@/lib/api';
 import type { MatchAnalysis } from '@/lib/api';
 import type { MediaItem } from '@/lib/types';
 import { Button } from '@/components/ui/button';
@@ -43,6 +43,9 @@ interface MatchDialogState {
   id: string;
   title: string;
   analysis: MatchAnalysis;
+  // Set when the server refuses a fix and hands back a fresh adjudication: the
+  // verdict shown is now the refusal's, and Fix must stay hidden.
+  fixRefused: boolean;
 }
 
 export default function LibraryPage() {
@@ -66,6 +69,8 @@ export default function LibraryPage() {
   const [manualLeavingSoonConfirm, setManualLeavingSoonConfirm] = useState<{ id: string; title: string } | null>(null);
   const [removeManualLeavingSoonConfirm, setRemoveManualLeavingSoonConfirm] = useState<{ id: string; title: string } | null>(null);
   const [matchDialog, setMatchDialog] = useState<MatchDialogState | null>(null);
+  // Default checked: refreshing the poster/artwork is the point of a re-identify.
+  const [replaceImages, setReplaceImages] = useState(true);
 
   // Read URL parameters on mount
   useEffect(() => {
@@ -381,7 +386,9 @@ export default function LibraryPage() {
         id: vars.id,
         title: vars.title,
         analysis: response.analysis,
+        fixRefused: false,
       });
+      setReplaceImages(true);
       queryClient.invalidateQueries({ queryKey: ['movies'] });
       queryClient.invalidateQueries({ queryKey: ['shows'] });
     },
@@ -395,7 +402,8 @@ export default function LibraryPage() {
   });
 
   const fixMatchMutation = useMutation({
-    mutationFn: (id: string) => apiClient.fixMatch(id),
+    mutationFn: (vars: { id: string; replaceImages: boolean }) =>
+      apiClient.fixMatch(vars.id, vars.replaceImages),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['movies'] });
       queryClient.invalidateQueries({ queryKey: ['shows'] });
@@ -407,8 +415,23 @@ export default function LibraryPage() {
       });
     },
     onError: (error: Error) => {
-      // 409 (arr_wrong / ambiguous) and 422 (not scanned) carry the exact
-      // reason in the error message; surface it verbatim.
+      // 409 (arr_wrong / ambiguous / no remote-search match) and 422 (not
+      // scanned) carry the exact reason in the error message; surface it
+      // verbatim. On any refusal (ApiRequestError) mark the fix refused so an
+      // earlier jellyfin_wrong cannot leave an actionable Fix button behind.
+      // When the refusal embeds a fresh analysis, replace the dialog's stale
+      // verdict/evidence with it; a refusal without one (422 "no Jellyfin item")
+      // keeps the existing verdict but is still non-actionable. Non-refusal
+      // errors (transient network failures) are left untouched so they don't
+      // permanently lock the dialog.
+      const freshAnalysis = matchAnalysisFromError(error);
+      if (error instanceof ApiRequestError) {
+        setMatchDialog((prev) =>
+          prev
+            ? { ...prev, analysis: freshAnalysis ?? prev.analysis, fixRefused: true }
+            : prev
+        );
+      }
       toast({
         title: 'Fix Match failed',
         description: error.message,
@@ -423,7 +446,7 @@ export default function LibraryPage() {
 
   const confirmFixMatch = () => {
     if (matchDialog) {
-      fixMatchMutation.mutate(matchDialog.id);
+      fixMatchMutation.mutate({ id: matchDialog.id, replaceImages });
     }
   };
 
@@ -453,7 +476,8 @@ export default function LibraryPage() {
   // Fix is only offered for a jellyfin_wrong verdict, inside the diagnosis
   // dialog. arr_wrong / ambiguous are read-only explanations.
   const matchVerdictInfo = matchDialog ? verdictMeta(matchDialog.analysis.verdict) : undefined;
-  const canConfirmFix = matchDialog?.analysis.verdict === 'jellyfin_wrong';
+  const canConfirmFix =
+    !!matchDialog && matchDialog.analysis.verdict === 'jellyfin_wrong' && !matchDialog.fixRefused;
 
   return (
     <AppLayout>
@@ -979,9 +1003,44 @@ export default function LibraryPage() {
                   </p>
                 )}
                 {canConfirmFix && (
-                  <p className="text-sm text-gray-400">
-                    This will re-identify the Jellyfin item to match Sonarr/Radarr.
-                  </p>
+                  <div className="space-y-3">
+                    <p className="text-sm text-gray-400">
+                      This will re-identify the Jellyfin item to match Sonarr/Radarr.
+                    </p>
+                    <label className="flex items-start gap-2 cursor-pointer select-none">
+                      <input
+                        type="checkbox"
+                        checked={replaceImages}
+                        onChange={(e) => setReplaceImages(e.target.checked)}
+                        disabled={fixMatchMutation.isPending}
+                        className="mt-0.5 h-4 w-4 shrink-0 cursor-pointer rounded border border-[#444] bg-[#262626] accent-primary focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary disabled:cursor-not-allowed disabled:opacity-50"
+                      />
+                      <span className="flex flex-col gap-0.5">
+                        <span className="text-sm text-gray-200">Replace images too</span>
+                        <span className="text-xs text-gray-500">
+                          Updates the Jellyfin poster/artwork to the newly identified item. Uncheck to keep the existing images.
+                        </span>
+                      </span>
+                    </label>
+                  </div>
+                )}
+                {matchDialog.fixRefused && (
+                  <div className="space-y-2">
+                    <p className="text-sm text-amber-400">
+                      The server refused this fix and returned a fresh verdict; Fix Match is disabled.
+                    </p>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() =>
+                        matchAnalysisMutation.mutate({ id: matchDialog.id, title: matchDialog.title })
+                      }
+                      disabled={matchAnalysisMutation.isPending}
+                      className="bg-[#262626] border-[#444] text-gray-300 hover:bg-[#333]"
+                    >
+                      {matchAnalysisMutation.isPending ? 'Re-running…' : 'Re-run diagnosis'}
+                    </Button>
+                  </div>
                 )}
               </div>
             )}

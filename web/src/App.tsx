@@ -17,16 +17,24 @@ import LogsPage from '@/pages/LogsPage';
 import AnalyticsPage from '@/pages/AnalyticsPage';
 import ProtectedRoute from '@/components/ProtectedRoute';
 
+// The API client rejects with ApiRequestError, which carries the HTTP status on
+// `.status`. Read it defensively: query `error` is typed unknown/Error here, not
+// the removed axios-shaped `error.response`.
+function httpStatus(error: unknown): number | undefined {
+  return (error as { status?: number } | null)?.status;
+}
+
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
-      retry: (failureCount, error: any) => {
+      retry: (failureCount, error: unknown) => {
+        const status = httpStatus(error);
         // Don't retry on 401/403 (auth errors)
-        if (error?.response?.status === 401 || error?.response?.status === 403) {
+        if (status === 401 || status === 403) {
           return false;
         }
         // Don't retry on 404 (not found)
-        if (error?.response?.status === 404) {
+        if (status === 404) {
           return false;
         }
         // Retry up to 2 times for other errors (network issues, 500s, etc.)
@@ -42,7 +50,7 @@ const queryClient = new QueryClient({
     },
     mutations: {
       retry: false, // Don't retry mutations by default
-      onError: (error: any) => {
+      onError: (error: unknown) => {
         // Log mutation errors
         errorLogger.error('React Query mutation failed', error, {
           type: 'mutation',

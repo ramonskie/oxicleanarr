@@ -1757,7 +1757,7 @@ func TestFixJellyfinMatch_RefusesArrWrong(t *testing.T) {
 		Year: 2024, TMDBID: 605722, FilePath: "/movies/Distant (2024)/Distant.2024.mkv",
 	}
 
-	_, err := engine.FixJellyfinMatch(context.Background(), "radarr-306")
+	_, err := engine.FixJellyfinMatch(context.Background(), "radarr-306", false)
 	require.Error(t, err)
 	assert.ErrorIs(t, err, ErrMatchArrWrong, "arr_wrong must refuse the fix")
 
@@ -1787,7 +1787,7 @@ func TestFixJellyfinMatch_NoJellyfinItem(t *testing.T) {
 	})
 
 	t.Run("fix", func(t *testing.T) {
-		_, err := engine.FixJellyfinMatch(context.Background(), "radarr-999")
+		_, err := engine.FixJellyfinMatch(context.Background(), "radarr-999", false)
 		require.Error(t, err)
 		assert.ErrorIs(t, err, ErrJellyfinItemNotFound)
 	})
@@ -1834,7 +1834,7 @@ func TestFixJellyfinMatch_HappyPath(t *testing.T) {
 		Year: 2024, TMDBID: 605722, FilePath: "/movies/Long Distance (2024)",
 	}
 
-	result, err := engine.FixJellyfinMatch(context.Background(), "radarr-306")
+	result, err := engine.FixJellyfinMatch(context.Background(), "radarr-306", false)
 	require.NoError(t, err)
 
 	assert.Equal(t, int32(1), applied.Load(), "the matching remote search result must be applied once")
@@ -1951,7 +1951,7 @@ func TestFixJellyfinMatch_AppliesOnlyMatchingProviderResult(t *testing.T) {
 		Year: 2024, TMDBID: 605722, FilePath: "/movies/Long Distance (2024)",
 	}
 
-	_, err := engine.FixJellyfinMatch(context.Background(), "radarr-306")
+	_, err := engine.FixJellyfinMatch(context.Background(), "radarr-306", false)
 	require.NoError(t, err)
 	assert.Equal(t, int32(1), applied.Load())
 	assert.Equal(t, "605722", appliedID.Load(),
@@ -1985,7 +1985,7 @@ func TestFixJellyfinMatch_RemoteSearchNoMatch(t *testing.T) {
 		Year: 2024, TMDBID: 605722, FilePath: "/movies/Long Distance (2024)",
 	}
 
-	_, err := engine.FixJellyfinMatch(context.Background(), "radarr-306")
+	_, err := engine.FixJellyfinMatch(context.Background(), "radarr-306", false)
 	require.Error(t, err)
 	assert.ErrorIs(t, err, ErrRemoteSearchNoMatch)
 
@@ -2041,7 +2041,7 @@ func TestFixJellyfinMatch_ResyncFailureStillSucceeds(t *testing.T) {
 		LastWatched:         lastWatched,
 	}
 
-	result, err := engine.FixJellyfinMatch(context.Background(), "radarr-306")
+	result, err := engine.FixJellyfinMatch(context.Background(), "radarr-306", false)
 	require.NoError(t, err, "a post-apply re-sync failure must not fail the fix")
 	assert.Equal(t, int32(1), applied.Load())
 	assert.Equal(t, "jf-distant", result.JellyfinID,
@@ -2057,4 +2057,179 @@ func TestFixJellyfinMatch_ResyncFailureStillSucceeds(t *testing.T) {
 	assert.Equal(t, 7, updated.WatchCount, "clearing the diagnosis must not touch watch data")
 	assert.WithinDuration(t, lastWatched, updated.LastWatched, time.Second,
 		"clearing the diagnosis must not touch LastWatched")
+}
+
+// TestFixJellyfinMatch_ThreadsReplaceImages proves the replaceImages argument
+// reaches the Jellyfin Apply call as the replaceAllImages query parameter, for
+// both values. The poster regression this guards against is an always-false
+// hardcode, so false alone would not catch it.
+func TestFixJellyfinMatch_ThreadsReplaceImages(t *testing.T) {
+	for _, replaceImages := range []bool{true, false} {
+		t.Run(fmt.Sprintf("replaceImages=%t", replaceImages), func(t *testing.T) {
+			var gotReplace atomic.Value // string
+
+			engine, _ := newTestJellyfinServer(t, func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				switch {
+				case strings.HasPrefix(r.URL.Path, "/Items/RemoteSearch/Apply/"):
+					gotReplace.Store(r.URL.Query().Get("replaceAllImages"))
+					w.WriteHeader(http.StatusNoContent)
+				case r.URL.Path == "/Items/RemoteSearch/Movie":
+					_ = json.NewEncoder(w).Encode([]clients.RemoteSearchResult{{
+						Name: "Long Distance", ProductionYear: 2024,
+						ProviderIds: map[string]string{"Tmdb": "605722"},
+					}})
+				default:
+					_ = json.NewEncoder(w).Encode(clients.JellyfinItemsResponse{Items: []clients.JellyfinItem{{
+						ID: "jf-distant", Name: "Distant", Type: "Movie", ProductionYear: 2024,
+						Path:        "/movies/Long Distance (2024)/Long.Distance.2024.mkv",
+						ProviderIds: map[string]string{"Tmdb": "1395720"},
+					}}})
+				}
+			})
+
+			engine.mediaLibrary["radarr-306"] = models.Media{
+				ID: "radarr-306", Type: models.MediaTypeMovie, Title: "Long Distance",
+				Year: 2024, TMDBID: 605722, FilePath: "/movies/Long Distance (2024)",
+			}
+
+			_, err := engine.FixJellyfinMatch(context.Background(), "radarr-306", replaceImages)
+			require.NoError(t, err)
+			assert.Equal(t, fmt.Sprintf("%t", replaceImages), gotReplace.Load(),
+				"replaceImages must be forwarded verbatim to ApplyRemoteSearch")
+		})
+	}
+}
+
+// tVShowFixture builds a Jellyfin item (Brotherhood), a Sonarr series (2003
+// FMA) and matching episode lists, plus a Jellyfin handler that serves an empty
+// episode list on the first N calls. When failRetry is true the call after the
+// empty ones fails with a 500 instead of returning episodes. Returns the engine
+// ready for analysis.
+func newEpisodeRetryEngine(t *testing.T, emptyEpisodeFetches int, failRetry ...bool) (*SyncEngine, *atomic.Int32) {
+	t.Helper()
+
+	retryErrors := len(failRetry) > 0 && failRetry[0]
+
+	names := []string{
+		"Fullmetal Alchemist", "The Body of a Man", "City of Heresy",
+		"A Forger's Love", "The Man with the Mechanical Arm",
+	}
+	jellyfinEpisodes := make([]clients.JellyfinEpisode, 0, len(names))
+	sonarrEpisodes := make([]clients.SonarrEpisode, 0, len(names))
+	for i, name := range names {
+		path := fmt.Sprintf("/tv/Fullmetal Alchemist/S01E%02d.mkv", i+1)
+		jellyfinEpisodes = append(jellyfinEpisodes, clients.JellyfinEpisode{
+			ID: fmt.Sprintf("e%d", i+1), Name: name,
+			ParentIndexNumber: 1, IndexNumber: i + 1, Path: path,
+		})
+		sonarrEpisodes = append(sonarrEpisodes, clients.SonarrEpisode{
+			SeasonNumber: 1, EpisodeNumber: i + 1, Title: name,
+			EpisodeFile: &clients.SonarrEpisodeFile{Path: path},
+		})
+	}
+
+	var episodeFetches atomic.Int32
+	engine, _ := newTestJellyfinServer(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if strings.HasSuffix(r.URL.Path, "/Episodes") {
+			if int(episodeFetches.Add(1)) <= emptyEpisodeFetches {
+				_ = json.NewEncoder(w).Encode(map[string]any{"Items": []clients.JellyfinEpisode{}})
+				return
+			}
+			if retryErrors {
+				http.Error(w, "jellyfin unavailable", http.StatusInternalServerError)
+				return
+			}
+			_ = json.NewEncoder(w).Encode(map[string]any{"Items": jellyfinEpisodes})
+			return
+		}
+		_ = json.NewEncoder(w).Encode(clients.JellyfinItemsResponse{Items: []clients.JellyfinItem{{
+			ID: "jf-fmab", Name: "Fullmetal Alchemist: Brotherhood", Type: "Series",
+			ProductionYear: 2009, Path: "/tv/Fullmetal Alchemist",
+			ProviderIds: map[string]string{"Tvdb": "85249"},
+		}}})
+	})
+
+	sonarrSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if strings.HasPrefix(r.URL.Path, "/api/v3/episode") {
+			_ = json.NewEncoder(w).Encode(sonarrEpisodes)
+			return
+		}
+		_ = json.NewEncoder(w).Encode(clients.SonarrSeries{
+			ID: 97, Title: "Fullmetal Alchemist", Year: 2003, TvdbId: 75579,
+			Path: "/tv/Fullmetal Alchemist",
+		})
+	}))
+	t.Cleanup(sonarrSrv.Close)
+	engine.sonarrClient = clients.NewSonarrClient(config.SonarrConfig{
+		BaseIntegrationConfig: config.BaseIntegrationConfig{URL: sonarrSrv.URL, APIKey: "k"},
+	})
+
+	engine.mediaLibrary["sonarr-97"] = models.Media{
+		ID: "sonarr-97", Type: models.MediaTypeTVShow, Title: "Fullmetal Alchemist",
+		Year: 2003, TVDBID: 75579, SonarrID: 97, FilePath: "/tv/Fullmetal Alchemist",
+		JellyfinConflictID: "jf-fmab",
+	}
+	return engine, &episodeFetches
+}
+
+// TestAnalyzeJellyfinMatch_RetriesEmptyJellyfinEpisodes proves a transient empty
+// Jellyfin episode list is re-fetched exactly once, so a show mid-refresh still
+// adjudicates from episode evidence instead of falling back to ambiguity.
+func TestAnalyzeJellyfinMatch_RetriesEmptyJellyfinEpisodes(t *testing.T) {
+	engine, episodeFetches := newEpisodeRetryEngine(t, 1)
+
+	analysis, err := engine.AnalyzeJellyfinMatch(context.Background(), "sonarr-97")
+	require.NoError(t, err)
+
+	assert.Equal(t, VerdictJellyfinWrong, analysis.Verdict,
+		"the retry must recover the episode list and pin the mismatch on Jellyfin")
+	assert.Equal(t, int32(2), episodeFetches.Load(),
+		"an empty episode list must be retried exactly once")
+	assert.Equal(t, 5, analysis.matchedEpisodes,
+		"the shared-episode count must be derived from the retried episode data")
+	assert.NotContains(t, strings.Join(analysis.Evidence, "\n"), "Jellyfin returned no episodes")
+}
+
+// TestAnalyzeJellyfinMatch_EmptyJellyfinEpisodesEvidence proves that when the
+// episode list is still empty after the retry the analysis says so explicitly,
+// rather than presenting the missing data as a considered ambiguity.
+func TestAnalyzeJellyfinMatch_EmptyJellyfinEpisodesEvidence(t *testing.T) {
+	engine, episodeFetches := newEpisodeRetryEngine(t, 2)
+
+	analysis, err := engine.AnalyzeJellyfinMatch(context.Background(), "sonarr-97")
+	require.NoError(t, err)
+
+	assert.Equal(t, int32(2), episodeFetches.Load(),
+		"the empty episode list must be retried once, then accepted")
+	assert.Equal(t, 0, analysis.matchedEpisodes)
+	assert.Equal(t, VerdictJellyfinWrong, analysis.Verdict,
+		"empty episode data must still adjudicate from filename evidence; a regression to ambiguous must fail this test")
+	assert.Contains(t, strings.Join(analysis.Evidence, "\n"),
+		"Jellyfin returned no episodes for this series",
+		"insufficient episode data must be surfaced as explicit evidence")
+}
+
+// TestAnalyzeJellyfinMatch_RetryErrorSurfaced proves that when the single retry
+// after an empty episode list fails, the API failure is surfaced as distinct
+// evidence instead of being masked as a genuine no-episodes result, while the
+// verdict still flows from the remaining (filename) evidence.
+func TestAnalyzeJellyfinMatch_RetryErrorSurfaced(t *testing.T) {
+	engine, episodeFetches := newEpisodeRetryEngine(t, 1, true)
+
+	analysis, err := engine.AnalyzeJellyfinMatch(context.Background(), "sonarr-97")
+	require.NoError(t, err, "a failed episode retry must not fail the analysis")
+
+	assert.Equal(t, int32(2), episodeFetches.Load(),
+		"the empty episode list must still be retried exactly once")
+
+	evidence := strings.Join(analysis.Evidence, "\n")
+	assert.Contains(t, evidence, "Jellyfin episode fetch failed:",
+		"a failed retry must be reported as an API failure")
+	assert.NotContains(t, evidence, "Jellyfin returned no episodes for this series",
+		"a failed retry must not be masked as a genuine no-episodes result")
+	assert.Equal(t, VerdictJellyfinWrong, analysis.Verdict,
+		"the verdict must still flow from the filename evidence")
 }

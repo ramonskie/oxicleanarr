@@ -40,6 +40,37 @@ export interface MatchResponse {
   provider_ids: Record<string, string> | null;
 }
 
+// Refusal body returned by the match endpoints on 409/422. `analysis` is present
+// only when the refusal was driven by a fresh adjudication, so the UI can replace
+// a stale verdict instead of leaving an actionable Fix button behind.
+export interface MatchErrorBody {
+  error: string;
+  message?: string;
+  analysis?: MatchAnalysis;
+}
+
+// Non-2xx wrapper that keeps the parsed body and status reachable — the match
+// dialog needs a refusal's embedded analysis. It still extends Error, so every
+// existing `.message` consumer keeps working unchanged.
+export class ApiRequestError extends Error {
+  readonly status: number;
+  readonly body: unknown;
+
+  constructor(message: string, status: number, body: unknown) {
+    super(message);
+    this.name = 'ApiRequestError';
+    this.status = status;
+    this.body = body;
+  }
+}
+
+// Extract a fresh adjudication from a match refusal, when the server embedded one.
+export function matchAnalysisFromError(error: unknown): MatchAnalysis | undefined {
+  if (!(error instanceof ApiRequestError)) return undefined;
+  const body = error.body as MatchErrorBody | null | undefined;
+  return body?.analysis;
+}
+
 class ApiClient {
   private async request<T>(
     endpoint: string,
@@ -62,11 +93,15 @@ class ApiClient {
     });
 
     if (!response.ok) {
-      const error = await response.json().catch(() => ({
+      const body = await response.json().catch(() => ({
         error: 'Unknown error',
         message: response.statusText,
       }));
-      throw new Error(error.message || error.error || 'Request failed');
+      throw new ApiRequestError(
+        body.message || body.error || 'Request failed',
+        response.status,
+        body,
+      );
     }
 
     return response.json();
@@ -169,10 +204,13 @@ class ApiClient {
 
   // Re-identify the Jellyfin item when the adjudicator finds Jellyfin is the
   // outlier. Must be preceded by an explicit user confirmation; it never runs
-  // automatically.
-  async fixMatch(id: string): Promise<MatchResponse> {
+  // automatically. `replaceImages` maps to the backend's optional
+  // {"replace_images": bool} body (default true server-side) and controls
+  // whether Jellyfin's poster/artwork is refreshed to the new identity.
+  async fixMatch(id: string, replaceImages: boolean): Promise<MatchResponse> {
     return this.request<MatchResponse>(`/media/${encodeURIComponent(id)}/fix-match`, {
       method: 'POST',
+      body: JSON.stringify({ replace_images: replaceImages }),
     });
   }
 

@@ -17,13 +17,18 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
+// maxMatchBodyBytes bounds the fix-match request body. The payload is a single
+// optional boolean, so 1 MiB is far beyond any legitimate request and exists
+// only to stop an authenticated client streaming an unbounded body.
+const maxMatchBodyBytes = 1 << 20 // 1 MiB
+
 // matchService is the narrow slice of the sync engine the match endpoints need.
 // It is an interface so handler tests can stub adjudication outcomes without
 // wiring live arr/Jellyfin HTTP clients; production always passes the concrete
 // *services.SyncEngine.
 type matchService interface {
 	AnalyzeJellyfinMatch(ctx context.Context, mediaID string) (*services.MatchAnalysis, error)
-	FixJellyfinMatch(ctx context.Context, mediaID string) (*services.FixResult, error)
+	FixJellyfinMatch(ctx context.Context, mediaID string, replaceImages bool) (*services.FixResult, error)
 }
 
 // MediaHandler handles media-related requests
@@ -602,6 +607,11 @@ func (h *MediaHandler) GetMatchAnalysis(w http.ResponseWriter, r *http.Request) 
 // item when, and only when, the adjudicator concludes Jellyfin is the outlier.
 // The caller must have confirmed the action; this endpoint is the only path
 // that mutates Jellyfin for a match fix.
+//
+// The optional JSON body {"replace_images": bool} controls whether Jellyfin's
+// existing images are replaced by the matched artwork. An absent or empty body —
+// and a body without the field — defaults to true; only an explicit false turns
+// it off. A malformed body is rejected with 400 before anything is mutated.
 func (h *MediaHandler) FixMatch(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
@@ -616,7 +626,27 @@ func (h *MediaHandler) FixMatch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	result, err := h.matchService.FixJellyfinMatch(ctx, id)
+	// Decode with a pointer so we can distinguish "field absent" (nil -> default
+	// true) from an explicit false. An empty body yields io.EOF, not an error.
+	replaceImages := true
+	if r.Body != nil {
+		// Bound the body so an authenticated client cannot stream an unbounded
+		// payload into the decoder; an oversized body fails the decode below as
+		// a 400, matching the malformed-body behavior.
+		r.Body = http.MaxBytesReader(w, r.Body, maxMatchBodyBytes)
+		var body struct {
+			ReplaceImages *bool `json:"replace_images"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil && !errors.Is(err, io.EOF) {
+			writeJSON(w, http.StatusBadRequest, matchErrorResponse{Error: "invalid request body"})
+			return
+		}
+		if body.ReplaceImages != nil {
+			replaceImages = *body.ReplaceImages
+		}
+	}
+
+	result, err := h.matchService.FixJellyfinMatch(ctx, id, replaceImages)
 	if err != nil {
 		h.writeMatchError(w, id, err)
 		return

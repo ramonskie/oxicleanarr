@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -665,6 +666,10 @@ type stubMatchService struct {
 
 	fixResult *services.FixResult
 	fixErr    error
+
+	// fixReplaceImages records the replaceImages argument of every
+	// FixJellyfinMatch call so a test can assert the handler's body defaulting.
+	fixReplaceImages []bool
 }
 
 func (s *stubMatchService) AnalyzeJellyfinMatch(_ context.Context, _ string) (*services.MatchAnalysis, error) {
@@ -672,7 +677,8 @@ func (s *stubMatchService) AnalyzeJellyfinMatch(_ context.Context, _ string) (*s
 	return s.analysis, s.analyzeErr
 }
 
-func (s *stubMatchService) FixJellyfinMatch(_ context.Context, _ string) (*services.FixResult, error) {
+func (s *stubMatchService) FixJellyfinMatch(_ context.Context, _ string, replaceImages bool) (*services.FixResult, error) {
+	s.fixReplaceImages = append(s.fixReplaceImages, replaceImages)
 	return s.fixResult, s.fixErr
 }
 
@@ -929,5 +935,87 @@ func TestMediaHandler_FixMatch(t *testing.T) {
 		router.ServeHTTP(w, req)
 
 		assert.Equal(t, http.StatusNotFound, w.Code)
+	})
+
+	t.Run("defaults replace_images to true when the body is absent", func(t *testing.T) {
+		stub := &stubMatchService{fixResult: &services.FixResult{Analysis: *jellyfinWrong}}
+		handler := newMatchTestHandler(t, stub)
+		router := newMatchTestRouter(handler)
+
+		req := httptest.NewRequest(http.MethodPost, "/api/media/radarr-306/fix-match", nil)
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		require.Equal(t, http.StatusOK, w.Code)
+		require.Equal(t, []bool{true}, stub.fixReplaceImages,
+			"an absent body must default replace_images to true")
+	})
+
+	t.Run("honours an explicit replace_images false", func(t *testing.T) {
+		stub := &stubMatchService{fixResult: &services.FixResult{Analysis: *jellyfinWrong}}
+		handler := newMatchTestHandler(t, stub)
+		router := newMatchTestRouter(handler)
+
+		req := httptest.NewRequest(http.MethodPost, "/api/media/radarr-306/fix-match",
+			bytes.NewReader([]byte(`{"replace_images":false}`)))
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		require.Equal(t, http.StatusOK, w.Code)
+		require.Equal(t, []bool{false}, stub.fixReplaceImages,
+			"an explicit false must disable image replacement")
+	})
+
+	t.Run("honours an explicit replace_images true", func(t *testing.T) {
+		stub := &stubMatchService{fixResult: &services.FixResult{Analysis: *jellyfinWrong}}
+		handler := newMatchTestHandler(t, stub)
+		router := newMatchTestRouter(handler)
+
+		req := httptest.NewRequest(http.MethodPost, "/api/media/radarr-306/fix-match",
+			bytes.NewReader([]byte(`{"replace_images":true}`)))
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		require.Equal(t, http.StatusOK, w.Code)
+		require.Equal(t, []bool{true}, stub.fixReplaceImages)
+	})
+
+	t.Run("rejects a malformed body with 400 before fixing", func(t *testing.T) {
+		stub := &stubMatchService{fixResult: &services.FixResult{Analysis: *jellyfinWrong}}
+		handler := newMatchTestHandler(t, stub)
+		router := newMatchTestRouter(handler)
+
+		req := httptest.NewRequest(http.MethodPost, "/api/media/radarr-306/fix-match",
+			bytes.NewReader([]byte(`{"replace_images":`)))
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		assert.Equal(t, http.StatusBadRequest, w.Code)
+		assert.Empty(t, stub.fixReplaceImages,
+			"a malformed body must be rejected before any fix is attempted")
+	})
+
+	t.Run("rejects an oversized body with 400 before fixing", func(t *testing.T) {
+		stub := &stubMatchService{fixResult: &services.FixResult{Analysis: *jellyfinWrong}}
+		handler := newMatchTestHandler(t, stub)
+		router := newMatchTestRouter(handler)
+
+		// Valid JSON with an ignored field, larger than maxMatchBodyBytes. Without
+		// the bound the decoder would discard the unknown field and proceed to a
+		// 200, so a 400 here proves the body was actually capped.
+		oversized := []byte(`{"padding":"` + strings.Repeat("a", maxMatchBodyBytes) + `"}`)
+		require.Greater(t, len(oversized), maxMatchBodyBytes)
+		req := httptest.NewRequest(http.MethodPost, "/api/media/radarr-306/fix-match",
+			bytes.NewReader(oversized))
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		assert.Equal(t, http.StatusBadRequest, w.Code)
+		assert.Empty(t, stub.fixReplaceImages,
+			"an oversized body must be rejected before any fix is attempted")
 	})
 }

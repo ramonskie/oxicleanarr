@@ -1067,10 +1067,11 @@ func (e *SyncEngine) AnalyzeJellyfinMatch(ctx context.Context, mediaID string) (
 
 // FixJellyfinMatch re-identifies the Jellyfin item against the arr identity when
 // the adjudicator finds Jellyfin is the outlier. It refuses arr_wrong and
-// ambiguous verdicts, applies the matching RemoteSearch result, then re-runs the
-// read-only Jellyfin sync so the item flips to "matched". Only an explicit,
-// user-confirmed request may call it; no sync or job path invokes it.
-func (e *SyncEngine) FixJellyfinMatch(ctx context.Context, mediaID string) (*FixResult, error) {
+// ambiguous verdicts, applies the matching RemoteSearch result (optionally
+// replacing the item's images, per replaceImages), then re-runs the read-only
+// Jellyfin sync so the item flips to "matched". Only an explicit, user-confirmed
+// request may call it; no sync or job path invokes it.
+func (e *SyncEngine) FixJellyfinMatch(ctx context.Context, mediaID string, replaceImages bool) (*FixResult, error) {
 	media, found := e.GetMediaByID(mediaID)
 	if !found {
 		return nil, fmt.Errorf("media not found: %s", mediaID)
@@ -1084,7 +1085,9 @@ func (e *SyncEngine) FixJellyfinMatch(ctx context.Context, mediaID string) (*Fix
 		return nil, err
 	}
 	if item == nil {
-		return nil, fmt.Errorf("fixing match for %s: %w", mediaID, ErrJellyfinItemNotFound)
+		refusal := fmt.Errorf("fixing match for %s: %w", mediaID, ErrJellyfinItemNotFound)
+		logMatchRefusal(mediaID, refusal, nil)
+		return nil, refusal
 	}
 
 	arr, err := e.buildArrIdentity(ctx, media)
@@ -1100,19 +1103,25 @@ func (e *SyncEngine) FixJellyfinMatch(ctx context.Context, mediaID string) (*Fix
 	case VerdictJellyfinWrong:
 		// Jellyfin is the outlier; it is safe to re-identify it.
 	case VerdictArrWrong:
-		return nil, &MatchRefusalError{Err: ErrMatchArrWrong, Analysis: &analysis}
+		refusal := &MatchRefusalError{Err: ErrMatchArrWrong, Analysis: &analysis}
+		logMatchRefusal(mediaID, refusal, &analysis)
+		return nil, refusal
 	default:
-		return nil, &MatchRefusalError{Err: ErrMatchAmbiguous, Analysis: &analysis}
+		refusal := &MatchRefusalError{Err: ErrMatchAmbiguous, Analysis: &analysis}
+		logMatchRefusal(mediaID, refusal, &analysis)
+		return nil, refusal
 	}
 
 	result, providerIDs, err := e.findJellyfinRemoteMatch(ctx, media, arr.Identity)
 	if err != nil {
 		if errors.Is(err, ErrRemoteSearchNoMatch) {
-			return nil, &MatchRefusalError{Err: ErrRemoteSearchNoMatch, Analysis: &analysis}
+			refusal := &MatchRefusalError{Err: ErrRemoteSearchNoMatch, Analysis: &analysis}
+			logMatchRefusal(mediaID, refusal, &analysis)
+			return nil, refusal
 		}
 		return nil, err
 	}
-	if err := e.jellyfinClient.ApplyRemoteSearch(ctx, item.ID, result, false); err != nil {
+	if err := e.jellyfinClient.ApplyRemoteSearch(ctx, item.ID, result, replaceImages); err != nil {
 		return nil, fmt.Errorf("applying remote search to Jellyfin item %s: %w", item.ID, err)
 	}
 	// Jellyfin has now been re-identified. Clear the stale mismatch diagnosis
@@ -1146,6 +1155,8 @@ func (e *SyncEngine) FixJellyfinMatch(ctx context.Context, mediaID string) (*Fix
 		Str("jellyfin_item_id", item.ID).
 		Str("verdict", string(analysis.Verdict)).
 		Float64("confidence", analysis.Confidence).
+		Int("matched_episodes", analysis.matchedEpisodes).
+		Bool("replace_images", replaceImages).
 		Msg("Re-identified Jellyfin item after manual Fix Match")
 
 	return &FixResult{
@@ -1155,6 +1166,21 @@ func (e *SyncEngine) FixJellyfinMatch(ctx context.Context, mediaID string) (*Fix
 		AppliedProviderIDs: providerIDs,
 		Analysis:           analysis,
 	}, nil
+}
+
+// logMatchRefusal records why a manual Fix Match declined to touch Jellyfin. It
+// is emitted at warn so a refused fix is visible in the server log even though
+// the handler can only return a 4xx the user may not fully read. analysis is nil
+// when the refusal happened before an adjudication existed (no Jellyfin item).
+func logMatchRefusal(mediaID string, err error, analysis *MatchAnalysis) {
+	event := log.Warn().Str("media_id", mediaID).Str("reason", err.Error())
+	if analysis != nil {
+		event = event.
+			Str("verdict", string(analysis.Verdict)).
+			Float64("confidence", analysis.Confidence).
+			Int("matched_episodes", analysis.matchedEpisodes)
+	}
+	event.Msg("Refused manual Fix Match")
 }
 
 // analyzeJellyfinMatch turns the arr identity and an already-resolved Jellyfin
@@ -1168,19 +1194,56 @@ func (e *SyncEngine) analyzeJellyfinMatch(ctx context.Context, media models.Medi
 		ArrEpisodes: arr.Episodes,
 	}
 
+	// episodeFetchErr records a failed empty-list retry so the evidence below
+	// can distinguish "Jellyfin really has no episodes" from "the episode fetch
+	// failed" instead of masking an API failure as a considered no-data result.
+	var episodeFetchErr error
 	if media.Type == models.MediaTypeTVShow {
 		episodes, err := e.jellyfinClient.GetEpisodes(ctx, item.ID)
 		if err != nil {
 			return MatchAnalysis{}, fmt.Errorf("fetching Jellyfin episodes for series %s: %w", item.ID, err)
 		}
+		// A Jellyfin series can transiently report an empty episode list while
+		// it is mid-refresh (e.g. immediately after a library scan or a manual
+		// fix). Re-fetch once before adjudicating so a transient empty list is
+		// not read as "no shared episodes" and silently turned into ambiguity.
+		if len(episodes) == 0 {
+			log.Debug().Str("jellyfin_item_id", item.ID).
+				Msg("Jellyfin returned no episodes for a series; retrying once")
+			retry, retryErr := e.jellyfinClient.GetEpisodes(ctx, item.ID)
+			if retryErr != nil {
+				episodeFetchErr = retryErr
+				log.Warn().Err(retryErr).Str("jellyfin_item_id", item.ID).
+					Msg("Jellyfin episode retry failed; adjudicating without episode data")
+			} else {
+				episodes = retry
+			}
+		}
 		input.JellyfinEpisodes = jellyfinEpisodesToEvidence(episodes)
 	}
 
 	analysis := AnalyzeMatch(input)
+	if media.Type == models.MediaTypeTVShow {
+		// Derive the shared-episode count for refusal logging. Pure computation
+		// over the already-fetched inputs; no additional I/O.
+		_, matched, _ := episodeAgreement(input.ArrEpisodes, input.JellyfinEpisodes)
+		analysis.matchedEpisodes = matched
+	}
 	// Surface the conflicting Jellyfin item and its provider ids explicitly in
 	// the evidence so the UI can show exactly what Jellyfin currently thinks.
 	analysis.Evidence = append(analysis.Evidence, fmt.Sprintf(
 		"conflicting Jellyfin item %s is %q (%s)", item.ID, item.Name, describeProviderIDs(item.ProviderIds)))
+	// When episode data is genuinely absent after the retry, say so explicitly
+	// rather than letting the verdict read as a considered "ambiguous". A failed
+	// retry is reported as an API failure, not as a no-episodes result.
+	if media.Type == models.MediaTypeTVShow && len(input.JellyfinEpisodes) == 0 {
+		if episodeFetchErr != nil {
+			analysis.Evidence = append(analysis.Evidence,
+				"Jellyfin episode fetch failed: "+episodeFetchErr.Error())
+		} else {
+			analysis.Evidence = append(analysis.Evidence, "Jellyfin returned no episodes for this series")
+		}
+	}
 	return analysis, nil
 }
 
