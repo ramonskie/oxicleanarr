@@ -56,6 +56,11 @@ type Result struct {
 	Reverted  int `json:"reverted"`
 	Skipped   int `json:"skipped"`
 	Errors    int `json:"errors"`
+	// Reason explains a pass that intentionally did no work, e.g. the media
+	// library was still empty because the first sync had not populated it. It is
+	// empty on a normal pass; the status endpoint surfaces it so an apparently
+	// idle overlay can be diagnosed without reading logs.
+	Reason string `json:"reason,omitempty"`
 }
 
 // Status is the current overlay service state, exposed by GET /api/overlay/status.
@@ -85,13 +90,20 @@ type Service struct {
 	media   MediaProvider
 	dataDir string
 
-	// runMu serializes passes and rejects concurrent ones (TryLock -> 409).
 	// mu guards the status fields and scheduler lifecycle.
-	runMu      sync.Mutex
 	mu         sync.Mutex
 	running    bool
 	lastRun    time.Time
 	lastResult *Result
+
+	// gateMu serializes pass ownership and the pending handoff. runningPass is
+	// true while a pass holds the service; pendingPass records a pass requested
+	// during that window so the holder runs once more. Holding both under gateMu
+	// makes "acquire or coalesce" atomic, so a concurrent request can never be
+	// erased by a holder clearing the flag.
+	gateMu      sync.Mutex
+	runningPass bool
+	pendingPass bool
 
 	ticker   *time.Ticker
 	stopChan chan struct{}
@@ -122,11 +134,70 @@ func NewService(
 // day count changed, skip unchanged ones, and revert items that left the set.
 // A concurrent Run/Reset is rejected with ErrAlreadyRunning.
 func (s *Service) Run(ctx context.Context) (Result, error) {
-	if !s.runMu.TryLock() {
+	return s.runExclusive(ctx, false)
+}
+
+// runExclusive runs one pass, returning ErrAlreadyRunning when another pass
+// holds the service. When it frees the slot it starts a background pass if one
+// was requested while it was held, so a sync that completed during a manual
+// run/reset is not missed.
+func (s *Service) runExclusive(ctx context.Context, reset bool) (Result, error) {
+	if !s.acquirePass() {
 		return Result{}, ErrAlreadyRunning
 	}
-	defer s.runMu.Unlock()
+	defer s.finishPass()
 
+	if reset {
+		return s.resetLocked(ctx)
+	}
+	return s.runLocked(ctx)
+}
+
+// acquirePass claims the single pass slot, coalescing the request when a pass is
+// already running. It reports false when the slot was busy.
+func (s *Service) acquirePass() bool {
+	s.gateMu.Lock()
+	defer s.gateMu.Unlock()
+	if s.runningPass {
+		s.pendingPass = true
+		return false
+	}
+	s.runningPass = true
+	return true
+}
+
+// releasePass frees the pass slot and reports whether a pass was requested while
+// it was held.
+func (s *Service) releasePass() (rerun bool) {
+	s.gateMu.Lock()
+	defer s.gateMu.Unlock()
+	s.runningPass = false
+	if s.pendingPass {
+		s.pendingPass = false
+		return true
+	}
+	return false
+}
+
+// finishPass frees the slot and, if a pass was requested while it was held,
+// starts one in the background.
+func (s *Service) finishPass() {
+	if s.releasePass() {
+		go s.runPass()
+	}
+}
+
+// hasPendingPass reports whether a pass is queued behind the current one.
+func (s *Service) hasPendingPass() bool {
+	s.gateMu.Lock()
+	defer s.gateMu.Unlock()
+	return s.pendingPass
+}
+
+// runLocked executes one overlay pass. Callers must hold the pass slot
+// (acquirePass); it is not released here so a panic still unwinds through the
+// caller's deferred release.
+func (s *Service) runLocked(ctx context.Context) (Result, error) {
 	s.markRunning()
 	defer s.markIdle()
 
@@ -145,8 +216,16 @@ func (s *Service) Run(ctx context.Context) (Result, error) {
 	// on every restart. Defer the whole pass until the library is populated.
 	media := s.media.GetMediaList()
 	if len(media) == 0 {
-		log.Debug().Msg("Overlay pass skipped: media library empty (sync may not have completed)")
-		return Result{}, nil
+		// Nothing to look at yet: the first sync has not populated the library.
+		// Reverting persisted banners here would be wrong, so defer the whole
+		// pass. Record why (surfaced via Status) and log at Info so an apparently
+		// idle overlay is diagnosable without enabling debug logging.
+		res := Result{Reason: "media library empty; waiting for sync to populate it"}
+		s.mu.Lock()
+		s.lastResult = &res
+		s.mu.Unlock()
+		log.Info().Msg("Overlay pass deferred: media library empty (sync not yet complete)")
+		return res, nil
 	}
 
 	targets := scheduledTargets(media, time.Now())
@@ -208,11 +287,12 @@ func (s *Service) Run(ctx context.Context) (Result, error) {
 // Reset restores every original poster and drops all overlay state.
 // A concurrent Run/Reset is rejected with ErrAlreadyRunning.
 func (s *Service) Reset(ctx context.Context) (Result, error) {
-	if !s.runMu.TryLock() {
-		return Result{}, ErrAlreadyRunning
-	}
-	defer s.runMu.Unlock()
+	return s.runExclusive(ctx, true)
+}
 
+// resetLocked restores every original poster and drops all overlay state.
+// Callers must hold the pass slot (acquirePass); it is released by the caller.
+func (s *Service) resetLocked(ctx context.Context) (Result, error) {
 	s.markRunning()
 	defer s.markIdle()
 
@@ -328,15 +408,7 @@ func (s *Service) runLoop(ticker *time.Ticker, interval time.Duration) {
 		}
 	}()
 
-	runSafe := func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
-		defer cancel()
-		if _, err := s.Run(ctx); err != nil && !errors.Is(err, ErrOverlayDisabled) {
-			log.Warn().Err(err).Msg("Scheduled overlay pass failed")
-		}
-	}
-
-	runSafe()
+	s.runPass()
 
 	for {
 		select {
@@ -354,11 +426,77 @@ func (s *Service) runLoop(ticker *time.Ticker, interval time.Duration) {
 				interval = want
 				ticker.Reset(interval)
 			}
-			runSafe()
+			s.runPass()
 		case <-s.stopChan:
 			return
 		}
 	}
+}
+
+// runPass executes overlay passes with the scheduler's timeout, serialization
+// and error handling. Panics are recovered (and the slot always released) so a
+// background trigger can never crash the application or wedge the service. A
+// disabled feature or an unavailable Jellyfin client is not worth a warning.
+//
+// If another pass already holds the slot, this one coalesces into pendingPass
+// and returns without blocking; the holder drains it and runs once more so a
+// sync that repopulated the library mid-pass is not missed.
+func (s *Service) runPass() {
+	for {
+		if !s.acquirePass() {
+			return
+		}
+
+		// Fresh deadline per pass so a coalesced follow-up does not inherit the
+		// time already spent on the previous one.
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
+
+		var rerun bool
+		var err error
+		func() {
+			defer func() {
+				if r := recover(); r != nil {
+					log.Error().Interface("panic", r).Msg("Overlay pass panicked")
+				}
+				rerun = s.releasePass()
+			}()
+			_, err = s.runLocked(ctx)
+		}()
+		cancel()
+
+		if err != nil &&
+			!errors.Is(err, ErrOverlayDisabled) &&
+			!errors.Is(err, ErrJellyfinUnavailable) &&
+			!errors.Is(err, ErrAlreadyRunning) {
+			log.Warn().Err(err).Msg("Overlay pass failed")
+		}
+
+		if !rerun {
+			return
+		}
+	}
+}
+
+// Trigger requests an immediate overlay pass in the background, independent of
+// the configured interval. It is called after a sync has populated the media
+// library so banners are applied without waiting for the next scheduled tick.
+// It never blocks the caller, and passes are serialized (a trigger that arrives
+// during a running pass is coalesced into one extra pass after it finishes).
+func (s *Service) Trigger() {
+	if !s.overlayActive() {
+		return
+	}
+	go s.runPass()
+}
+
+// overlayActive reports whether a pass could actually do work: the feature is
+// enabled and a Jellyfin client is configured. It lets Trigger avoid spawning a
+// goroutine that would only no-op.
+func (s *Service) overlayActive() bool {
+	if s.jf == nil {
+		return false
+	}
+	return s.currentOverlayConfig().Enabled
 }
 
 // currentOverlayConfig reads the live config so hot-reloads apply without a

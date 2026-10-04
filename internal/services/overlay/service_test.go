@@ -319,6 +319,11 @@ func TestRun_EmptyLibraryDefersPass(t *testing.T) {
 	assert.Zero(t, res.Reverted)
 	assert.Zero(t, res.Errors)
 	assert.Zero(t, fake.uploadCount(), "no media library yet: nothing may be uploaded or reverted")
+	assert.NotEmpty(t, res.Reason, "a deferred pass must explain why it did no work")
+
+	status := svc.Status()
+	require.NotNil(t, status.LastResult, "a deferral must be recorded as the last result")
+	assert.NotEmpty(t, status.LastResult.Reason, "status must expose why the pass deferred")
 
 	// Once the library populates (even with zero scheduled items), stale state reverts.
 	provider.setMedia([]models.Media{
@@ -328,6 +333,131 @@ func TestRun_EmptyLibraryDefersPass(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, 1, res.Reverted)
 	assert.Equal(t, 1, fake.uploadCount())
+}
+
+func TestTrigger_RunsPassInBackground(t *testing.T) {
+	svc, fake, _, _ := newTestService(t, true, []models.Media{
+		scheduledMedia("a", time.Now().Add(72*time.Hour)),
+	})
+	fake.images["a"] = testPoster(t, 300, 450)
+
+	svc.Trigger()
+
+	require.Eventually(t, func() bool {
+		_, found := svc.state.Get("a")
+		return found
+	}, 3*time.Second, 20*time.Millisecond, "Trigger must run a pass without waiting for the interval")
+	assert.Equal(t, 1, fake.uploadCount())
+}
+
+func TestTrigger_DisabledIsNoOp(t *testing.T) {
+	svc, fake, _, _ := newTestService(t, false, []models.Media{
+		scheduledMedia("a", time.Now().Add(72*time.Hour)),
+	})
+	fake.images["a"] = testPoster(t, 300, 450)
+
+	svc.Trigger()
+
+	assert.False(t, svc.overlayActive(), "a disabled overlay must report inactive")
+	assert.False(t, svc.hasPendingPass(), "Trigger must not arm a pass while inactive")
+	// A spawned pass would set LastRun via markIdle even though it uploads
+	// nothing, so LastRun is the deterministic signal that Trigger was gated.
+	require.Never(t, func() bool { return !svc.Status().LastRun.IsZero() },
+		200*time.Millisecond, 20*time.Millisecond, "a disabled overlay must not spawn a pass")
+	require.Never(t, func() bool { return fake.uploadCount() > 0 },
+		200*time.Millisecond, 20*time.Millisecond, "a disabled overlay must not upload")
+}
+
+// sequencedMediaProvider returns an extra scheduled item from its second
+// GetMediaList call, so a coalesced follow-up pass has observable work.
+type sequencedMediaProvider struct {
+	mu    sync.Mutex
+	calls int
+	base  []models.Media
+	extra models.Media
+}
+
+func (p *sequencedMediaProvider) GetMediaList() []models.Media {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.calls++
+	out := append([]models.Media(nil), p.base...)
+	if p.calls >= 2 {
+		out = append(out, p.extra)
+	}
+	return out
+}
+
+func TestTrigger_DrainsPendingAfterRunningPass(t *testing.T) {
+	block := &blockingImageClient{
+		started: make(chan struct{}),
+		release: make(chan struct{}),
+		img:     testPoster(t, 300, 450),
+	}
+	cfg := &config.Config{Overlay: config.OverlayConfig{
+		Enabled: true, IntervalHours: 24, TextTemplate: "in {days} days",
+		FontSizePercent: 5, FontColor: "#ffffff", BackgroundColor: "rgba(0,0,0,0.75)",
+		PaddingPercent: 2, CornerRadiusPercent: 50,
+	}}
+	useTestConfig(t, cfg)
+	stateFile, err := storage.NewOverlayStateFile(t.TempDir())
+	require.NoError(t, err)
+
+	provider := &sequencedMediaProvider{
+		base:  []models.Media{scheduledMedia("a", time.Now().Add(72*time.Hour))},
+		extra: scheduledMedia("b", time.Now().Add(48*time.Hour)),
+	}
+	svc := NewService(cfg, stateFile, block, provider, t.TempDir())
+
+	svc.Trigger() // first pass blocks downloading "a"
+	<-block.started
+	svc.Trigger() // arrives mid-pass -> must be coalesced, not dropped
+	close(block.release)
+
+	require.Eventually(t, func() bool {
+		_, found := svc.state.Get("b")
+		return found
+	}, 3*time.Second, 20*time.Millisecond, "a trigger during a running pass must not be dropped")
+
+	assert.False(t, svc.hasPendingPass(), "the pending trigger must be drained")
+}
+
+func TestTrigger_NonBlockingWhilePassRunning(t *testing.T) {
+	block := &blockingImageClient{
+		started: make(chan struct{}),
+		release: make(chan struct{}),
+		img:     testPoster(t, 300, 450),
+	}
+	cfg := &config.Config{Overlay: config.OverlayConfig{Enabled: true, TextTemplate: "in {days} days"}}
+	useTestConfig(t, cfg)
+	stateFile, err := storage.NewOverlayStateFile(t.TempDir())
+	require.NoError(t, err)
+	provider := &fakeMediaProvider{}
+	provider.setMedia([]models.Media{scheduledMedia("a", time.Now().Add(72*time.Hour))})
+	svc := NewService(cfg, stateFile, block, provider, t.TempDir())
+
+	done := make(chan struct{})
+	go func() {
+		_, _ = svc.Run(context.Background())
+		close(done)
+	}()
+	<-block.started // a pass now holds the pass slot
+
+	// Trigger must return promptly even though a pass is running: it records a
+	// pending pass and returns instead of blocking.
+	returned := make(chan struct{})
+	go func() {
+		svc.Trigger()
+		close(returned)
+	}()
+	select {
+	case <-returned:
+	case <-time.After(time.Second):
+		t.Fatal("Trigger must not block while a pass is running")
+	}
+
+	close(block.release)
+	<-done
 }
 
 func TestRun_ReappliesWhenStyleChanges(t *testing.T) {
@@ -447,16 +577,21 @@ func TestStatus(t *testing.T) {
 }
 
 // blockingImageClient blocks inside GetItemImage until released, letting tests
-// hold a Run in progress deterministically.
+// hold a Run in progress deterministically. The first call signals started and
+// blocks; later calls return immediately, so a coalesced follow-up pass cannot
+// double-close the channel.
 type blockingImageClient struct {
-	started chan struct{}
-	release chan struct{}
-	img     []byte
+	started   chan struct{}
+	release   chan struct{}
+	startOnce sync.Once
+	img       []byte
 }
 
 func (b *blockingImageClient) GetItemImage(_ context.Context, _, _ string) ([]byte, string, error) {
-	close(b.started)
-	<-b.release
+	b.startOnce.Do(func() {
+		close(b.started)
+		<-b.release
+	})
 	return b.img, "image/jpeg", nil
 }
 

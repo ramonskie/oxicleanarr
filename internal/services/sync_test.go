@@ -768,6 +768,61 @@ func TestSyncEngine_FullSync_CacheClear(t *testing.T) {
 	})
 }
 
+func TestSyncEngine_FullSync_NotifiesOnComplete(t *testing.T) {
+	engine, _, _ := newTestSyncEngine(t)
+
+	var calls int32
+	engine.SetOnSyncComplete(func() { atomic.AddInt32(&calls, 1) })
+
+	_ = engine.FullSync(context.Background())
+
+	assert.Equal(t, int32(1), atomic.LoadInt32(&calls), "a full sync must notify observers once it completes")
+}
+
+func TestSyncEngine_FullSync_NotifiesOnPartialProviderError(t *testing.T) {
+	engine, _, _ := newTestSyncEngine(t)
+
+	// Force Radarr to fail so FullSync returns an error while other providers
+	// (none configured) still complete. Observers must still be notified: a
+	// failing provider does not empty the library.
+	engine.radarrClient = clients.NewRadarrClient(config.RadarrConfig{
+		BaseIntegrationConfig: config.BaseIntegrationConfig{
+			Enabled: true,
+			URL:     "http://127.0.0.1:1",
+			APIKey:  "test",
+			Timeout: "1s",
+		},
+	})
+
+	var calls int32
+	engine.SetOnSyncComplete(func() { atomic.AddInt32(&calls, 1) })
+
+	err := engine.FullSync(context.Background())
+	require.Error(t, err, "the failing provider must surface as a sync error")
+	assert.Equal(t, int32(1), atomic.LoadInt32(&calls), "observers must be notified even on a partial provider error")
+}
+
+func TestSyncEngine_OnSyncComplete_PanicIsRecovered(t *testing.T) {
+	engine, _, _ := newTestSyncEngine(t)
+	engine.SetOnSyncComplete(func() { panic("boom") })
+
+	require.NotPanics(t, func() {
+		_ = engine.FullSync(context.Background())
+	}, "a panicking callback must not fail the sync")
+}
+
+func TestSyncEngine_SetOnSyncComplete_NilClears(t *testing.T) {
+	engine, _, _ := newTestSyncEngine(t)
+
+	called := false
+	engine.SetOnSyncComplete(func() { called = true })
+	engine.SetOnSyncComplete(nil)
+
+	_ = engine.FullSync(context.Background())
+
+	assert.False(t, called, "a nil callback must clear the previous observer")
+}
+
 func TestSyncEngine_MediaMatching(t *testing.T) {
 	t.Run("matches movie by TMDB ID", func(t *testing.T) {
 		engine, _, _ := newTestSyncEngine(t)

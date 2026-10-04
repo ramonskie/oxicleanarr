@@ -48,6 +48,12 @@ type SyncEngine struct {
 	// syncRunMu serializes manual/scheduled sync invocations so a full and an
 	// incremental sync (or two fulls) can't overlap and race the media library.
 	syncRunMu sync.Mutex
+
+	// onSyncComplete is invoked after a full sync finishes. It is guarded by
+	// onSyncCompleteMu and must not block: callers such as the overlay scheduler
+	// use it to trigger a background pass once the media library is populated.
+	onSyncCompleteMu sync.RWMutex
+	onSyncComplete   func()
 }
 
 // NewSyncEngine creates a new sync engine
@@ -176,6 +182,35 @@ func (e *SyncEngine) Stop() {
 	}
 
 	log.Info().Msg("Sync engine stopped")
+}
+
+// SetOnSyncComplete registers a callback invoked after each full sync finishes.
+// The callback must not block: it runs synchronously on the sync goroutine while
+// the sync run lock is still held, and a panic is recovered so it cannot fail
+// the sync itself. Passing nil clears it.
+func (e *SyncEngine) SetOnSyncComplete(fn func()) {
+	e.onSyncCompleteMu.Lock()
+	e.onSyncComplete = fn
+	e.onSyncCompleteMu.Unlock()
+}
+
+// notifySyncComplete invokes the registered post-sync callback, if any. A
+// panicking callback is logged and swallowed so the sync result is unaffected.
+func (e *SyncEngine) notifySyncComplete() {
+	e.onSyncCompleteMu.RLock()
+	fn := e.onSyncComplete
+	e.onSyncCompleteMu.RUnlock()
+	if fn == nil {
+		return
+	}
+	func() {
+		defer func() {
+			if r := recover(); r != nil {
+				log.Error().Interface("panic", r).Msg("onSyncComplete callback panicked")
+			}
+		}()
+		fn()
+	}()
 }
 
 // RestartScheduler restarts the sync scheduler with updated intervals from config
@@ -453,6 +488,13 @@ func (e *SyncEngine) FullSync(ctx context.Context) error {
 		Bool("enable_deletion", e.config.App.EnableDeletion).
 		Dur("duration", duration).
 		Msg("Full sync completed")
+
+	// Let observers (e.g. the deletion-overlay scheduler) react to a populated
+	// library. Fired even on partial provider errors: a failing provider leaves
+	// its items in the media library (syncs update, they do not clear), so the
+	// set of scheduled items is still valid; the overlay pass defers with a
+	// recorded reason when the library is empty.
+	e.notifySyncComplete()
 
 	return errors.Join(syncErrs...)
 }

@@ -109,14 +109,10 @@ func main() {
 	syncEngine := services.NewSyncEngine(cfg, appCache, jobsFile, exclusionsFile, manualLeavingSoonFile, rulesEngine)
 	log.Info().Msg("Sync engine initialized")
 
-	// Start sync engine scheduler
-	if err := syncEngine.Start(); err != nil {
-		log.Fatal().Err(err).Msg("Failed to start sync engine")
-	}
-	log.Info().Msg("Sync engine started")
-
-	// Initialize the deletion overlay service (poster banners). The scheduler
-	// only runs when the overlay feature is enabled in config.
+	// Initialize the deletion overlay service (poster banners) before the sync
+	// engine starts, so the post-sync hook below is registered before the initial
+	// full sync is launched. The scheduler's own startup pass races that first
+	// sync and typically defers because the media library is still empty.
 	overlayService := overlay.NewService(
 		cfg,
 		overlayStateFile,
@@ -124,6 +120,19 @@ func main() {
 		syncEngine,
 		dataPath,
 	)
+
+	// Re-run the overlay after each full sync: banners are applied as soon as the
+	// library is populated, instead of waiting for the next scheduled tick (which
+	// frequent restarts reset before it ever fires).
+	syncEngine.SetOnSyncComplete(overlayService.Trigger)
+
+	// Start sync engine scheduler (launches the initial full sync).
+	if err := syncEngine.Start(); err != nil {
+		log.Fatal().Err(err).Msg("Failed to start sync engine")
+	}
+	log.Info().Msg("Sync engine started")
+
+	// Start the overlay scheduler (only runs when the feature is enabled).
 	if err := overlayService.Start(); err != nil {
 		log.Fatal().Err(err).Msg("Failed to start overlay service")
 	}
