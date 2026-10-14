@@ -19,11 +19,18 @@ import (
 
 // fakeImageClient records image calls; GetItemImage serves a fixed poster.
 type fakeImageClient struct {
-	mu      sync.Mutex
-	images  map[string][]byte // itemID -> original poster
-	uploads []fakeUpload
-	getErr  error
-	setErr  error
+	mu           sync.Mutex
+	images       map[string][]byte // itemID -> original poster
+	uploads      []fakeUpload      // successful SetItemImage calls
+	setAttempts  []string          // itemID per SetItemImage call, including failures
+	getErr       error
+	setErr       error
+	setErrByItem map[string]error // itemID -> error SetItemImage returns for it
+
+	// itemExistsByItem overrides ItemExists per item; unlisted items exist.
+	// itemExistsErr, when set, makes every ItemExists probe fail.
+	itemExistsByItem map[string]bool
+	itemExistsErr    error
 }
 
 type fakeUpload struct {
@@ -45,13 +52,55 @@ func (f *fakeImageClient) GetItemImage(_ context.Context, itemID, imageType stri
 }
 
 func (f *fakeImageClient) SetItemImage(_ context.Context, itemID, imageType string, data []byte, contentType string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	// Record every attempt, including failures, so a test can prove a missing
+	// item is not retried on a later pass.
+	f.setAttempts = append(f.setAttempts, itemID)
 	if f.setErr != nil {
 		return f.setErr
 	}
+	if err, ok := f.setErrByItem[itemID]; ok {
+		return err
+	}
+	stored := append([]byte(nil), data...)
+	f.uploads = append(f.uploads, fakeUpload{itemID: itemID, imageType: imageType, data: stored, contentType: contentType})
+	// Persist the uploaded bytes as the item's current poster so a later pass's
+	// drift comparison (GetItemImage vs the freshly rendered banner) sees what
+	// was actually written, mirroring the real server.
+	if f.images == nil {
+		f.images = make(map[string][]byte)
+	}
+	f.images[itemID] = stored
+	return nil
+}
+
+// ItemExists reports whether an item is still on the server. Items default to
+// existing (true, nil) so a test that does not opt in keeps the pre-404-confirm
+// behavior; set itemExistsByItem or itemExistsErr to exercise the drop guard.
+func (f *fakeImageClient) ItemExists(_ context.Context, itemID string) (bool, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	f.uploads = append(f.uploads, fakeUpload{itemID: itemID, imageType: imageType, data: append([]byte(nil), data...), contentType: contentType})
-	return nil
+	if f.itemExistsErr != nil {
+		return false, f.itemExistsErr
+	}
+	if exists, ok := f.itemExistsByItem[itemID]; ok {
+		return exists, nil
+	}
+	return true, nil
+}
+
+// setAttemptsFor counts SetItemImage attempts (successful or not) for an item.
+func (f *fakeImageClient) setAttemptsFor(itemID string) int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	n := 0
+	for _, id := range f.setAttempts {
+		if id == itemID {
+			n++
+		}
+	}
+	return n
 }
 
 func (f *fakeImageClient) uploadCount() int {
@@ -201,8 +250,9 @@ func TestRun_AppliesOverlays(t *testing.T) {
 		scheduledMedia("a", time.Now().Add(72*time.Hour)),
 		scheduledMedia("b", time.Now().Add(24*time.Hour)),
 	})
-	fake.images["a"] = testPoster(t, 300, 450)
-	fake.images["b"] = testPoster(t, 300, 450)
+	poster := testPoster(t, 300, 450)
+	fake.images["a"] = poster
+	fake.images["b"] = poster
 
 	res, err := svc.Run(context.Background())
 	require.NoError(t, err)
@@ -217,10 +267,12 @@ func TestRun_AppliesOverlays(t *testing.T) {
 	assert.Equal(t, 3, stA.DaysLeftShown)
 	assert.NotEmpty(t, stA.OriginalPath)
 
-	// The original poster must be backed up before any upload.
+	// The original poster must be backed up before any upload (the fake now
+	// replaces fake.images["a"] with the uploaded banner, so compare against
+	// the captured poster).
 	original := readFile(stA.OriginalPath)
 	require.NotNil(t, original)
-	assert.Equal(t, fake.images["a"], original)
+	assert.Equal(t, poster, original)
 }
 
 func TestRun_SkipsUnchanged(t *testing.T) {
@@ -239,6 +291,67 @@ func TestRun_SkipsUnchanged(t *testing.T) {
 	assert.Equal(t, 1, res.Skipped)
 	assert.Zero(t, res.Processed)
 	assert.Equal(t, 1, fake.uploadCount(), "unchanged banners must not re-upload")
+}
+
+func TestRun_ReuploadsOnDrift(t *testing.T) {
+	poster := testPoster(t, 300, 450)
+	svc, fake, _, _ := newTestService(t, true, []models.Media{
+		scheduledMedia("a", time.Now().Add(72*time.Hour)),
+	})
+	fake.images["a"] = poster
+
+	res, err := svc.Run(context.Background())
+	require.NoError(t, err)
+	assert.Equal(t, 1, res.Processed)
+	assert.Equal(t, 1, fake.uploadCount())
+
+	// An external writer (or an image replace-all refresh) reverts the poster to
+	// the original while our state still claims the banner is applied. DaysLeft
+	// and StyleHash are unchanged, so only the byte comparison can detect it.
+	fake.images["a"] = poster
+
+	res, err = svc.Run(context.Background())
+	require.NoError(t, err)
+	assert.Equal(t, 1, res.Processed, "a reverted banner must be redrawn even with unchanged day count/style")
+	assert.Zero(t, res.Skipped)
+	assert.Equal(t, 2, fake.uploadCount(), "drift must trigger a re-upload")
+
+	// Once repaired, the banner matches again and the next pass skips.
+	res, err = svc.Run(context.Background())
+	require.NoError(t, err)
+	assert.Equal(t, 1, res.Skipped)
+	assert.Zero(t, res.Processed)
+	assert.Equal(t, 2, fake.uploadCount())
+}
+
+func TestRun_ForceBypassesSkip(t *testing.T) {
+	svc, fake, _, _ := newTestService(t, true, []models.Media{
+		scheduledMedia("a", time.Now().Add(72*time.Hour)),
+	})
+	fake.images["a"] = testPoster(t, 300, 450)
+
+	res, err := svc.Run(context.Background())
+	require.NoError(t, err)
+	assert.Equal(t, 1, res.Processed)
+	assert.Equal(t, 1, fake.uploadCount())
+
+	// Non-forced re-run: the banner is current -> skip, no upload.
+	res, err = svc.Run(context.Background())
+	require.NoError(t, err)
+	assert.Equal(t, 1, res.Skipped)
+	assert.Equal(t, 1, fake.uploadCount())
+
+	// Forced re-run: bypasses the drift comparison and always re-uploads.
+	res, err = svc.RunForce(context.Background(), true)
+	require.NoError(t, err)
+	assert.Equal(t, 1, res.Processed)
+	assert.Equal(t, 2, fake.uploadCount(), "force must re-upload even when the banner is current")
+
+	// force=false behaves exactly like Run.
+	res, err = svc.RunForce(context.Background(), false)
+	require.NoError(t, err)
+	assert.Equal(t, 1, res.Skipped)
+	assert.Equal(t, 2, fake.uploadCount())
 }
 
 func TestRun_UpdatesWhenDaysChange(t *testing.T) {
@@ -292,6 +405,348 @@ func TestRun_RevertsStale(t *testing.T) {
 
 	_, found := svc.state.Get("a")
 	assert.False(t, found)
+}
+
+// TestRun_MissingItemClearsState covers the P4 durability rule: when a tracked
+// item is deleted from Jellyfin, restoring its banner returns clients.ErrItemNotFound.
+// The pass must drop the item's overlay state and its saved original (so no
+// orphan backup lingers), count it as reverted rather than an error, and a
+// subsequent pass must perform no further work for it — no perpetual 404 retry.
+func TestRun_MissingItemClearsState(t *testing.T) {
+	svc, fake, provider, _ := newTestService(t, true, []models.Media{
+		scheduledMedia("a", time.Now().Add(72*time.Hour)),
+		scheduledMedia("b", time.Now().Add(72*time.Hour)),
+	})
+	poster := testPoster(t, 300, 450)
+	fake.images["a"] = poster
+	fake.images["b"] = poster
+
+	// Seed overlay state + backups for both items with a normal pass.
+	res, err := svc.Run(context.Background())
+	require.NoError(t, err)
+	assert.Equal(t, 2, res.Processed)
+	assert.Zero(t, res.Errors)
+
+	stA, found := svc.state.Get("a")
+	require.True(t, found)
+	backupA := stA.OriginalPath
+	_, statErr := os.Stat(backupA)
+	require.NoError(t, statErr, "the applied banner must have a saved original backup")
+
+	// "a" is deleted from Jellyfin: any upload to it now 404s, and it leaves the
+	// scheduled set, so the pass reverts it and the restore upload hits the
+	// typed 404 rather than failing forever. Deletion is confirmed through the
+	// realistic path (ItemExists=false), not assumed from the bare 404. "b"
+	// stays scheduled and unchanged.
+	fake.setErrByItem = map[string]error{"a": clients.ErrItemNotFound}
+	fake.itemExistsByItem = map[string]bool{"a": false}
+	provider.setMedia([]models.Media{
+		scheduledMedia("b", time.Now().Add(72*time.Hour)),
+		{ID: "media-a", Type: models.MediaTypeMovie, Title: "Movie a", JellyfinID: "a"},
+	})
+
+	res, err = svc.Run(context.Background())
+	require.NoError(t, err)
+	assert.Equal(t, 1, res.Reverted, "the item removed at source is counted as reverted, not errored")
+	assert.Zero(t, res.Errors, "a 404 on revert must not be counted as a failure")
+
+	_, found = svc.state.Get("a")
+	assert.False(t, found, "overlay state for the removed item must be dropped")
+	_, statErr = os.Stat(backupA)
+	assert.True(t, os.IsNotExist(statErr), "the removed item's backup must be deleted")
+
+	_, found = svc.state.Get("b")
+	assert.True(t, found, "the surviving scheduled item keeps its state")
+
+	// A second pass must not retry the missing item: its state is gone, no new
+	// upload attempt is made, and it is never counted again.
+	attemptsAfterFirst := fake.setAttemptsFor("a")
+	uploadsAfterFirst := fake.uploadCount()
+
+	res, err = svc.Run(context.Background())
+	require.NoError(t, err)
+	assert.Zero(t, res.Reverted)
+	assert.Zero(t, res.Errors)
+	assert.Equal(t, attemptsAfterFirst, fake.setAttemptsFor("a"), "a deleted item must not be retried")
+	assert.Equal(t, uploadsAfterFirst, fake.uploadCount(), "a deleted item must not trigger further uploads")
+}
+
+// TestRun_MissingItemStillScheduledDropsState covers the apply path for a
+// tracked item that disappears while it is STILL scheduled: the drift guard
+// detects the poster changed, the re-upload 404s, and ItemExists confirms the
+// item is gone, so state+backup are dropped and the pass counts a skip with no
+// error rather than wedging forever on a 404.
+func TestRun_MissingItemStillScheduledDropsState(t *testing.T) {
+	svc, fake, _, _ := newTestService(t, true, []models.Media{
+		scheduledMedia("a", time.Now().Add(72*time.Hour)),
+	})
+	poster := testPoster(t, 300, 450)
+	fake.images["a"] = poster
+
+	res, err := svc.Run(context.Background())
+	require.NoError(t, err)
+	require.Equal(t, 1, res.Processed)
+
+	stA, found := svc.state.Get("a")
+	require.True(t, found)
+	backupA := stA.OriginalPath
+	_, statErr := os.Stat(backupA)
+	require.NoError(t, statErr)
+
+	// The item is deleted server-side but is still in the scheduled set. Force
+	// the upload path (the poster drifted back to the original), make the upload
+	// 404, and confirm deletion via ItemExists=false.
+	fake.setErrByItem = map[string]error{"a": clients.ErrItemNotFound}
+	fake.itemExistsByItem = map[string]bool{"a": false}
+	fake.images["a"] = poster // drift from the applied banner -> re-upload
+
+	res, err = svc.Run(context.Background())
+	require.NoError(t, err)
+	assert.Zero(t, res.Processed)
+	assert.Zero(t, res.Errors, "a confirmed-removed item must not be counted as an error")
+	assert.Equal(t, 1, res.Skipped)
+
+	_, found = svc.state.Get("a")
+	assert.False(t, found, "state for the confirmed-removed item must be dropped")
+	_, statErr = os.Stat(backupA)
+	assert.True(t, os.IsNotExist(statErr), "backup for the confirmed-removed item must be deleted")
+}
+
+// TestRun_ItemNotFoundNotConfirmedKeepsState covers the safety guard: a 404 from
+// SetItemImage is NOT enough to drop state+backup. When ItemExists reports the
+// item still exists (or the probe errors), the pass must keep both and surface a
+// normal error to retry, so a misconfigured baseURL/proxy cannot destroy the
+// only recovery artifact.
+func TestRun_ItemNotFoundNotConfirmedKeepsState(t *testing.T) {
+	run := func(t *testing.T, mutate func(*fakeImageClient)) {
+		t.Helper()
+		svc, fake, _, _ := newTestService(t, true, []models.Media{
+			scheduledMedia("a", time.Now().Add(72*time.Hour)),
+		})
+		poster := testPoster(t, 300, 450)
+		fake.images["a"] = poster
+
+		res, err := svc.Run(context.Background())
+		require.NoError(t, err)
+		require.Equal(t, 1, res.Processed)
+
+		stA, found := svc.state.Get("a")
+		require.True(t, found)
+		backupA := stA.OriginalPath
+
+		fake.setErrByItem = map[string]error{"a": clients.ErrItemNotFound}
+		fake.images["a"] = poster // drift -> upload path
+		mutate(fake)
+
+		res, err = svc.Run(context.Background())
+		require.NoError(t, err)
+		assert.Equal(t, 1, res.Errors, "an unconfirmed 404 must be a normal retryable error")
+		assert.Zero(t, res.Processed)
+
+		_, found = svc.state.Get("a")
+		assert.True(t, found, "state must be kept when removal is not confirmed")
+		_, statErr := os.Stat(backupA)
+		assert.NoError(t, statErr, "backup must be kept when removal is not confirmed")
+	}
+
+	t.Run("item still exists", func(t *testing.T) {
+		run(t, func(f *fakeImageClient) { f.itemExistsByItem = map[string]bool{"a": true} })
+	})
+
+	t.Run("confirmation probe fails", func(t *testing.T) {
+		run(t, func(f *fakeImageClient) { f.itemExistsErr = errors.New("probe unavailable") })
+	})
+}
+
+// TestRun_BackupLostDropsStateNoRebaseline covers the durability guard: when
+// overlay state exists but its saved original is gone, the pass must NOT adopt
+// the server's current Primary as a new "original" (it may already be the
+// banner). It drops the state, uploads nothing, and counts a skip, not an error.
+func TestRun_BackupLostDropsStateNoRebaseline(t *testing.T) {
+	svc, fake, _, _ := newTestService(t, true, []models.Media{
+		scheduledMedia("a", time.Now().Add(72*time.Hour)),
+	})
+	poster := testPoster(t, 300, 450)
+	fake.images["a"] = poster
+
+	res, err := svc.Run(context.Background())
+	require.NoError(t, err)
+	require.Equal(t, 1, res.Processed)
+	require.Equal(t, 1, fake.uploadCount())
+
+	stA, found := svc.state.Get("a")
+	require.True(t, found)
+	backupA := stA.OriginalPath
+	require.NoError(t, os.Remove(backupA), "simulate a lost backup file")
+
+	// The server currently serves the applied banner (fake.images["a"] is the
+	// uploaded bytes). Re-baselining would permanently record it as the original.
+	res, err = svc.Run(context.Background())
+	require.NoError(t, err)
+	assert.Zero(t, res.Processed)
+	assert.Zero(t, res.Errors, "a lost backup is a skip, not an error")
+	assert.Equal(t, 1, res.Skipped)
+	assert.Equal(t, 1, fake.uploadCount(), "a lost backup must not trigger a re-baselined upload")
+
+	_, found = svc.state.Get("a")
+	assert.False(t, found, "state for an un-revertable item must be dropped")
+	_, statErr := os.Stat(backupA)
+	assert.True(t, os.IsNotExist(statErr), "no re-baselined backup may be written")
+}
+
+// TestRun_DriftPosterGoneDropsState covers the drift-guard 404: while overlay
+// state exists, the verify GET returns ErrImageNotFound (the poster/item is
+// gone), so state+backup are dropped and the item is skipped rather than left
+// as a state entry that can never revert.
+func TestRun_DriftPosterGoneDropsState(t *testing.T) {
+	svc, fake, _, _ := newTestService(t, true, []models.Media{
+		scheduledMedia("a", time.Now().Add(72*time.Hour)),
+	})
+	fake.images["a"] = testPoster(t, 300, 450)
+
+	res, err := svc.Run(context.Background())
+	require.NoError(t, err)
+	require.Equal(t, 1, res.Processed)
+
+	stA, found := svc.state.Get("a")
+	require.True(t, found)
+	backupA := stA.OriginalPath
+
+	// The poster vanishes server-side; the drift verify GET 404s while our
+	// backup is still present (so this is not the backup-lost path). ItemExists
+	// confirms the item itself is gone, so the drop is justified.
+	delete(fake.images, "a")
+	fake.itemExistsByItem = map[string]bool{"a": false}
+
+	res, err = svc.Run(context.Background())
+	require.NoError(t, err)
+	assert.Zero(t, res.Processed)
+	assert.Zero(t, res.Errors)
+	assert.Equal(t, 1, res.Skipped)
+
+	_, found = svc.state.Get("a")
+	assert.False(t, found, "state must be dropped when the poster is gone")
+	_, statErr := os.Stat(backupA)
+	assert.True(t, os.IsNotExist(statErr), "backup must be dropped when the poster is gone")
+}
+
+// TestRun_DriftPosterGoneNotConfirmedKeepsState is the safety guard on the
+// drift-guard 404: a verify GET returning ErrImageNotFound is NOT enough to drop
+// state+backup. When ItemExists reports the item still exists (it merely lacks a
+// Primary) the banner is re-uploaded; when the probe itself errors both are kept
+// and the pass surfaces a retryable error. A misconfigured baseURL/proxy that
+// 404s every request must not destroy the only recovery artifact.
+func TestRun_DriftPosterGoneNotConfirmedKeepsState(t *testing.T) {
+	t.Run("item still exists re-uploads banner", func(t *testing.T) {
+		svc, fake, _, _ := newTestService(t, true, []models.Media{
+			scheduledMedia("a", time.Now().Add(72*time.Hour)),
+		})
+		fake.images["a"] = testPoster(t, 300, 450)
+
+		res, err := svc.Run(context.Background())
+		require.NoError(t, err)
+		require.Equal(t, 1, res.Processed)
+
+		stA, found := svc.state.Get("a")
+		require.True(t, found)
+		backupA := stA.OriginalPath
+		uploadsBefore := fake.uploadCount()
+
+		// The server's Primary vanishes so the drift verify GET 404s, but the
+		// item itself still exists: re-upload instead of dropping.
+		delete(fake.images, "a")
+
+		res, err = svc.Run(context.Background())
+		require.NoError(t, err)
+		assert.Equal(t, 1, res.Processed, "the banner is re-uploaded, not skipped")
+		assert.Zero(t, res.Errors)
+		assert.Equal(t, uploadsBefore+1, fake.uploadCount(), "the banner must be re-uploaded")
+
+		_, found = svc.state.Get("a")
+		assert.True(t, found, "state must be kept when the item still exists")
+		_, statErr := os.Stat(backupA)
+		assert.NoError(t, statErr, "backup must be kept when the item still exists")
+	})
+
+	t.Run("confirmation probe fails keeps state", func(t *testing.T) {
+		svc, fake, _, _ := newTestService(t, true, []models.Media{
+			scheduledMedia("a", time.Now().Add(72*time.Hour)),
+		})
+		fake.images["a"] = testPoster(t, 300, 450)
+
+		res, err := svc.Run(context.Background())
+		require.NoError(t, err)
+		require.Equal(t, 1, res.Processed)
+
+		stA, found := svc.state.Get("a")
+		require.True(t, found)
+		backupA := stA.OriginalPath
+		uploadsBefore := fake.uploadCount()
+
+		// Drift verify GET 404s and the existence probe fails: keep state+backup
+		// and report a retryable error, never a drop.
+		delete(fake.images, "a")
+		fake.itemExistsErr = errors.New("probe unavailable")
+
+		res, err = svc.Run(context.Background())
+		require.NoError(t, err)
+		assert.Equal(t, 1, res.Errors, "an unconfirmed drift 404 must be a retryable error")
+		assert.Zero(t, res.Processed)
+		assert.Equal(t, uploadsBefore, fake.uploadCount(), "an unconfirmed 404 must not re-upload")
+
+		_, found = svc.state.Get("a")
+		assert.True(t, found, "state must be kept when removal is not confirmed")
+		_, statErr := os.Stat(backupA)
+		assert.NoError(t, statErr, "backup must be kept when removal is not confirmed")
+	})
+}
+
+// TestRun_RevertItemNotFoundNotConfirmedKeepsState is the revert-side mirror of
+// the upload guard: a restore 404 that ItemExists cannot confirm must keep
+// state+backup and retry, not destroy them.
+func TestRun_RevertItemNotFoundNotConfirmedKeepsState(t *testing.T) {
+	run := func(t *testing.T, mutate func(*fakeImageClient)) {
+		t.Helper()
+		svc, fake, provider, _ := newTestService(t, true, []models.Media{
+			scheduledMedia("a", time.Now().Add(72*time.Hour)),
+		})
+		fake.images["a"] = testPoster(t, 300, 450)
+
+		res, err := svc.Run(context.Background())
+		require.NoError(t, err)
+		require.Equal(t, 1, res.Processed)
+
+		stA, found := svc.state.Get("a")
+		require.True(t, found)
+		backupA := stA.OriginalPath
+
+		// The item leaves the scheduled set -> the revert path runs. Its restore
+		// upload 404s, but removal is not confirmed. (The library stays
+		// non-empty so the pass is not deferred as an unpopulated library.)
+		provider.setMedia([]models.Media{
+			{ID: "media-a", Type: models.MediaTypeMovie, Title: "Movie a", JellyfinID: "a"},
+		})
+		fake.setErrByItem = map[string]error{"a": clients.ErrItemNotFound}
+		mutate(fake)
+
+		res, err = svc.Run(context.Background())
+		require.NoError(t, err)
+		assert.Equal(t, 1, res.Errors, "an unconfirmed restore 404 must be a retryable error")
+		assert.Zero(t, res.Reverted)
+
+		_, found = svc.state.Get("a")
+		assert.True(t, found, "state must be kept when removal is not confirmed")
+		_, statErr := os.Stat(backupA)
+		assert.NoError(t, statErr, "backup must be kept when removal is not confirmed")
+	}
+
+	t.Run("item still exists", func(t *testing.T) {
+		run(t, func(f *fakeImageClient) { f.itemExistsByItem = map[string]bool{"a": true} })
+	})
+
+	t.Run("confirmation probe fails", func(t *testing.T) {
+		run(t, func(f *fakeImageClient) { f.itemExistsErr = errors.New("probe unavailable") })
+	})
 }
 
 func TestRun_EmptyLibraryDefersPass(t *testing.T) {
@@ -519,7 +974,11 @@ func TestStyleHash(t *testing.T) {
 	}
 }
 
-func TestRun_UploadErrorKeepsState(t *testing.T) {
+// TestRun_UploadErrorDoesNotRecordState covers a first-time apply whose upload
+// fails: the item had no prior overlay state, so a failed upload must leave none
+// recorded. (The "prior state survives a failed re-upload" case is covered
+// separately by TestRun_UploadErrorKeepsPriorState.)
+func TestRun_UploadErrorDoesNotRecordState(t *testing.T) {
 	svc, fake, _, _ := newTestService(t, true, []models.Media{
 		scheduledMedia("a", time.Now().Add(72*time.Hour)),
 	})
@@ -533,6 +992,81 @@ func TestRun_UploadErrorKeepsState(t *testing.T) {
 
 	_, found := svc.state.Get("a")
 	assert.False(t, found, "failed upload must not record state")
+}
+
+// TestRun_UploadErrorKeepsPriorState covers a re-upload that fails with a
+// non-404 error for an item that already carries overlay state: the prior state
+// and its saved original must both survive so a later pass can retry, and the
+// failed attempt must not be counted as an upload.
+func TestRun_UploadErrorKeepsPriorState(t *testing.T) {
+	svc, fake, _, _ := newTestService(t, true, []models.Media{
+		scheduledMedia("a", time.Now().Add(72*time.Hour)),
+	})
+	poster := testPoster(t, 300, 450)
+	fake.images["a"] = poster
+
+	// Seed overlay state + backup with a normal first pass.
+	res, err := svc.Run(context.Background())
+	require.NoError(t, err)
+	require.Equal(t, 1, res.Processed)
+
+	stA, found := svc.state.Get("a")
+	require.True(t, found)
+	backupA := stA.OriginalPath
+	uploadsBefore := fake.uploadCount()
+
+	// The server's poster drifts back to the original, so the drift guard
+	// re-applies; the re-upload then fails with a non-404 error.
+	fake.images["a"] = poster
+	fake.setErr = errors.New("jellyfin refused")
+
+	res, err = svc.Run(context.Background())
+	require.NoError(t, err)
+	assert.Zero(t, res.Processed)
+	assert.Equal(t, 1, res.Errors)
+	assert.Equal(t, uploadsBefore, fake.uploadCount(), "a failed re-upload must not record an upload")
+
+	_, found = svc.state.Get("a")
+	assert.True(t, found, "a failed re-upload must keep prior state")
+	_, statErr := os.Stat(backupA)
+	assert.NoError(t, statErr, "a failed re-upload must keep the prior backup")
+}
+
+// TestRun_DriftVerifyErrorKeepsState proves a non-404 error from the drift
+// guard's "verify current poster" GET (not the initial download) is counted as
+// an error and keeps both the item's state and its saved original: a transient
+// verify failure must not drop the only recovery artifact nor re-upload blindly.
+func TestRun_DriftVerifyErrorKeepsState(t *testing.T) {
+	svc, fake, _, _ := newTestService(t, true, []models.Media{
+		scheduledMedia("a", time.Now().Add(72*time.Hour)),
+	})
+	fake.images["a"] = testPoster(t, 300, 450)
+
+	// Seed overlay state + backup with a normal first pass.
+	res, err := svc.Run(context.Background())
+	require.NoError(t, err)
+	require.Equal(t, 1, res.Processed)
+
+	stA, found := svc.state.Get("a")
+	require.True(t, found)
+	backupA := stA.OriginalPath
+	uploadsBefore := fake.uploadCount()
+
+	// Once state exists the download path is skipped, so the only GetItemImage
+	// call is the drift guard's verify GET. A non-404 error there must not be
+	// mistaken for a reverted or missing poster.
+	fake.getErr = errors.New("verify unavailable")
+
+	res, err = svc.Run(context.Background())
+	require.NoError(t, err)
+	assert.Zero(t, res.Processed)
+	assert.Equal(t, 1, res.Errors, "a non-404 drift verify error must be a retryable error")
+	assert.Equal(t, uploadsBefore, fake.uploadCount(), "a failed verify must not re-upload")
+
+	_, found = svc.state.Get("a")
+	assert.True(t, found, "state must be kept when the drift verify fails")
+	_, statErr := os.Stat(backupA)
+	assert.NoError(t, statErr, "backup must be kept when the drift verify fails")
 }
 
 func TestReset(t *testing.T) {
@@ -597,6 +1131,12 @@ func (b *blockingImageClient) GetItemImage(_ context.Context, _, _ string) ([]by
 
 func (b *blockingImageClient) SetItemImage(_ context.Context, _, _ string, _ []byte, _ string) error {
 	return nil
+}
+
+// ItemExists satisfies ImageClient; the blocking fake only exercises the pass
+// serialization path, which never reaches the 404 drop guard.
+func (b *blockingImageClient) ItemExists(_ context.Context, _ string) (bool, error) {
+	return true, nil
 }
 
 func TestRun_RejectsConcurrentRun(t *testing.T) {

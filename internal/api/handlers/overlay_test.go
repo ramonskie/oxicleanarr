@@ -36,11 +36,25 @@ func (c *overlayTestClient) GetItemImage(_ context.Context, itemID, _ string) ([
 	return img, "image/jpeg", nil
 }
 
-func (c *overlayTestClient) SetItemImage(_ context.Context, _, _ string, _ []byte, _ string) error {
+func (c *overlayTestClient) SetItemImage(_ context.Context, itemID, _ string, data []byte, _ string) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.uploads++
+	// Persist the uploaded bytes as the item's current poster so a later pass's
+	// drift comparison (GetItemImage vs the freshly rendered banner) sees what
+	// was actually written, mirroring the real server. This is what lets a forced
+	// pass re-upload while a normal pass skips a banner that is already current.
+	if c.images == nil {
+		c.images = make(map[string][]byte)
+	}
+	c.images[itemID] = append([]byte(nil), data...)
 	return nil
+}
+
+// ItemExists satisfies overlay.ImageClient. Handler tests never exercise the
+// 404 drop path, so every item is reported as existing.
+func (c *overlayTestClient) ItemExists(_ context.Context, _ string) (bool, error) {
+	return true, nil
 }
 
 // overlayTestProvider implements overlay.MediaProvider for handler tests.
@@ -156,6 +170,45 @@ func TestOverlayHandler_RunApplies(t *testing.T) {
 	assert.Equal(t, 1, res.Processed)
 	assert.Zero(t, res.Errors)
 	assert.Equal(t, 1, client.uploads)
+}
+
+func TestOverlayHandler_RunForce(t *testing.T) {
+	h, client := newTestOverlayHandler(t, true, []models.Media{
+		overlayScheduledItem("jf-1", time.Now().Add(72*time.Hour)),
+	})
+	client.images["jf-1"] = overlayTestPoster(t)
+
+	run := func(query string) overlay.Result {
+		t.Helper()
+		w := httptest.NewRecorder()
+		h.Run(w, httptest.NewRequest(http.MethodPost, "/api/overlay/run"+query, nil))
+		require.Equal(t, http.StatusOK, w.Code)
+		var res overlay.Result
+		require.NoError(t, json.Unmarshal(w.Body.Bytes(), &res))
+		return res
+	}
+
+	// First pass applies the banner.
+	res := run("")
+	assert.Equal(t, 1, res.Processed)
+	assert.Equal(t, 1, client.uploads)
+
+	// A normal re-run leaves a banner that is already current untouched, exactly
+	// as before: the handler still takes the non-force path.
+	res = run("?force=false")
+	assert.Zero(t, res.Processed)
+	assert.Equal(t, 1, res.Skipped)
+	assert.Equal(t, 1, client.uploads)
+
+	// force=true bypasses the drift comparison and re-uploads the current banner.
+	res = run("?force=true")
+	assert.Equal(t, 1, res.Processed)
+	assert.Equal(t, 2, client.uploads)
+
+	// force=1 is accepted leniently too.
+	res = run("?force=1")
+	assert.Equal(t, 1, res.Processed)
+	assert.Equal(t, 3, client.uploads)
 }
 
 func TestOverlayHandler_Reset(t *testing.T) {

@@ -2412,3 +2412,389 @@ func TestAnalyzeJellyfinMatch_RuntimeTieBreak(t *testing.T) {
 	assert.Contains(t, evidence, "file 87m", "file runtime from mediaInfo must be wired in")
 	assert.Contains(t, evidence, "5m", "Jellyfin RunTimeTicks must convert to minutes")
 }
+
+// --- Leaving-Soon duplicate exclusion ---
+
+// Leaving-Soon matching fixture ids. In each pair the symlink copy id sorts
+// before the main item id, so the main item can only win because the copy is
+// excluded: a plain lowest-id tie-break would otherwise select the copy.
+const (
+	lsMovieMainID = "jf-movie-main"
+	lsMovieCopyID = "jf-movie-copy"
+	lsShowMainID  = "jf-show-main"
+	lsShowCopyID  = "jf-show-copy"
+)
+
+// leavingSoonMovieItems returns the main-library movie and the Leaving-Soon
+// plugin's symlink copy for the same Tmdb id.
+func leavingSoonMovieItems() (main, copyItem clients.JellyfinItem) {
+	return clients.JellyfinItem{
+			ID: lsMovieMainID, Name: "Anaconda", Type: "Movie",
+			Path:        "/movies/Anaconda (1997)/Anaconda.1997.mkv",
+			ProviderIds: map[string]string{"Tmdb": "178"},
+		}, clients.JellyfinItem{
+			ID: lsMovieCopyID, Name: "Anaconda", Type: "Movie",
+			Path:        "/config/leaving-soon/Anaconda (1997)/Anaconda.1997.mkv",
+			ProviderIds: map[string]string{"Tmdb": "178"},
+		}
+}
+
+// leavingSoonMovieMedia returns the Radarr movie the movie fixture is matched against.
+func leavingSoonMovieMedia() models.Media {
+	return models.Media{
+		ID: "radarr-1", Type: models.MediaTypeMovie, Title: "Anaconda",
+		TMDBID: 178, FilePath: "/movies/Anaconda (1997)",
+	}
+}
+
+// leavingSoonShowItems returns the main-library show and the Leaving-Soon
+// plugin's symlink copy for the same Tvdb id.
+func leavingSoonShowItems() (main, copyItem clients.JellyfinItem) {
+	return clients.JellyfinItem{
+			ID: lsShowMainID, Name: "Dragon Ball Z", Type: "Series",
+			Path:        "/tv/Dragon Ball Z",
+			ProviderIds: map[string]string{"Tvdb": "12971"},
+		}, clients.JellyfinItem{
+			ID: lsShowCopyID, Name: "Dragon Ball Z", Type: "Series",
+			Path:        "/config/leaving-soon/Dragon Ball Z",
+			ProviderIds: map[string]string{"Tvdb": "12971"},
+		}
+}
+
+// leavingSoonShowMedia returns the Sonarr show the show fixture is matched against.
+func leavingSoonShowMedia() models.Media {
+	return models.Media{
+		ID: "sonarr-1", Type: models.MediaTypeTVShow, Title: "Dragon Ball Z",
+		TVDBID: 12971, FilePath: "/tv/Dragon Ball Z",
+	}
+}
+
+// jellyfinItemsJSON marshals items into the raw /Items response the Jellyfin
+// stub serves. Slice order is preserved so a caller can exercise a specific
+// Jellyfin response order.
+func jellyfinItemsJSON(t *testing.T, items []clients.JellyfinItem) string {
+	t.Helper()
+	b, err := json.Marshal(clients.JellyfinItemsResponse{Items: items})
+	require.NoError(t, err)
+	return string(b)
+}
+
+// runJellyfinSyncMatch seeds one media item, serves the given Jellyfin items per
+// IncludeItemTypes, runs a syncJellyfin pass, and returns the matched entry.
+func runJellyfinSyncMatch(
+	t *testing.T,
+	itemsByType map[string][]clients.JellyfinItem,
+	mediaID string,
+	media models.Media,
+) models.Media {
+	t.Helper()
+
+	raw := make(map[string]string, len(itemsByType))
+	for itemType, items := range itemsByType {
+		raw[itemType] = jellyfinItemsJSON(t, items)
+	}
+
+	engine := newJellyfinSyncEngine(t, raw)
+	engine.mediaLibrary[mediaID] = media
+	require.NoError(t, engine.syncJellyfin(context.Background()))
+	return engine.mediaLibrary[mediaID]
+}
+
+// TestSyncJellyfin_LeavingSoonCopyIsExcluded_Movie proves the deterministic,
+// library-aware matcher: when Jellyfin returns both the main-library movie and
+// the Leaving-Soon plugin's symlink copy (same Tmdb id), media.JellyfinID must
+// resolve to the MAIN item. The copy id sorts first, so a plain lowest-id
+// tie-break would pick the copy — exclusion is what makes this pass.
+func TestSyncJellyfin_LeavingSoonCopyIsExcluded_Movie(t *testing.T) {
+	mainItem, copyItem := leavingSoonMovieItems()
+
+	tests := []struct {
+		name  string
+		items []clients.JellyfinItem
+	}{
+		{name: "main library item first", items: []clients.JellyfinItem{mainItem, copyItem}},
+		{name: "Leaving-Soon copy first", items: []clients.JellyfinItem{copyItem, mainItem}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			movie := runJellyfinSyncMatch(t,
+				map[string][]clients.JellyfinItem{"Movie": []clients.JellyfinItem{tt.items[0], tt.items[1]}},
+				"radarr-1", leavingSoonMovieMedia())
+
+			assert.Equal(t, lsMovieMainID, movie.JellyfinID,
+				"the main-library item must win over its Leaving-Soon copy")
+			assert.NotEqual(t, lsMovieCopyID, movie.JellyfinID,
+				"media.JellyfinID must never resolve to a Leaving-Soon copy")
+			assert.Equal(t, "matched", movie.JellyfinMatchStatus)
+		})
+	}
+}
+
+// TestSyncJellyfin_LeavingSoonCopyIsExcluded_Show is the TV equivalent of the
+// movie test: a show and its Leaving-Soon symlink copy share a Tvdb id, and the
+// original main-library item must win.
+func TestSyncJellyfin_LeavingSoonCopyIsExcluded_Show(t *testing.T) {
+	mainItem, copyItem := leavingSoonShowItems()
+
+	tests := []struct {
+		name  string
+		items []clients.JellyfinItem
+	}{
+		{name: "main library item first", items: []clients.JellyfinItem{mainItem, copyItem}},
+		{name: "Leaving-Soon copy first", items: []clients.JellyfinItem{copyItem, mainItem}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			show := runJellyfinSyncMatch(t,
+				map[string][]clients.JellyfinItem{"Series": []clients.JellyfinItem{tt.items[0], tt.items[1]}},
+				"sonarr-1", leavingSoonShowMedia())
+
+			assert.Equal(t, lsShowMainID, show.JellyfinID,
+				"the main-library item must win over its Leaving-Soon copy")
+			assert.NotEqual(t, lsShowCopyID, show.JellyfinID,
+				"media.JellyfinID must never resolve to a Leaving-Soon copy")
+			assert.Equal(t, "matched", show.JellyfinMatchStatus)
+		})
+	}
+}
+
+// TestSyncJellyfin_LeavingSoonCopyIsExcluded_OrderIndependent proves the winner
+// is independent of Jellyfin's response order for both media types, and that a
+// duplicate pair with no Leaving-Soon marker still resolves deterministically
+// (lowest item id) instead of last-write-wins.
+func TestSyncJellyfin_LeavingSoonCopyIsExcluded_OrderIndependent(t *testing.T) {
+	t.Run("movie winner is stable across response order", func(t *testing.T) {
+		mainItem, copyItem := leavingSoonMovieItems()
+
+		forward := runJellyfinSyncMatch(t,
+			map[string][]clients.JellyfinItem{"Movie": []clients.JellyfinItem{mainItem, copyItem}},
+			"radarr-1", leavingSoonMovieMedia())
+		reversed := runJellyfinSyncMatch(t,
+			map[string][]clients.JellyfinItem{"Movie": []clients.JellyfinItem{copyItem, mainItem}},
+			"radarr-1", leavingSoonMovieMedia())
+
+		assert.Equal(t, lsMovieMainID, forward.JellyfinID)
+		assert.Equal(t, forward.JellyfinID, reversed.JellyfinID,
+			"the winner must not depend on Jellyfin's response order")
+	})
+
+	t.Run("show winner is stable across response order", func(t *testing.T) {
+		mainItem, copyItem := leavingSoonShowItems()
+
+		forward := runJellyfinSyncMatch(t,
+			map[string][]clients.JellyfinItem{"Series": []clients.JellyfinItem{mainItem, copyItem}},
+			"sonarr-1", leavingSoonShowMedia())
+		reversed := runJellyfinSyncMatch(t,
+			map[string][]clients.JellyfinItem{"Series": []clients.JellyfinItem{copyItem, mainItem}},
+			"sonarr-1", leavingSoonShowMedia())
+
+		assert.Equal(t, lsShowMainID, forward.JellyfinID)
+		assert.Equal(t, forward.JellyfinID, reversed.JellyfinID,
+			"the winner must not depend on Jellyfin's response order")
+	})
+
+	t.Run("duplicate without a Leaving-Soon marker resolves by lowest id", func(t *testing.T) {
+		// A Jellyfin duplicate with no plugin symlink path at all: the
+		// deterministic lowest-id tie-break must still pick the same winner in
+		// either response order instead of last-write-wins.
+		a := clients.JellyfinItem{
+			ID: "jf-dup-a", Name: "Twister", Type: "Movie",
+			Path:        "/movies/Twister (1996)/Twister.1996.a.mkv",
+			ProviderIds: map[string]string{"Tmdb": "664"},
+		}
+		b := clients.JellyfinItem{
+			ID: "jf-dup-b", Name: "Twister", Type: "Movie",
+			Path:        "/movies/Twister (1996)/Twister.1996.b.mkv",
+			ProviderIds: map[string]string{"Tmdb": "664"},
+		}
+		media := models.Media{
+			ID: "radarr-2", Type: models.MediaTypeMovie, Title: "Twister",
+			TMDBID: 664, FilePath: "/movies/Twister (1996)",
+		}
+
+		forward := runJellyfinSyncMatch(t,
+			map[string][]clients.JellyfinItem{"Movie": []clients.JellyfinItem{a, b}}, "radarr-2", media)
+		reversed := runJellyfinSyncMatch(t,
+			map[string][]clients.JellyfinItem{"Movie": []clients.JellyfinItem{b, a}}, "radarr-2", media)
+
+		assert.Equal(t, "jf-dup-a", forward.JellyfinID,
+			"the lowest item id must win a duplicate tie-break")
+		assert.Equal(t, forward.JellyfinID, reversed.JellyfinID,
+			"a duplicate tie-break must be response-order independent")
+	})
+}
+
+// --- Leaving-Soon classifier hardening + conflict-adjudication exclusion ---
+
+// TestIsLeavingSoonCopy_NonDefaultBasePath proves the classifier no longer
+// depends on the default base path: a copy under a different plugin root (e.g.
+// /data/leaving-soon) is still recognised, while ordinary media paths are not.
+// Normalization makes it robust to separators, case, and trailing slashes.
+func TestIsLeavingSoonCopy_NonDefaultBasePath(t *testing.T) {
+	tests := []struct {
+		name string
+		path string
+		want bool
+	}{
+		{name: "default base path", path: "/config/leaving-soon/Anaconda (1997)/Anaconda.1997.mkv", want: true},
+		{name: "non-default base path", path: "/data/leaving-soon/Anaconda (1997)/Anaconda.1997.mkv", want: true},
+		{name: "bare segment mid-path", path: "/mnt/media/leaving-soon/Dragon Ball Z", want: true},
+		{name: "case-insensitive segment", path: "/data/Leaving-Soon/Dragon Ball Z", want: true},
+		{name: "windows separators", path: `D:\data\leaving-soon\Anaconda.1997.mkv`, want: true},
+		{name: "trailing slash collapses", path: "/data/leaving-soon/Anaconda (1997)/", want: true},
+		{name: "main library path", path: "/movies/Anaconda (1997)/Anaconda.1997.mkv", want: false},
+		{name: "sibling segment is not a match", path: "/movies/leaving-sooners/Anaconda.1997.mkv", want: false},
+		{name: "empty path", path: "", want: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			item := &clients.JellyfinItem{ID: "x", Path: tt.path}
+			assert.Equal(t, tt.want, isLeavingSoonCopy(item))
+		})
+	}
+}
+
+// TestSyncJellyfin_LeavingSoonCopyIsExcluded_NonDefaultBasePath is the mirror of
+// the default-base-path movie test for a deployment whose plugin BasePath is
+// /data/leaving-soon: the copy must still lose to the original main item in
+// either Jellyfin response order.
+func TestSyncJellyfin_LeavingSoonCopyIsExcluded_NonDefaultBasePath(t *testing.T) {
+	mainItem, _ := leavingSoonMovieItems()
+	copyItem := clients.JellyfinItem{
+		ID: lsMovieCopyID, Name: "Anaconda", Type: "Movie",
+		Path:        "/data/leaving-soon/Anaconda (1997)/Anaconda.1997.mkv",
+		ProviderIds: map[string]string{"Tmdb": "178"},
+	}
+
+	tests := []struct {
+		name  string
+		items []clients.JellyfinItem
+	}{
+		{name: "main library item first", items: []clients.JellyfinItem{mainItem, copyItem}},
+		{name: "Leaving-Soon copy first", items: []clients.JellyfinItem{copyItem, mainItem}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			movie := runJellyfinSyncMatch(t,
+				map[string][]clients.JellyfinItem{"Movie": tt.items},
+				"radarr-1", leavingSoonMovieMedia())
+
+			assert.Equal(t, lsMovieMainID, movie.JellyfinID,
+				"a copy under a non-default base path must still lose to the main item")
+			assert.NotEqual(t, lsMovieCopyID, movie.JellyfinID,
+				"media.JellyfinID must never resolve to a Leaving-Soon copy")
+			assert.Equal(t, "matched", movie.JellyfinMatchStatus)
+		})
+	}
+}
+
+// TestResolveJellyfinItem_NeverSelectsLeavingSoonCopy proves the conflict
+// adjudication path applies the same exclusion as the main matcher. It uses a
+// non-default base path (/data/leaving-soon) so the test also covers the
+// hardened classifier.
+func TestResolveJellyfinItem_NeverSelectsLeavingSoonCopy(t *testing.T) {
+	mainItem, _ := leavingSoonMovieItems()
+	copyItem := clients.JellyfinItem{
+		ID: lsMovieCopyID, Name: "Anaconda", Type: "Movie",
+		Path:        "/data/leaving-soon/Anaconda (1997)/Anaconda.1997.mkv",
+		ProviderIds: map[string]string{"Tmdb": "178"},
+	}
+
+	t.Run("stale conflict id pointing at the copy resolves to the original", func(t *testing.T) {
+		engine := newJellyfinSyncEngine(t, map[string]string{
+			"Movie": jellyfinItemsJSON(t, []clients.JellyfinItem{copyItem, mainItem}),
+		})
+		media := leavingSoonMovieMedia()
+		media.JellyfinConflictID = lsMovieCopyID
+
+		item, err := engine.resolveJellyfinItem(context.Background(), media)
+		require.NoError(t, err)
+		require.NotNil(t, item, "the path bridge must still resolve the original")
+		assert.NotEqual(t, lsMovieCopyID, item.ID,
+			"conflict adjudication must never select a Leaving-Soon copy")
+		assert.Equal(t, lsMovieMainID, item.ID)
+	})
+
+	t.Run("arr path under the plugin root resolves to nothing, not the copy", func(t *testing.T) {
+		engine := newJellyfinSyncEngine(t, map[string]string{
+			"Movie": jellyfinItemsJSON(t, []clients.JellyfinItem{mainItem, copyItem}),
+		})
+		media := leavingSoonMovieMedia()
+		media.FilePath = "/data/leaving-soon/Anaconda (1997)"
+
+		item, err := engine.resolveJellyfinItem(context.Background(), media)
+		require.NoError(t, err)
+		assert.Nil(t, item,
+			"a copy path must never resolve to the Leaving-Soon copy")
+	})
+}
+
+// TestBuildJellyfinLookupIndex_CountsTitleTieBreak proves the title-map
+// tie-break is now counted: two main items sharing a title but carrying
+// different provider ids collide only on the title map.
+func TestBuildJellyfinLookupIndex_CountsTitleTieBreak(t *testing.T) {
+	a := clients.JellyfinItem{
+		ID: "jf-a", Name: "Twister", Type: "Movie",
+		Path: "/movies/Twister (1996)/Twister.a.mkv", ProviderIds: map[string]string{"Tmdb": "664"},
+	}
+	b := clients.JellyfinItem{
+		ID: "jf-b", Name: "Twister", Type: "Movie",
+		Path: "/movies/Twister (1996)/Twister.b.mkv", ProviderIds: map[string]string{"Tmdb": "665"},
+	}
+
+	idx := buildJellyfinLookupIndex([]clients.JellyfinItem{a, b}, "Tmdb")
+	assert.Equal(t, 1, idx.tieBreaks,
+		"one title collision must be counted when no provider id collides")
+	assert.NotNil(t, idx.byTitle["twister"])
+}
+
+// TestPreferJellyfinItem_DeterministicWithEqualIDs proves the tie-break is
+// stable when item ids are equal or empty: the normalized path is the secondary
+// key, so the winner does not depend on Jellyfin's response order.
+func TestPreferJellyfinItem_DeterministicWithEqualIDs(t *testing.T) {
+	makeItem := func(id, path string) clients.JellyfinItem {
+		return clients.JellyfinItem{
+			ID: id, Name: "Twister", Type: "Movie", Path: path,
+			ProviderIds: map[string]string{"Tmdb": "664"},
+		}
+	}
+
+	tests := []struct {
+		name     string
+		a, b     clients.JellyfinItem
+		wantPath string
+	}{
+		{
+			name:     "equal ids break on lowest normalized path",
+			a:        makeItem("same-id", "/movies/Twister (1996)/Twister.b.mkv"),
+			b:        makeItem("same-id", "/movies/Twister (1996)/Twister.a.mkv"),
+			wantPath: "/movies/Twister (1996)/Twister.a.mkv",
+		},
+		{
+			name:     "empty ids break on lowest normalized path",
+			a:        makeItem("", "/movies/Twister (1996)/Twister.z.mkv"),
+			b:        makeItem("", "/movies/Twister (1996)/Twister.a.mkv"),
+			wantPath: "/movies/Twister (1996)/Twister.a.mkv",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			forward := buildJellyfinLookupIndex([]clients.JellyfinItem{tt.a, tt.b}, "Tmdb")
+			reversed := buildJellyfinLookupIndex([]clients.JellyfinItem{tt.b, tt.a}, "Tmdb")
+
+			fw := forward.byProviderID["664"]
+			rv := reversed.byProviderID["664"]
+			require.NotNil(t, fw)
+			require.NotNil(t, rv)
+
+			assert.Equal(t, tt.wantPath, fw.Path, "lowest normalized path must win")
+			assert.Equal(t, fw.ID, rv.ID, "winner id must be response-order independent")
+			assert.Equal(t, fw.Path, rv.Path, "winner path must be response-order independent")
+		})
+	}
+}

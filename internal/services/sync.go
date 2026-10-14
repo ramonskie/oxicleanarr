@@ -695,6 +695,109 @@ func jellyfinParentPathKey(itemPath string) string {
 	return normalizeJellyfinPathKey(dir)
 }
 
+// leavingSoonBasePath is the virtual-folder base path managed by the
+// jellyfin-plugin-leaving-soon (its Configuration.PluginConfiguration.BasePath
+// default). Jellyfin indexes the plugin's symlink copies alongside the real
+// library entries, so any item whose Path lives under this base path is a copy,
+// never the canonical main-library item.
+const leavingSoonBasePath = "/config/leaving-soon"
+
+// leavingSoonSegment is the path segment that marks a Leaving-Soon virtual
+// folder regardless of where the plugin's BasePath is configured. The default
+// base path is only one possible root; a deployment may point the plugin at
+// another root (e.g. /data/leaving-soon), so matching the segment keeps copy
+// detection robust without hardcoding every possible root.
+const leavingSoonSegment = "leaving-soon"
+
+// pathUnderBase reports whether normalized path p is base itself or a
+// descendant of it. Comparison is segment-bounded so a sibling such as
+// "/config/leaving-soon-2" is not mistaken for a descendant of the base path.
+func pathUnderBase(p, base string) bool {
+	if p == "" || base == "" {
+		return false
+	}
+	return p == base || strings.HasPrefix(p, base+"/")
+}
+
+// hasLeavingSoonSegment reports whether any path segment of normalized p equals
+// "leaving-soon". The input is already lower-cased and separator-normalized by
+// normalizeJellyfinPathKey (which also collapses redundant separators and
+// strips trailing slashes), so a plain segment comparison is case-insensitive
+// and robust to backslashes, duplicate separators, and trailing slashes.
+func hasLeavingSoonSegment(normalizedPath string) bool {
+	for _, segment := range strings.Split(normalizedPath, "/") {
+		if segment == leavingSoonSegment {
+			return true
+		}
+	}
+	return false
+}
+
+// isLeavingSoonCopy reports whether a Jellyfin item is one of the Leaving-Soon
+// plugin's symlink copies rather than the original main-library item. It is the
+// single classifier shared by the movie and show matching paths.
+//
+// An item is a copy when its path lives under the plugin's default base path OR
+// any path segment equals "leaving-soon" (case-insensitive), so a deployment
+// that configures a different BasePath is still excluded. The items endpoint
+// backing the matcher (see clients.JellyfinClient.getItems) requests only
+// Path/DateCreated/ProviderIds/RunTimeTicks and no library name, so the optional
+// library-name signal ("* Leaving Soon") is not cheaply available and is
+// intentionally not consulted here.
+func isLeavingSoonCopy(item *clients.JellyfinItem) bool {
+	if item == nil {
+		return false
+	}
+	normalized := normalizeJellyfinPathKey(item.Path)
+	if normalized == "" {
+		return false
+	}
+	return pathUnderBase(normalized, normalizeJellyfinPathKey(leavingSoonBasePath)) ||
+		hasLeavingSoonSegment(normalized)
+}
+
+// mainLibraryItems returns the subset of items that are not Leaving-Soon
+// symlink copies, preserving input order. It is the shared filter that keeps a
+// copy out of every lookup path (provider-id, title and path), so the "no
+// Leaving-Soon path can win" invariant holds everywhere.
+func mainLibraryItems(items []clients.JellyfinItem) []clients.JellyfinItem {
+	main := make([]clients.JellyfinItem, 0, len(items))
+	for i := range items {
+		if isLeavingSoonCopy(&items[i]) {
+			continue
+		}
+		main = append(main, items[i])
+	}
+	return main
+}
+
+// preferJellyfinItem reports whether candidate should replace current as the
+// winner for a lookup key. It prefers a main-library item over a Leaving-Soon
+// copy, and otherwise breaks the tie with lessJellyfinItem so the winner is
+// identical on every run regardless of Jellyfin's response order.
+func preferJellyfinItem(current, candidate *clients.JellyfinItem) bool {
+	if candidate == nil {
+		return false
+	}
+	if current == nil {
+		return true
+	}
+	if currentCopy, candidateCopy := isLeavingSoonCopy(current), isLeavingSoonCopy(candidate); currentCopy != candidateCopy {
+		return !candidateCopy
+	}
+	return lessJellyfinItem(candidate, current)
+}
+
+// lessJellyfinItem orders two Jellyfin items for a deterministic tie-break: the
+// lowest item id first, then the normalized path as a stable secondary key so
+// equal or empty ids still resolve identically instead of first-seen winning.
+func lessJellyfinItem(a, b *clients.JellyfinItem) bool {
+	if a.ID != b.ID {
+		return a.ID < b.ID
+	}
+	return normalizeJellyfinPathKey(a.Path) < normalizeJellyfinPathKey(b.Path)
+}
+
 // buildJellyfinPathIndex maps normalized paths to the Jellyfin item at that
 // path. Both the item's full path and its parent directory are indexed: arr
 // clients report a media folder (Radarr movie path, Sonarr series path) while
@@ -709,7 +812,12 @@ func buildJellyfinPathIndex(items []clients.JellyfinItem) map[string]*clients.Je
 	exact := make(map[string]*clients.JellyfinItem, len(items))
 	for i := range items {
 		if key := normalizeJellyfinPathKey(items[i].Path); key != "" {
-			exact[key] = &items[i]
+			// preferJellyfinItem keeps a main-library item ahead of a Leaving-Soon
+			// copy and otherwise picks the lowest id, so a duplicate exact path is
+			// resolved deterministically instead of last-write-wins.
+			if preferJellyfinItem(exact[key], &items[i]) {
+				exact[key] = &items[i]
+			}
 		}
 	}
 
@@ -743,17 +851,137 @@ func buildJellyfinPathIndex(items []clients.JellyfinItem) map[string]*clients.Je
 
 // lookupJellyfinPath resolves a normalized path against items, giving an exact
 // item.Path match precedence over the parent-directory bridge, and returning nil
-// when neither resolves.
+// when neither resolves. Duplicate exact paths are resolved deterministically
+// via preferJellyfinItem (main library ahead of a Leaving-Soon copy, then the
+// stable tie-break key), so neither a copy nor the response order decides the
+// winner.
 func lookupJellyfinPath(items []clients.JellyfinItem, normalizedPath string) *clients.JellyfinItem {
 	if normalizedPath == "" {
 		return nil
 	}
+	var best *clients.JellyfinItem
 	for i := range items {
-		if normalizeJellyfinPathKey(items[i].Path) == normalizedPath {
-			return &items[i]
+		if normalizeJellyfinPathKey(items[i].Path) != normalizedPath {
+			continue
+		}
+		if preferJellyfinItem(best, &items[i]) {
+			best = &items[i]
 		}
 	}
+	if best != nil {
+		return best
+	}
 	return buildJellyfinPathIndex(items)[normalizedPath]
+}
+
+// jellyfinLookupIndex holds the three lookup maps used to resolve an OxiCleanarr
+// media item to its Jellyfin counterpart, plus the counts that explain how the
+// maps were built. It is produced by buildJellyfinLookupIndex.
+type jellyfinLookupIndex struct {
+	byProviderID        map[string]*clients.JellyfinItem
+	byTitle             map[string]*clients.JellyfinItem
+	byPath              map[string]*clients.JellyfinItem
+	leavingSoonExcluded int
+	tieBreaks           int
+}
+
+// buildJellyfinLookupIndex builds the provider-id, normalized-title and path
+// lookup maps for one Jellyfin item type. Movies and shows share it so both
+// exclude Leaving-Soon copies and resolve ties identically.
+//
+// Leaving-Soon copies (isLeavingSoonCopy) are dropped before any map is built,
+// so a symlink copy can never satisfy a lookup and media.JellyfinID always
+// resolves to the original main-library item. Among the remaining main-library
+// items a deterministic tie-break (lowest item id, see preferJellyfinItem)
+// makes the winner response-order independent. providerKey is the ProviderIds
+// key to index: "Tmdb" for movies, "Tvdb" for shows.
+func buildJellyfinLookupIndex(items []clients.JellyfinItem, providerKey string) jellyfinLookupIndex {
+	idx := jellyfinLookupIndex{
+		byProviderID: make(map[string]*clients.JellyfinItem, len(items)),
+		byTitle:      make(map[string]*clients.JellyfinItem, len(items)),
+	}
+
+	main := make([]clients.JellyfinItem, 0, len(items))
+	leavingSoonProviderIDs := make(map[string]struct{})
+	for i := range items {
+		if isLeavingSoonCopy(&items[i]) {
+			idx.leavingSoonExcluded++
+			if id := items[i].ProviderIds[providerKey]; id != "" {
+				leavingSoonProviderIDs[id] = struct{}{}
+			}
+			log.Debug().
+				Str("provider_key", providerKey).
+				Str("jellyfin_item_id", items[i].ID).
+				Str("jellyfin_path", items[i].Path).
+				Str("reason", "leaving_soon_excluded").
+				Msg("Excluded Leaving-Soon copy from Jellyfin lookup")
+			continue
+		}
+		main = append(main, items[i])
+	}
+
+	for i := range main {
+		item := &main[i]
+
+		if id := item.ProviderIds[providerKey]; id != "" {
+			current, seen := idx.byProviderID[id]
+			if !seen {
+				idx.byProviderID[id] = item
+			} else {
+				idx.tieBreaks++
+				winner, rejected := current, item
+				if preferJellyfinItem(current, item) {
+					winner, rejected = item, current
+				}
+				idx.byProviderID[id] = winner
+				log.Debug().
+					Str("provider_key", providerKey).
+					Str("provider_id", id).
+					Str("chosen_item_id", winner.ID).
+					Str("rejected_item_id", rejected.ID).
+					Str("reason", "tie_break").
+					Msg("Resolved duplicate Jellyfin provider id deterministically")
+			}
+		}
+
+		normalizedTitle := strings.ToLower(strings.TrimSpace(item.Name))
+		if current, seen := idx.byTitle[normalizedTitle]; !seen {
+			idx.byTitle[normalizedTitle] = item
+		} else {
+			// Mirror the provider-id tie-break: count it and log the choice so
+			// the title fallback is as observable as the provider-id path.
+			idx.tieBreaks++
+			winner, rejected := current, item
+			if preferJellyfinItem(current, item) {
+				winner, rejected = item, current
+			}
+			idx.byTitle[normalizedTitle] = winner
+			log.Debug().
+				Str("provider_key", providerKey).
+				Str("title", item.Name).
+				Str("chosen_item_id", winner.ID).
+				Str("rejected_item_id", rejected.ID).
+				Str("reason", "tie_break").
+				Msg("Resolved duplicate Jellyfin title deterministically")
+		}
+	}
+
+	idx.byPath = buildJellyfinPathIndex(main)
+
+	// Surface the original item that won even though an excluded copy carried the
+	// same provider id, so logs record the chosen id and why the copy lost.
+	for id := range leavingSoonProviderIDs {
+		if chosen, ok := idx.byProviderID[id]; ok {
+			log.Debug().
+				Str("provider_key", providerKey).
+				Str("provider_id", id).
+				Str("chosen_item_id", chosen.ID).
+				Str("reason", "leaving_soon_excluded").
+				Msg("Matched media to original Jellyfin item, excluding Leaving-Soon copy")
+		}
+	}
+
+	return idx
 }
 
 func (e *SyncEngine) syncJellyfin(ctx context.Context) error {
@@ -774,21 +1002,15 @@ func (e *SyncEngine) syncJellyfin(ctx context.Context) error {
 	showNotFound := 0
 	showMismatch := 0
 
-	// Build a map of Jellyfin movies by TMDB ID for quick lookup
-	jellyfinMoviesByTMDB := make(map[string]*clients.JellyfinItem)
-	jellyfinMoviesByTitle := make(map[string]*clients.JellyfinItem)
-	for i := range jellyfinMovies {
-		jm := &jellyfinMovies[i]
-		if tmdbID := jm.ProviderIds["Tmdb"]; tmdbID != "" {
-			jellyfinMoviesByTMDB[tmdbID] = jm
-		}
-		// Normalize title for fuzzy matching (lowercase, trim spaces)
-		normalizedTitle := strings.ToLower(strings.TrimSpace(jm.Name))
-		jellyfinMoviesByTitle[normalizedTitle] = jm
-	}
-	// Path index lets a movie whose Jellyfin metadata was mis-identified (so the
-	// TMDB ID does not match) still be recognised as the same file on disk.
-	jellyfinMoviesByPath := buildJellyfinPathIndex(jellyfinMovies)
+	// Build the movie lookup maps (TMDB id, normalized title, path) via the
+	// shared builder: it excludes Leaving-Soon symlink copies so a copy can
+	// never win and breaks any remaining tie deterministically. Path matching
+	// lets a movie whose Jellyfin metadata was mis-identified (so the TMDB ID
+	// does not match) still be recognised as the same file on disk.
+	movieIndex := buildJellyfinLookupIndex(jellyfinMovies, "Tmdb")
+	jellyfinMoviesByTMDB := movieIndex.byProviderID
+	jellyfinMoviesByTitle := movieIndex.byTitle
+	jellyfinMoviesByPath := movieIndex.byPath
 
 	// Update watch data for movies and track mismatches
 	for id, media := range e.mediaLibrary {
@@ -882,21 +1104,15 @@ func (e *SyncEngine) syncJellyfin(ctx context.Context) error {
 		return fmt.Errorf("fetching TV shows: %w", err)
 	}
 
-	// Build a map of Jellyfin TV shows by TVDB ID for quick lookup
-	jellyfinShowsByTVDB := make(map[string]*clients.JellyfinItem)
-	jellyfinShowsByTitle := make(map[string]*clients.JellyfinItem)
-	for i := range jellyfinShows {
-		js := &jellyfinShows[i]
-		if tvdbID := js.ProviderIds["Tvdb"]; tvdbID != "" {
-			jellyfinShowsByTVDB[tvdbID] = js
-		}
-		// Normalize title for fuzzy matching
-		normalizedTitle := strings.ToLower(strings.TrimSpace(js.Name))
-		jellyfinShowsByTitle[normalizedTitle] = js
-	}
-	// Path index catches series whose Jellyfin metadata was mis-identified so
-	// the TVDB ID no longer matches, even though the files are the same.
-	jellyfinShowsByPath := buildJellyfinPathIndex(jellyfinShows)
+	// Build the show lookup maps (TVDB id, normalized title, path) via the same
+	// shared builder used for movies, so both exclude Leaving-Soon copies and
+	// resolve duplicates identically. Path matching catches series whose
+	// Jellyfin metadata was mis-identified so the TVDB ID no longer matches,
+	// even though the files are the same.
+	showIndex := buildJellyfinLookupIndex(jellyfinShows, "Tvdb")
+	jellyfinShowsByTVDB := showIndex.byProviderID
+	jellyfinShowsByTitle := showIndex.byTitle
+	jellyfinShowsByPath := showIndex.byPath
 
 	// Update watch data for TV shows and track mismatches
 	for id, media := range e.mediaLibrary {
@@ -990,10 +1206,14 @@ func (e *SyncEngine) syncJellyfin(ctx context.Context) error {
 		Int("movie_not_found", movieNotFound).
 		Int("movie_mismatch", movieMismatch).
 		Int("movie_total", totalMovies).
+		Int("movie_leaving_soon_excluded", movieIndex.leavingSoonExcluded).
+		Int("movie_tie_breaks", movieIndex.tieBreaks).
 		Int("show_matched", showMatched).
 		Int("show_not_found", showNotFound).
 		Int("show_mismatch", showMismatch).
 		Int("show_total", totalShows).
+		Int("show_leaving_soon_excluded", showIndex.leavingSoonExcluded).
+		Int("show_tie_breaks", showIndex.tieBreaks).
 		Msg("Jellyfin sync completed")
 
 	// Log warnings if there are mismatches or missing items
@@ -1381,6 +1601,12 @@ func (e *SyncEngine) buildTVArrIdentity(ctx context.Context, media models.Media)
 // resolveJellyfinItem locates the Jellyfin item involved in the conflict. It
 // prefers the stored conflict id (set by sync classification) and falls back to
 // a normalized path lookup. A miss returns (nil, nil).
+//
+// Leaving-Soon symlink copies are filtered out before either lookup, so the
+// conflict adjudication shares the matcher's "a copy can never win" invariant:
+// a stale conflict id or an arr path pointing at the plugin's virtual folder
+// must not resolve to the copy. Duplicate ids/paths are resolved by the same
+// deterministic preferJellyfinItem tie-break used by the main matching.
 func (e *SyncEngine) resolveJellyfinItem(ctx context.Context, media models.Media) (*clients.JellyfinItem, error) {
 	var (
 		items []clients.JellyfinItem
@@ -1395,15 +1621,21 @@ func (e *SyncEngine) resolveJellyfinItem(ctx context.Context, media models.Media
 		return nil, fmt.Errorf("listing Jellyfin items: %w", err)
 	}
 
+	main := mainLibraryItems(items)
+
 	if id := media.JellyfinConflictID; id != "" {
-		for i := range items {
-			if items[i].ID == id {
-				return &items[i], nil
+		var best *clients.JellyfinItem
+		for i := range main {
+			if main[i].ID == id && preferJellyfinItem(best, &main[i]) {
+				best = &main[i]
 			}
+		}
+		if best != nil {
+			return best, nil
 		}
 	}
 
-	if item := lookupJellyfinPath(items, normalizeJellyfinPathKey(media.FilePath)); item != nil {
+	if item := lookupJellyfinPath(main, normalizeJellyfinPathKey(media.FilePath)); item != nil {
 		return item, nil
 	}
 	return nil, nil

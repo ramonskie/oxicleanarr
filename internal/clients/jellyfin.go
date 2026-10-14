@@ -28,6 +28,12 @@ type JellyfinClient struct {
 // to draw on" rather than an infrastructure failure.
 var ErrImageNotFound = errors.New("image not found")
 
+// ErrItemNotFound is returned by SetItemImage when the target item no longer
+// exists on the Jellyfin server (HTTP 404). It is returned directly so callers
+// can use errors.Is to treat a deleted item as stale state to clear, rather
+// than an infrastructure failure to retry forever.
+var ErrItemNotFound = errors.New("item not found")
+
 // NewJellyfinClient creates a new Jellyfin client
 func NewJellyfinClient(cfg config.JellyfinConfig) *JellyfinClient {
 	timeout := 30 * time.Second
@@ -344,12 +350,50 @@ func (c *JellyfinClient) SetItemImage(ctx context.Context, itemID, imageType str
 	}
 	defer resp.Body.Close()
 
+	if resp.StatusCode == http.StatusNotFound {
+		return ErrItemNotFound
+	}
 	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusNoContent {
 		return fmt.Errorf("upload failed (status %d)", resp.StatusCode)
 	}
 
 	log.Info().Str("item_id", itemID).Str("image_type", imageType).Msg("Set item image")
 	return nil
+}
+
+// ItemExists reports whether an item still exists on the Jellyfin server.
+//
+// It exists because HTTP 404 from SetItemImage is overloaded: a misconfigured
+// base URL or proxy would 404 every request, and treating that as "item
+// deleted" would destroy the only recovery artifact (the saved original
+// poster). Callers confirm a deletion with this endpoint before dropping state.
+// A 200 means the item exists, a 404 means it does not; any other status (or a
+// transport error) is returned as an error so the caller can retry rather than
+// destroy data.
+func (c *JellyfinClient) ItemExists(ctx context.Context, itemID string) (bool, error) {
+	reqURL := fmt.Sprintf("%s/Items/%s", c.baseURL, url.PathEscape(itemID))
+
+	req, err := http.NewRequestWithContext(ctx, "GET", reqURL, nil)
+	if err != nil {
+		return false, fmt.Errorf("creating request: %w", err)
+	}
+
+	c.setAuth(req)
+
+	resp, err := c.client.Do(req)
+	if err != nil {
+		return false, fmt.Errorf("making request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == http.StatusNotFound {
+		return false, nil
+	}
+	if resp.StatusCode != http.StatusOK {
+		return false, fmt.Errorf("unexpected status code: %d", resp.StatusCode)
+	}
+
+	return true, nil
 }
 
 // RemoteSearchInfo is the search criteria Jellyfin accepts inside a

@@ -69,3 +69,29 @@ All operations are API-driven. OxiCleanarr maintains no direct file system acces
     is auto-generated on first start, logged, and persisted to the config file. The
     integration test config sets `admin.api_key` and the plugin installer writes it
     into the plugin `config.xml`.
+
+## Deletion overlay (poster banner)
+
+OxiCleanarr draws a "leaving in {days} days" banner onto scheduled-deletion media
+(`overlay.*` config). Operational requirements and caveats:
+
+- Upload contract: `POST /Items/{id}/Images/Primary` with a **base64** body and an
+  explicit `Content-Type: image/jpeg`. Raw binary returns HTTP 500 (see
+  jellyfin/jellyfin#12447). Auth uses `Authorization: MediaBrowser Token="<api_key>"`.
+- Durability: the banner only survives a Jellyfin image **replace-all** refresh when the
+  library keeps its artwork on disk. Enable **"Save artwork into media folders"** on the
+  Movies and Shows libraries. With it off, the banner is a Jellyfin metadata image that is
+  reverted to the on-disk `folder.jpg` by a scan (e.g. `TMDbBoxSets` processing duplicates).
+- Duplicates: Jellyfin returns BOTH the main-library item AND the Leaving-Soon symlink copy
+  for the same title (same TMDB/TVDB id). The matcher must resolve `mediaServerId` to the
+  **original** main-library item: `isLeavingSoonCopy` excludes any path under the plugin
+  BasePath (`/config/leaving-soon`) or containing a `leaving-soon` segment, with a
+  deterministic tie-break. The LeavingSoon plugin then propagates the original's (overlaid)
+  image file to the copy, so both views show the banner.
+- Self-heal: every overlay pass fetches the server's current Primary and re-uploads when it
+  differs from the rendered banner (no reliance on the day count alone). Force a full redraw
+  with `POST /api/overlay/run?force=true`.
+- State: items are tracked in `data/overlays/state.json`; originals are backed up (atomically)
+  under `data/overlays/originals/`. A 404 on upload/revert is confirmed with `ItemExists`
+  before state+backup are dropped, so a misconfigured base URL cannot destroy the only
+  recovery artifact.

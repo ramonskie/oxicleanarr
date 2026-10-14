@@ -1,6 +1,7 @@
 package overlay
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -32,6 +33,9 @@ type MediaProvider interface {
 type ImageClient interface {
 	GetItemImage(ctx context.Context, itemID, imageType string) ([]byte, string, error)
 	SetItemImage(ctx context.Context, itemID, imageType string, data []byte, contentType string) error
+	// ItemExists confirms whether an item still exists before state+backup are
+	// dropped, so an overloaded 404 (bad baseURL/proxy) cannot destroy backups.
+	ItemExists(ctx context.Context, itemID string) (bool, error)
 }
 
 // ErrAlreadyRunning is returned when a run/reset is requested while another is
@@ -49,6 +53,26 @@ var ErrJellyfinUnavailable = errors.New("Jellyfin integration is not enabled")
 // errNoPrimaryImage marks an item with no artwork to draw on; it is counted as
 // skipped (noise-free) rather than as an error.
 var errNoPrimaryImage = errors.New("no primary image")
+
+// errBannerCurrent marks an item whose server-side poster already equals the
+// freshly rendered banner; it is counted as skipped with no upload. It is what
+// makes drift detection cheap: equality is verified before re-uploading, so an
+// unchanged banner costs a GET but no write.
+var errBannerCurrent = errors.New("banner already current")
+
+// errRemovedAtSource marks a scheduled target whose Jellyfin item no longer
+// exists: an upload came back with clients.ErrItemNotFound (HTTP 404). The
+// item's overlay state and backup are dropped and it is counted as skipped,
+// never an error, so a deleted item cannot wedge the pass with a permanent
+// failure.
+var errRemovedAtSource = errors.New("item removed at source")
+
+// errBackupMissing marks an item whose overlay state exists but whose saved
+// original poster is gone. Nothing can be reverted, so the state is dropped and
+// the item is counted as skipped (never an error). The server's current Primary
+// is deliberately NOT adopted as a new original: it may already be the banner,
+// which would permanently record the banner as the original.
+var errBackupMissing = errors.New("overlay backup missing")
 
 // Result summarizes one overlay pass.
 type Result struct {
@@ -131,17 +155,29 @@ func NewService(
 }
 
 // Run executes one overlay pass: apply banners to scheduled-deletion items whose
-// day count changed, skip unchanged ones, and revert items that left the set.
-// A concurrent Run/Reset is rejected with ErrAlreadyRunning.
+// day count changed, verify unchanged ones against the server's current poster,
+// and revert items that left the set. A concurrent Run/Reset is rejected with
+// ErrAlreadyRunning.
 func (s *Service) Run(ctx context.Context) (Result, error) {
-	return s.runExclusive(ctx, false)
+	return s.runExclusive(ctx, false, false)
+}
+
+// RunForce executes one overlay pass with an explicit force flag. When force is
+// true every scheduled target's banner is re-uploaded even when the day count,
+// style, and the server's current Primary are unchanged, so an externally
+// reverted or overwritten banner is unconditionally redrawn. When force is false
+// it behaves exactly like Run. A concurrent Run/Reset is rejected with
+// ErrAlreadyRunning.
+func (s *Service) RunForce(ctx context.Context, force bool) (Result, error) {
+	return s.runExclusive(ctx, false, force)
 }
 
 // runExclusive runs one pass, returning ErrAlreadyRunning when another pass
 // holds the service. When it frees the slot it starts a background pass if one
 // was requested while it was held, so a sync that completed during a manual
-// run/reset is not missed.
-func (s *Service) runExclusive(ctx context.Context, reset bool) (Result, error) {
+// run/reset is not missed. force is forwarded to runLocked and bypasses the
+// per-item drift comparison.
+func (s *Service) runExclusive(ctx context.Context, reset, force bool) (Result, error) {
 	if !s.acquirePass() {
 		return Result{}, ErrAlreadyRunning
 	}
@@ -150,7 +186,7 @@ func (s *Service) runExclusive(ctx context.Context, reset bool) (Result, error) 
 	if reset {
 		return s.resetLocked(ctx)
 	}
-	return s.runLocked(ctx)
+	return s.runLocked(ctx, force)
 }
 
 // acquirePass claims the single pass slot, coalescing the request when a pass is
@@ -196,8 +232,9 @@ func (s *Service) hasPendingPass() bool {
 
 // runLocked executes one overlay pass. Callers must hold the pass slot
 // (acquirePass); it is not released here so a panic still unwinds through the
-// caller's deferred release.
-func (s *Service) runLocked(ctx context.Context) (Result, error) {
+// caller's deferred release. force bypasses the per-item drift comparison and
+// re-uploads every target.
+func (s *Service) runLocked(ctx context.Context, force bool) (Result, error) {
 	s.markRunning()
 	defer s.markIdle()
 
@@ -250,24 +287,28 @@ func (s *Service) runLocked(ctx context.Context) (Result, error) {
 		res.Reverted++
 	}
 
-	// Apply or update banners.
+	// Apply or update banners. Every target is verified against the server's
+	// current Primary so an externally reverted or overwritten banner is
+	// redrawn: applyTarget reports errBannerCurrent when the poster already
+	// matches the freshly rendered banner, and force skips that comparison.
 	for _, t := range targets {
-		if st, has := s.state.Get(t.ItemID); has &&
-			st.DaysLeftShown == t.DaysLeft && st.StyleHash == wantStyle {
+		err := s.applyTarget(ctx, t, wantStyle, force)
+		switch {
+		case err == nil:
+			res.Processed++
+		case errors.Is(err, errBannerCurrent):
 			res.Skipped++
-			continue
-		}
-		if err := s.applyTarget(ctx, t, wantStyle); err != nil {
-			if errors.Is(err, errNoPrimaryImage) {
-				res.Skipped++
-				log.Debug().Str("item_id", t.ItemID).Msg("No primary image for item, skipping overlay")
-				continue
-			}
+		case errors.Is(err, errNoPrimaryImage):
+			res.Skipped++
+			log.Debug().Str("item_id", t.ItemID).Msg("No primary image for item, skipping overlay")
+		case errors.Is(err, errRemovedAtSource):
+			res.Skipped++
+		case errors.Is(err, errBackupMissing):
+			res.Skipped++
+		default:
 			res.Errors++
 			log.Warn().Err(err).Str("item_id", t.ItemID).Int("days_left", t.DaysLeft).Msg("Failed to apply overlay")
-			continue
 		}
-		res.Processed++
 	}
 
 	s.mu.Lock()
@@ -287,7 +328,7 @@ func (s *Service) runLocked(ctx context.Context) (Result, error) {
 // Reset restores every original poster and drops all overlay state.
 // A concurrent Run/Reset is rejected with ErrAlreadyRunning.
 func (s *Service) Reset(ctx context.Context) (Result, error) {
-	return s.runExclusive(ctx, true)
+	return s.runExclusive(ctx, true, false)
 }
 
 // resetLocked restores every original poster and drops all overlay state.
@@ -460,7 +501,7 @@ func (s *Service) runPass() {
 				}
 				rerun = s.releasePass()
 			}()
-			_, err = s.runLocked(ctx)
+			_, err = s.runLocked(ctx, false)
 		}()
 		cancel()
 
@@ -537,8 +578,13 @@ func daysLeft(deleteAfter, now time.Time) int {
 	return int(math.Ceil(diff.Hours() / 24))
 }
 
-// applyTarget draws the banner onto one item's poster and records state.
-func (s *Service) applyTarget(ctx context.Context, t target, styleHash string) error {
+// applyTarget draws the banner onto one item's poster and records state. When
+// the item already carries overlay state it fetches the server's CURRENT Primary
+// and compares it to the freshly rendered banner: an external writer (or a
+// Jellyfin refresh) can revert or overwrite the poster without touching our
+// state, so the day-count/style dedupe alone would never notice. force skips
+// that comparison and always re-uploads.
+func (s *Service) applyTarget(ctx context.Context, t target, styleHash string, force bool) error {
 	originalPath := s.originalPath(t.ItemID)
 
 	// Reuse the saved original poster when present; otherwise download and back
@@ -548,7 +594,15 @@ func (s *Service) applyTarget(ctx context.Context, t target, styleHash string) e
 	if has {
 		original = readFile(st.OriginalPath)
 		if original == nil {
-			has = false // backup lost; re-download
+			// The state says a banner was applied but the saved original is gone:
+			// nothing can be reverted. Downloading the server's current Primary
+			// here would permanently record the banner (which the server may
+			// currently serve) as the "original", so drop the state instead and
+			// skip the item with a loud warning.
+			s.dropStateAndBackup(t.ItemID, originalPath)
+			log.Warn().Str("item_id", t.ItemID).
+				Msg("Backup missing; dropping overlay state, cannot revert")
+			return errBackupMissing
 		}
 	}
 
@@ -583,7 +637,66 @@ func (s *Service) applyTarget(ctx context.Context, t target, styleHash string) e
 		return fmt.Errorf("render banner: %w", err)
 	}
 
+	// Drift guard: when we already applied a banner, verify the server still
+	// holds it before deciding the item is up to date. A mismatch means the
+	// poster was reverted (e.g. an image replace-all refresh) or overwritten,
+	// so re-upload even though DaysLeftShown/StyleHash are unchanged. force
+	// bypasses this and always re-uploads.
+	if has && !force {
+		current, _, err := s.jf.GetItemImage(ctx, t.ItemID, "Primary")
+		switch {
+		case err == nil:
+			if bytes.Equal(current, rendered) {
+				return errBannerCurrent
+			}
+			log.Debug().Str("item_id", t.ItemID).Msg("Overlay drifted from state, re-applying")
+		case errors.Is(err, clients.ErrImageNotFound):
+			// A 404 here is overloaded (a bad baseURL/proxy would 404 every
+			// request), so confirm the item is really gone before destroying the
+			// only recovery artifact. If it still exists — or the probe fails —
+			// keep state+backup and retry on a later pass.
+			exists, probeErr := s.jf.ItemExists(ctx, t.ItemID)
+			if probeErr != nil {
+				return fmt.Errorf("confirm item exists after poster 404: %w", probeErr)
+			}
+			if !exists {
+				// The item is gone while we still hold overlay state: it is no
+				// longer recoverable, so drop state+backup and count it as
+				// removed at source (skipped) instead of a perpetual skip of a
+				// state entry that can never revert.
+				s.dropStateAndBackup(t.ItemID, originalPath)
+				log.Info().Str("item_id", t.ItemID).
+					Msg("Item removed at source (poster gone), dropping overlay state")
+				return errRemovedAtSource
+			}
+			// The item still exists but currently serves no Primary (the poster
+			// was removed without deleting the item). Do not drop state+backup:
+			// fall through to re-upload the rendered banner, skipping the byte
+			// comparison since there is nothing to compare against.
+			log.Debug().Str("item_id", t.ItemID).
+				Msg("Poster 404 but item still exists, re-applying")
+		default:
+			return fmt.Errorf("verify current poster: %w", err)
+		}
+	}
+
 	if err := s.jf.SetItemImage(ctx, t.ItemID, "Primary", rendered, "image/jpeg"); err != nil {
+		if errors.Is(err, clients.ErrItemNotFound) {
+			// A 404 is overloaded (a bad baseURL/proxy would 404 everything), so
+			// confirm the item is really gone before destroying the only recovery
+			// artifact. If it still exists — or the probe fails — keep the state
+			// and backup and retry on a later pass instead of dropping them.
+			exists, probeErr := s.jf.ItemExists(ctx, t.ItemID)
+			if probeErr != nil {
+				return fmt.Errorf("confirm item exists after upload 404: %w", probeErr)
+			}
+			if exists {
+				return fmt.Errorf("upload overlay: item reported missing but still exists: %w", err)
+			}
+			s.dropStateAndBackup(t.ItemID, originalPath)
+			log.Info().Str("item_id", t.ItemID).Msg("Item removed at source, dropping overlay state")
+			return errRemovedAtSource
+		}
 		return fmt.Errorf("upload overlay: %w", err)
 	}
 
@@ -611,6 +724,25 @@ func (s *Service) revertItem(ctx context.Context, itemID, originalPath string) e
 	}
 
 	if err := s.jf.SetItemImage(ctx, itemID, "Primary", original, "image/jpeg"); err != nil {
+		if errors.Is(err, clients.ErrItemNotFound) {
+			// Confirm the item is really gone before dropping state+backup: a
+			// misconfigured baseURL/proxy 404s every request, and destroying the
+			// backup would make the restore impossible once the config is fixed.
+			exists, probeErr := s.jf.ItemExists(ctx, itemID)
+			if probeErr != nil {
+				return fmt.Errorf("confirm item exists after restore 404: %w", probeErr)
+			}
+			if exists {
+				return fmt.Errorf("restore poster: item reported missing but still exists: %w", err)
+			}
+			// The item no longer exists on Jellyfin, so there is nothing to
+			// restore. Drop the state and backup instead of retrying this upload
+			// on every pass. Counted as reverted (removed at source), never an
+			// error, so a subsequent pass performs no further work for it.
+			s.dropStateAndBackup(itemID, originalPath)
+			log.Info().Str("item_id", itemID).Msg("Item removed at source, dropped overlay state")
+			return nil
+		}
 		// Keep backup and state so a later pass can retry the restore.
 		return fmt.Errorf("restore poster: %w", err)
 	}
@@ -622,6 +754,25 @@ func (s *Service) revertItem(ctx context.Context, itemID, originalPath string) e
 
 	log.Info().Str("item_id", itemID).Msg("Overlay reverted")
 	return nil
+}
+
+// dropStateAndBackup removes an item's overlay state and its saved original
+// poster. It is used when the item no longer exists on Jellyfin (a typed 404
+// upload): there is nothing left to restore and retrying would fail forever.
+//
+// Ordering matters: the state entry is removed first and the backup file is
+// only deleted once that succeeded (or the entry was already absent). If the
+// state write fails the backup is kept and a warning is logged, so a failed
+// removal never destroys the only recovery artifact.
+func (s *Service) dropStateAndBackup(itemID, originalPath string) {
+	if err := s.state.Remove(itemID); err != nil {
+		log.Warn().Err(err).Str("item_id", itemID).
+			Msg("Failed to drop overlay state; keeping backup for recovery")
+		return
+	}
+	if originalPath != "" {
+		_ = os.Remove(originalPath)
+	}
 }
 
 // bannerStyleFromConfig builds a BannerStyle for a day count.
@@ -661,11 +812,48 @@ func (s *Service) originalPath(itemID string) string {
 	return filepath.Join(s.dataDir, "overlays", "originals", itemID+".jpg")
 }
 
+// saveOriginal persists the original poster atomically: it writes to a temp
+// file in the destination directory, fsyncs, then renames it into place (the
+// same approach as internal/storage's atomic write). A crash mid-write leaves
+// any previous backup intact instead of a truncated file that would be adopted
+// as a bogus "original".
 func (s *Service) saveOriginal(path string, data []byte) error {
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+	dir := filepath.Dir(path)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err
 	}
-	return os.WriteFile(path, data, 0o644)
+
+	tmp, err := os.CreateTemp(dir, filepath.Base(path)+".tmp-*")
+	if err != nil {
+		return fmt.Errorf("create temp file: %w", err)
+	}
+	tmpName := tmp.Name()
+	defer func() {
+		if tmpName != "" {
+			tmp.Close()
+			os.Remove(tmpName)
+		}
+	}()
+
+	if _, err := tmp.Write(data); err != nil {
+		tmp.Close()
+		return fmt.Errorf("write temp file: %w", err)
+	}
+	if err := tmp.Sync(); err != nil {
+		tmp.Close()
+		return fmt.Errorf("sync temp file: %w", err)
+	}
+	if err := tmp.Close(); err != nil {
+		return fmt.Errorf("close temp file: %w", err)
+	}
+	if err := os.Chmod(tmpName, 0o644); err != nil {
+		return fmt.Errorf("chmod temp file: %w", err)
+	}
+	if err := os.Rename(tmpName, path); err != nil {
+		return fmt.Errorf("rename temp file: %w", err)
+	}
+	tmpName = "" // renamed; nothing left to clean up
+	return nil
 }
 
 func readFile(path string) []byte {

@@ -3,6 +3,7 @@ package clients
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -723,5 +724,119 @@ func TestJellyfinClientGetEpisodes(t *testing.T) {
 		require.Error(t, err)
 		assert.Nil(t, episodes)
 		assert.Contains(t, err.Error(), "unexpected status code: 500")
+	})
+}
+
+// TestJellyfinClientSetItemImage404 pins the typed not-found contract for
+// SetItemImage: a 404 means the target item was deleted server-side and must be
+// detectable with errors.Is(err, ErrItemNotFound), while HTTP 200/204 remain
+// success. Non-404 failures keep the generic "upload failed" error. Callers use
+// this to clear stale overlay state for a missing item instead of retrying it.
+func TestJellyfinClientSetItemImage404(t *testing.T) {
+	cases := []struct {
+		name         string
+		status       int
+		wantNil      bool
+		wantSentinel error
+		wantContains string
+	}{
+		{name: "200 returns nil", status: http.StatusOK, wantNil: true},
+		{name: "204 returns nil", status: http.StatusNoContent, wantNil: true},
+		{name: "404 returns ErrItemNotFound", status: http.StatusNotFound, wantSentinel: ErrItemNotFound},
+		{name: "500 keeps generic error", status: http.StatusInternalServerError, wantContains: "upload failed (status 500)"},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.WriteHeader(tc.status)
+			}))
+			defer srv.Close()
+
+			client := newTestJellyfinClient(srv.URL)
+
+			err := client.SetItemImage(context.Background(), "item-1", "Primary", []byte("banner"), "image/jpeg")
+
+			switch {
+			case tc.wantNil:
+				require.NoError(t, err)
+			case tc.wantSentinel != nil:
+				require.Error(t, err)
+				assert.True(t, errors.Is(err, tc.wantSentinel),
+					"err %v must be errors.Is ErrItemNotFound", err)
+			default:
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), tc.wantContains)
+				assert.False(t, errors.Is(err, ErrItemNotFound),
+					"non-404 failures must not be ErrItemNotFound")
+			}
+		})
+	}
+}
+
+// TestJellyfinClientItemExists pins the existence-probe contract that tells a
+// genuine "item deleted" 404 apart from an overloaded 404 (a bad base URL or
+// proxy 404s every request). A 200 means the item exists, a 404 means it does
+// not, and any other status — or a transport error — is returned as an error so
+// callers retry instead of destroying the saved original. It also pins the
+// request shape: GET /Items/{id} with the MediaBrowser auth header.
+func TestJellyfinClientItemExists(t *testing.T) {
+	cases := []struct {
+		name         string
+		status       int
+		wantExists   bool
+		wantErr      bool
+		wantContains string
+	}{
+		{name: "200 means exists", status: http.StatusOK, wantExists: true},
+		{name: "404 means gone", status: http.StatusNotFound, wantExists: false},
+		{name: "500 is an error", status: http.StatusInternalServerError, wantErr: true, wantContains: "unexpected status code: 500"},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			var (
+				gotMethod string
+				gotPath   string
+				gotAuth   string
+			)
+
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				gotMethod = r.Method
+				gotPath = r.URL.Path
+				gotAuth = r.Header.Get("Authorization")
+				w.WriteHeader(tc.status)
+			}))
+			defer srv.Close()
+
+			client := newTestJellyfinClient(srv.URL)
+
+			exists, err := client.ItemExists(context.Background(), "item-1")
+
+			assert.Equal(t, tc.wantExists, exists)
+			if tc.wantErr {
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), tc.wantContains)
+			} else {
+				require.NoError(t, err)
+			}
+
+			assert.Equal(t, http.MethodGet, gotMethod)
+			assert.Equal(t, "/Items/item-1", gotPath)
+			assert.Equal(t, `MediaBrowser Token="test-api-key"`, gotAuth)
+		})
+	}
+
+	t.Run("transport error", func(t *testing.T) {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
+		serverURL := srv.URL
+		srv.Close() // close before the call -> connection refused (transport error)
+
+		client := newTestJellyfinClient(serverURL)
+
+		exists, err := client.ItemExists(context.Background(), "item-1")
+		assert.False(t, exists)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "making request")
 	})
 }
